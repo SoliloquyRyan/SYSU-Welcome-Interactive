@@ -1,4 +1,7 @@
 <script setup>
+import BaseCard from '../../components/ui/BaseCard.vue'
+import StatusPill from '../../components/ui/StatusPill.vue'
+
 const checklist = [
   '登录与名单核验',
   '寄语人工终审',
@@ -16,12 +19,12 @@ const checklist = [
       当前页面仅用于明确开发边界。正式版本必须接入权限验证、操作日志和最小化数据访问控制。
     </p>
 
-    <ul class="admin-list">
+    <BaseCard as="ul" class="admin-list" padding="none">
       <li v-for="item in checklist" :key="item">
         <span aria-hidden="true">○</span>
-        {{ item }}
-        <em>待开发</em>
+        <span class="admin-list__label">{{ item }}</span>
+        <StatusPill size="sm">待开发</StatusPill>
       </li>
-    </ul>
+    </BaseCard>
   </section>
 </template>

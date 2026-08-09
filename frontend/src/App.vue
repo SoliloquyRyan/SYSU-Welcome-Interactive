@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import AmbientField from './components/visual/AmbientField.vue'
 
 const route = useRoute()
 const isDevelopment = computed(() => import.meta.env.DEV)
@@ -8,6 +9,8 @@ const isDevelopment = computed(() => import.meta.env.DEV)
 
 <template>
   <div class="app-shell" :class="`route-${route.name ?? 'unknown'}`">
+    <AmbientField :variant="route.name ?? 'unknown'" />
+
     <header class="site-header">
       <div>
         <p class="site-kicker">SYSU · 智能工程学院迎新晚会</p>

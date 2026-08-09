@@ -1,4 +1,7 @@
 <script setup>
+import BaseButton from '../../components/ui/BaseButton.vue'
+import BaseCard from '../../components/ui/BaseCard.vue'
+
 const stages = [
   '身份激活',
   '未来寄语',
@@ -11,7 +14,7 @@ const stages = [
 
 <template>
   <section class="mobile-stage" aria-labelledby="welcome-title">
-    <div class="signal-mark" aria-hidden="true">
+    <div class="signal-mark" aria-hidden="true" data-motion="decorative">
       <span></span>
       <span></span>
       <span></span>
@@ -23,14 +26,14 @@ const stages = [
       这里将承接邀请函轻触或扫码后的统一欢迎页面。当前仅为开发骨架，不收集任何真实个人信息。
     </p>
 
-    <div class="notice-card">
+    <BaseCard class="notice-card" padding="md">
       <strong>下一步开发</strong>
       <span>接入身份核验、动力值、寄语和个人星星生成流程。</span>
-    </div>
+    </BaseCard>
 
-    <button class="primary-button" type="button" disabled>
+    <BaseButton class="primary-button" block disabled>
       身份激活 · 待接入
-    </button>
+    </BaseButton>
 
     <ol class="stage-list" aria-label="六阶段互动流程">
       <li v-for="(stage, index) in stages" :key="stage">

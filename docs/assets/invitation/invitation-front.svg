@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="148mm"
+  height="105mm"
+  viewBox="0 0 1480 1050"
+  role="img"
+  aria-labelledby="front-title front-desc"
+>
+  <title id="front-title">中山大学智能工程学院迎新邀请函正面视觉示意</title>
+  <desc id="front-desc">
+    A6 横版邀请函正面，以虚构姓名林星遥同学作为个性化示例，右侧突出 NFC 轻触区域；本图为非正式入口和非印刷生产文件。
+  </desc>
+
+  <defs>
+    <linearGradient id="front-bg" x1="70" y1="20" x2="1410" y2="1030" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#061327" />
+      <stop offset="0.54" stop-color="#0A203B" />
+      <stop offset="1" stop-color="#07172D" />
+    </linearGradient>
+    <radialGradient id="front-cyan-haze" cx="0" cy="0" r="1" gradientTransform="translate(1180 500) rotate(135) scale(590 500)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3AD7FF" stop-opacity="0.28" />
+      <stop offset="0.5" stop-color="#2984D8" stop-opacity="0.11" />
+      <stop offset="1" stop-color="#07172D" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="front-gold-haze" cx="0" cy="0" r="1" gradientTransform="translate(180 900) rotate(-28) scale(460 330)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8C968" stop-opacity="0.13" />
+      <stop offset="1" stop-color="#F8C968" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="front-cyan-line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#53D8FF" stop-opacity="0" />
+      <stop offset="0.48" stop-color="#53D8FF" stop-opacity="0.88" />
+      <stop offset="1" stop-color="#53D8FF" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="front-touch-fill" x1="940" y1="260" x2="1325" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#133D65" stop-opacity="0.82" />
+      <stop offset="0.56" stop-color="#0D2D50" stop-opacity="0.92" />
+      <stop offset="1" stop-color="#091D36" stop-opacity="0.92" />
+    </linearGradient>
+    <filter id="front-soft-glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="18" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <filter id="front-card-shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="24" stdDeviation="34" flood-color="#020812" flood-opacity="0.46" />
+    </filter>
+    <pattern id="front-dot-field" width="58" height="58" patternUnits="userSpaceOnUse">
+      <circle cx="4" cy="4" r="2" fill="#91E9FF" fill-opacity="0.17" />
+    </pattern>
+  </defs>
+
+  <rect width="1480" height="1050" fill="url(#front-bg)" />
+  <rect width="1480" height="1050" fill="url(#front-dot-field)" opacity="0.62" />
+  <rect width="1480" height="1050" fill="url(#front-cyan-haze)" />
+  <rect width="1480" height="1050" fill="url(#front-gold-haze)" />
+
+  <g aria-hidden="true" fill="none">
+    <path d="M-90 782C253 575 576 643 789 482C1007 318 1178 75 1570 154" stroke="#4AD9FF" stroke-opacity="0.13" stroke-width="2" />
+    <path d="M-62 834C302 620 586 708 842 512C1090 322 1213 161 1554 214" stroke="#F8C968" stroke-opacity="0.11" stroke-width="1.5" stroke-dasharray="8 18" />
+    <ellipse cx="1118" cy="510" rx="314" ry="314" stroke="#65DBFF" stroke-opacity="0.1" stroke-width="1.5" stroke-dasharray="4 20" />
+    <ellipse cx="1118" cy="510" rx="374" ry="374" stroke="#65DBFF" stroke-opacity="0.06" stroke-width="1" />
+    <circle cx="202" cy="212" r="4" fill="#F8C968" fill-opacity="0.8" />
+    <circle cx="690" cy="176" r="3" fill="#63E4FF" fill-opacity="0.72" />
+    <circle cx="786" cy="852" r="4" fill="#63E4FF" fill-opacity="0.52" />
+    <circle cx="1388" cy="196" r="3" fill="#F8C968" fill-opacity="0.7" />
+  </g>
+
+  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif">
+    <g transform="translate(86 78)">
+      <rect width="8" height="58" rx="4" fill="#58DAFF" />
+      <text x="30" y="22" fill="#EAF7FF" font-size="22" font-weight="700" letter-spacing="2.2">SYSU · 智能工程学院</text>
+      <text x="30" y="51" fill="#93ABC5" font-size="18" letter-spacing="5">迎新晚会创新互动</text>
+    </g>
+
+    <g transform="translate(1195 80)">
+      <rect width="194" height="44" rx="22" fill="#0E2A47" stroke="#3D789A" stroke-opacity="0.55" />
+      <circle cx="24" cy="22" r="5" fill="#5AE2FF" filter="url(#front-soft-glow)" />
+      <text x="42" y="29" fill="#A9C3D9" font-size="15" font-weight="650" letter-spacing="1.4">VISUAL PREVIEW</text>
+    </g>
+
+    <g transform="translate(88 246)">
+        <text x="0" y="0" fill="#59DBFF" font-size="19" font-weight="750" letter-spacing="5">WELCOME SIGNAL · PREVIEW</text>
+      <text x="0" y="108" fill="#F2F8FF" font-size="88" font-weight="760" letter-spacing="-4">欢迎抵达</text>
+      <text x="0" y="202" fill="#F2F8FF" font-size="88" font-weight="760" letter-spacing="-4">智工星域</text>
+      <rect x="2" y="245" width="110" height="4" rx="2" fill="#F8C968" />
+      <rect x="124" y="245" width="342" height="4" rx="2" fill="url(#front-cyan-line)" />
+
+      <text x="0" y="318" fill="#C6D7E9" font-size="38" font-weight="650">林星遥同学（虚构示例）</text>
+      <text x="0" y="370" fill="#91A9C2" font-size="23">一封来自未来校园的信标，正在等待你的回应。</text>
+      <text x="0" y="408" fill="#91A9C2" font-size="23">轻触卡面，进入同一迎新体验。</text>
+    </g>
+
+    <g transform="translate(905 225)" filter="url(#front-card-shadow)">
+      <rect width="470" height="570" rx="54" fill="url(#front-touch-fill)" stroke="#65DBFF" stroke-opacity="0.34" stroke-width="2" />
+      <rect x="18" y="18" width="434" height="534" rx="40" fill="none" stroke="#88E7FF" stroke-opacity="0.11" stroke-width="1" />
+
+      <g transform="translate(235 229)" aria-hidden="true">
+        <circle r="164" fill="#39CCFA" fill-opacity="0.035" stroke="#66E3FF" stroke-opacity="0.16" stroke-width="2" />
+        <circle r="129" fill="none" stroke="#5DE0FF" stroke-opacity="0.24" stroke-width="2" stroke-dasharray="5 13" />
+        <circle r="93" fill="#0A213C" fill-opacity="0.72" stroke="#6CE5FF" stroke-opacity="0.44" stroke-width="2" />
+        <circle r="54" fill="#46D5FF" fill-opacity="0.07" />
+        <circle r="10" fill="#61E1FF" filter="url(#front-soft-glow)" />
+
+        <g fill="none" stroke="#8CEBFF" stroke-linecap="round" stroke-width="10">
+          <path d="M-35 -40C-6 -12-6 12-35 40" />
+          <path d="M0 -62C47 -22 47 22 0 62" stroke-opacity="0.78" />
+          <path d="M35 -84C98 -28 98 28 35 84" stroke-opacity="0.5" />
+        </g>
+      </g>
+
+      <text x="235" y="444" fill="#F0FAFF" font-size="34" font-weight="760" text-anchor="middle">NFC 轻触区</text>
+      <text x="235" y="483" fill="#9BC1D7" font-size="19" text-anchor="middle">将手机背部靠近此处</text>
+      <g transform="translate(91 510)">
+        <rect width="288" height="36" rx="18" fill="#07182D" fill-opacity="0.74" stroke="#F8C968" stroke-opacity="0.42" />
+        <text x="144" y="24" fill="#F8D580" font-size="14" font-weight="700" text-anchor="middle" letter-spacing="1.4">当前仅为感应区域示意</text>
+      </g>
+    </g>
+
+    <g transform="translate(88 896)">
+      <rect width="510" height="62" rx="18" fill="#081A31" fill-opacity="0.82" stroke="#33536F" stroke-opacity="0.72" />
+      <text x="24" y="39" fill="#A8BDD2" font-size="18" font-weight="600">A6 横版视觉示意｜非印刷生产文件</text>
+    </g>
+
+    <g transform="translate(1032 896)">
+      <rect width="357" height="62" rx="18" fill="#F8C968" fill-opacity="0.12" stroke="#F8C968" stroke-opacity="0.68" />
+      <circle cx="31" cy="31" r="7" fill="#F8C968" />
+      <text x="55" y="39" fill="#F8D888" font-size="19" font-weight="760" letter-spacing="1">设计预览｜非正式入口</text>
+    </g>
+  </g>
+
+  <rect x="16" y="16" width="1448" height="1018" rx="30" fill="none" stroke="#91E9FF" stroke-opacity="0.12" stroke-width="2" aria-hidden="true" />
+</svg>
