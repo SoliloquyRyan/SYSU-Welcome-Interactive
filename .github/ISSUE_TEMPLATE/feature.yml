@@ -1,0 +1,94 @@
+name: 功能建议
+description: 提交新功能、交互优化或工程改进建议
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你的建议。请尽量说明问题、目标和可验收的结果，便于团队评估与排期。
+
+  - type: input
+    id: summary
+    attributes:
+      label: 功能概述
+      description: 用一句话说明希望新增或改进什么。
+      placeholder: 例如：为邀请函入口增加 NFC 与二维码双通道访问
+    validations:
+      required: true
+
+  - type: input
+    id: owner
+    attributes:
+      label: 负责人
+      description: 填写负责推进该事项的 GitHub 用户名或团队；尚未确定时填写“待认领”。
+      placeholder: "@username / team-name / 待认领"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      description: 按对交付与现场运行的影响选择。
+      options:
+        - P0 - 阻断交付或现场核心流程
+        - P1 - 重要功能或高影响问题
+        - P2 - 常规需求或体验优化
+        - P3 - 低优先级改进
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: 所属模块
+      options:
+        - 前端页面与组件
+        - 互动流程与状态
+        - NFC／二维码入口
+        - 路由与导航
+        - 数据与接口对接
+        - 构建、部署与 CI
+        - 文档
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景与用户价值
+      description: 当前有什么问题，谁会受益，为什么现在需要处理？
+      placeholder: 描述使用场景、现状、目标用户及预期价值。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 描述建议的交互、页面、数据流或技术实现；如有替代方案也请一并说明。
+      placeholder: 可附流程、草图、接口约定或参考链接。
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 使用可检查、可复现的条目描述完成条件。
+      placeholder: |
+        - [ ] 用户可以……
+        - [ ] 异常情况下……
+        - [ ] `pnpm --dir frontend build` 成功
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: 补充材料
+      description: 可附截图、原型、日志或相关 Issue。请先移除个人信息、令牌和其他敏感数据。
+

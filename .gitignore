@@ -1,0 +1,42 @@
+# Dependencies and generated output
+**/node_modules/
+**/dist/
+**/coverage/
+**/.cache/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs and local tools
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Real event data and local backups
+data/
+private/
+backups/
+exports/
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+*.xlsx
+*.xls
+*.bak
+
+# Temporary Office files
+~$*

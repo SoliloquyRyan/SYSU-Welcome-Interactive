@@ -1,0 +1,122 @@
+name: 缺陷报告
+description: 报告可复现的页面、交互、构建或运行问题
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请提供最小且可复现的信息。提交日志或截图前，请移除姓名、学号、令牌、密钥及其他敏感数据。
+
+  - type: input
+    id: summary
+    attributes:
+      label: 问题概述
+      placeholder: 例如：移动端扫码进入后页面停留在加载状态
+    validations:
+      required: true
+
+  - type: input
+    id: owner
+    attributes:
+      label: 负责人
+      description: 填写负责跟进的 GitHub 用户名或团队；尚未确定时填写“待认领”。
+      placeholder: "@username / team-name / 待认领"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      options:
+        - P0 - 阻断交付或现场核心流程
+        - P1 - 严重影响主要功能
+        - P2 - 有替代路径的一般问题
+        - P3 - 轻微或低频问题
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: 所属模块
+      options:
+        - 前端页面与组件
+        - 互动流程与状态
+        - NFC／二维码入口
+        - 路由与导航
+        - 数据与接口对接
+        - 构建、部署与 CI
+        - 文档
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 请填写设备、操作系统、浏览器及版本、访问方式和相关分支或提交。
+      placeholder: |
+        - 设备：
+        - 操作系统：
+        - 浏览器及版本：
+        - 访问方式（NFC／二维码／直接链接）：
+        - 分支或提交：
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开……
+        2. 点击……
+        3. 观察到……
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 如有报错，请提供已脱敏的完整错误信息。
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 描述修复后需要验证的正常路径、异常路径和回归范围。
+      placeholder: |
+        - [ ] 原复现步骤不再触发问题
+        - [ ] 相关正常流程未受影响
+        - [ ] `pnpm --dir frontend build` 成功
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 截图、录屏或日志
+      description: 请上传有助于定位的信息，并确认已完成脱敏。
+
+  - type: checkboxes
+    id: security_confirmation
+    attributes:
+      label: 数据与安全确认
+      options:
+        - label: 我确认提交内容不包含姓名、学号、手机号、访问令牌、密钥或其他敏感信息。
+          required: true
+
