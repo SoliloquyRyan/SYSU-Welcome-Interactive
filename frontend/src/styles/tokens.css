@@ -41,6 +41,7 @@
   --color-brand-primary-strong: var(--color-registration-blue-strong);
   --color-brand-cyan: var(--color-registration-blue);
   --color-accent-warm: var(--color-signal-orange);
+  --color-accent-on-dark: #ff8566;
   --color-success: #006b50;
   --color-warning: #8c4d00;
   --color-danger: #b32632;

@@ -3,6 +3,11 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AdminPage from '../pages/admin/AdminPage.vue'
 import ScreenPage from '../pages/screen/ScreenPage.vue'
 import WelcomePage from '../pages/student/WelcomePage.vue'
+import { captureInvitationTokenFromUrl } from '../services/invitation-entry'
+
+// Clean the invitation credential before createWebHistory snapshots the initial
+// location; otherwise the router can restore the original query string.
+captureInvitationTokenFromUrl()
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -27,7 +32,7 @@ const router = createRouter({
       path: '/admin',
       name: 'admin',
       component: AdminPage,
-      meta: { title: '内容审核' },
+      meta: { title: '现场控制台' },
     },
     {
       path: '/:pathMatch(.*)*',

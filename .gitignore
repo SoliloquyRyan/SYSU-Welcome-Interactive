@@ -30,6 +30,11 @@ data/
 private/
 backups/
 exports/
+backend/.data/
+tests/reports/
+test-results/
+playwright-report/
+blob-report/
 *.db
 *.sqlite
 *.sqlite3

@@ -306,6 +306,18 @@ h1 {
   color: var(--color-on-dark);
 }
 
+.app-shell.route-screen {
+  width: min(var(--screen-content-width), 100%);
+  min-height: 100vh;
+  padding-inline: clamp(24px, 3vw, 64px);
+  grid-template-rows: 1fr;
+}
+
+.route-screen .page-content {
+  min-height: 100vh;
+  padding-block: clamp(20px, 3vh, 40px);
+}
+
 .route-screen .site-header,
 .route-screen .site-footer {
   border-color: rgba(247, 243, 234, 0.46);
@@ -313,7 +325,7 @@ h1 {
 
 .route-screen .site-kicker,
 .route-screen .eyebrow {
-  color: #ff8566;
+  color: var(--color-accent-on-dark);
 }
 
 .route-screen .site-title,
@@ -455,7 +467,6 @@ h1 {
 
 @media (min-width: 1400px) {
   .app-shell.route-screen {
-    width: min(var(--screen-content-width), 100%);
     padding-inline: 64px;
   }
 

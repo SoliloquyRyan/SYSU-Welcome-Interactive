@@ -1,0 +1,42 @@
+{
+  "name": "sysu-welcome-interactive",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.16.0",
+  "engines": {
+    "node": "^22.18.0 || >=24.11.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "pnpm build:contracts && pnpm build:backend && pnpm --filter @sysu-welcome/frontend build",
+    "build:contracts": "tsc -p packages/contracts/tsconfig.json",
+    "build:backend": "tsc -p backend/tsconfig.json",
+    "typecheck": "pnpm build:contracts && tsc -p packages/contracts/tsconfig.json --noEmit && tsc -p backend/tsconfig.json --noEmit",
+    "typecheck:e2e": "tsc -p tests/e2e/tsconfig.json --noEmit",
+    "typecheck:load": "tsc -p tests/load/tsconfig.json --noEmit",
+    "test": "pnpm build:contracts && vitest run",
+    "verify:g1": "node --check scripts/dev.mjs && pnpm typecheck && pnpm test && pnpm build",
+    "verify:g2": "node --check scripts/dev.mjs && pnpm typecheck && pnpm test && pnpm build",
+    "test:e2e": "pnpm build:contracts && pnpm build:backend && pnpm typecheck:e2e && playwright test --project=chromium-ci",
+    "test:e2e:windows": "pnpm build:contracts && pnpm build:backend && pnpm typecheck:e2e && playwright test --project=chrome --project=msedge",
+    "test:e2e:all": "pnpm build:contracts && pnpm build:backend && pnpm typecheck:e2e && playwright test --project=chromium-ci --project=chrome --project=msedge",
+    "test:load": "pnpm build:contracts && pnpm build:backend && pnpm typecheck:load && tsx tests/load/run-g4-load.ts",
+    "verify:g3": "pnpm verify:g2 && pnpm typecheck:e2e && playwright test --project=chromium-ci --project=chrome --project=msedge",
+    "verify:g4": "pnpm verify:g3 && pnpm typecheck:load && tsx tests/load/run-g4-load.ts",
+    "db:migrate": "tsx backend/src/cli/migrate.ts",
+    "db:seed": "tsx backend/src/cli/seed.ts",
+    "db:setup": "tsx backend/src/cli/setup.ts",
+    "db:verify": "tsx backend/src/cli/verify.ts",
+    "db:reset": "tsx backend/src/cli/reset.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^22.20.1",
+    "@types/qrcode": "^1.5.6",
+    "qrcode": "^1.5.4",
+    "tsx": "^4.23.11",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

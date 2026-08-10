@@ -1,0 +1,936 @@
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  randomInt,
+  randomUUID,
+  timingSafeEqual,
+} from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+
+import { z } from 'zod'
+
+import type { SqliteDatabase } from './open-database.js'
+import { databaseTableExists } from './open-database.js'
+
+export const DEMO_SEED_VERSION = 'demo-v0-g1-v1'
+
+const ParticipantSchema = z
+  .object({
+    id: z.string().regex(/^synthetic-\d{3,4}$/),
+    seedIndex: z.number().int().positive(),
+    displayName: z.string().min(1).max(40),
+    demoCode: z.string().regex(/^\d{6}$/),
+    inviteToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    publicStarId: z.string().min(1).max(40),
+    visualSeed: z.string().regex(/^[a-f0-9]{32}$/),
+  })
+  .strict()
+
+const ProgramSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    sortOrder: z.number().int().positive(),
+    title: z.string().min(1).max(80),
+  })
+  .strict()
+
+const GiftSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    sortOrder: z.number().int().positive(),
+    name: z.string().min(1).max(40),
+    powerCost: z.union([
+      z.literal(5),
+      z.literal(10),
+      z.literal(20),
+      z.literal(50),
+    ]),
+  })
+  .strict()
+
+export const DemoSeedManifestSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    seedVersion: z.literal(DEMO_SEED_VERSION),
+    generatedAt: z.string().datetime({ offset: true }),
+    credentialPepper: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    admin: z
+      .object({
+        id: z.literal('admin-shared'),
+        username: z.literal('demo-admin'),
+        password: z.string().regex(/^[A-Za-z0-9_-]{32}$/),
+      })
+      .strict(),
+    participants: z.array(ParticipantSchema).min(1).max(1_000),
+    programs: z.array(ProgramSchema).min(1),
+    gifts: z.array(GiftSchema).length(4),
+  })
+  .strict()
+
+export type DemoSeedManifest = z.infer<typeof DemoSeedManifestSchema>
+
+export interface DemoCredentialContext {
+  credentialPepper: string
+}
+
+export interface SeedOptions {
+  manifestPath: string
+  participantCount: number
+  now?: () => Date
+}
+
+export interface SeedResult {
+  createdManifest: boolean
+  seedVersion: string
+  participantCount: number
+  fingerprint: string
+}
+
+export interface SeedVerification {
+  ready: boolean
+  issues: string[]
+  seedVersion: string | null
+  participantCount: number
+  fingerprint: string | null
+}
+
+const PROGRAMS = [
+  { id: 'program-001', sortOrder: 1, title: '轨道序章' },
+  { id: 'program-002', sortOrder: 2, title: '协同回声' },
+  { id: 'program-003', sortOrder: 3, title: '共同抵达' },
+] as const
+
+const GIFTS = [
+  { id: 'gift-glimmer', sortOrder: 1, name: '微光', powerCost: 5 },
+  { id: 'gift-beacon', sortOrder: 2, name: '信标', powerCost: 10 },
+  { id: 'gift-orbit', sortOrder: 3, name: '星轨', powerCost: 20 },
+  { id: 'gift-starship', sortOrder: 4, name: '星舰', powerCost: 50 },
+] as const
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('hex')
+}
+
+function credentialDigest(
+  pepper: string,
+  purpose: string,
+  subjectId: string,
+  value: string,
+): string {
+  return createHmac('sha256', Buffer.from(pepper, 'base64url'))
+    .update(`${purpose}\0${subjectId}\0${value}`, 'utf8')
+    .digest('hex')
+}
+
+function digestMatches(expected: string, actual: string): boolean {
+  const expectedBuffer = Buffer.from(expected, 'hex')
+  const actualBuffer = Buffer.from(actual, 'hex')
+  return (
+    expectedBuffer.length === actualBuffer.length &&
+    timingSafeEqual(expectedBuffer, actualBuffer)
+  )
+}
+
+export function invitationTokenDigest(token: string): string {
+  return sha256(token)
+}
+
+export function readDemoCredentialContext(
+  manifestPath: string,
+): DemoCredentialContext {
+  const manifest = readSeedManifest(manifestPath)
+  return Object.freeze({ credentialPepper: manifest.credentialPepper })
+}
+
+export function verifyDemoCodeCredential(
+  context: DemoCredentialContext,
+  identityId: string,
+  demoCode: string,
+  storedDigest: string,
+): boolean {
+  return digestMatches(
+    credentialDigest(
+      context.credentialPepper,
+      'demo-code',
+      identityId,
+      demoCode,
+    ),
+    storedDigest,
+  )
+}
+
+export function verifyAdminPasswordCredential(
+  context: DemoCredentialContext,
+  accountId: string,
+  password: string,
+  storedDigest: string,
+): boolean {
+  return digestMatches(
+    credentialDigest(
+      context.credentialPepper,
+      'admin-password',
+      accountId,
+      password,
+    ),
+    storedDigest,
+  )
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stableValue)
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, stableValue(entry)]),
+    )
+  }
+  return value
+}
+
+export function fingerprintManifest(manifest: DemoSeedManifest): string {
+  return sha256(JSON.stringify(stableValue(manifest)))
+}
+
+function assertUnique(values: readonly string[], label: string): void {
+  if (new Set(values).size !== values.length) {
+    throw new Error(`Seed manifest contains duplicate ${label}`)
+  }
+}
+
+function validateManifestInvariants(
+  manifest: DemoSeedManifest,
+  participantCount: number,
+): void {
+  if (manifest.participants.length !== participantCount) {
+    throw new Error(
+      `Seed participant count mismatch: expected ${participantCount}, found ${manifest.participants.length}`,
+    )
+  }
+
+  manifest.participants.forEach((participant, index) => {
+    if (participant.seedIndex !== index + 1) {
+      throw new Error('Seed participant indexes must be contiguous')
+    }
+  })
+  assertUnique(manifest.participants.map(({ id }) => id), 'participant IDs')
+  assertUnique(manifest.participants.map(({ demoCode }) => demoCode), 'Demo codes')
+  assertUnique(
+    manifest.participants.map(({ inviteToken }) => inviteToken),
+    'invitation tokens',
+  )
+  assertUnique(
+    manifest.participants.map(({ publicStarId }) => publicStarId),
+    'public star IDs',
+  )
+  assertUnique(
+    manifest.participants.map(({ visualSeed }) => visualSeed),
+    'visual seeds',
+  )
+
+  if (JSON.stringify(manifest.programs) !== JSON.stringify(PROGRAMS)) {
+    throw new Error('Seed program catalog does not match the G1 baseline')
+  }
+  if (JSON.stringify(manifest.gifts) !== JSON.stringify(GIFTS)) {
+    throw new Error('Seed gift catalog does not match the G1 baseline')
+  }
+}
+
+function generateManifest(
+  participantCount: number,
+  now: () => Date,
+): DemoSeedManifest {
+  const demoCodes = new Set<string>()
+  const participants = Array.from({ length: participantCount }, (_, index) => {
+    let demoCode: string
+    do {
+      demoCode = randomInt(0, 1_000_000).toString().padStart(6, '0')
+    } while (demoCodes.has(demoCode))
+    demoCodes.add(demoCode)
+
+    const seedIndex = index + 1
+    const suffix = seedIndex.toString().padStart(3, '0')
+    const id = `synthetic-${suffix}`
+    return {
+      id,
+      seedIndex,
+      displayName: `星域学员 ${suffix}`,
+      demoCode,
+      inviteToken: randomBytes(32).toString('base64url'),
+      publicStarId: `STAR-${suffix}`,
+      visualSeed: sha256(`orbital-signal:${id}`).slice(0, 32),
+    }
+  })
+
+  return DemoSeedManifestSchema.parse({
+    schemaVersion: 1,
+    seedVersion: DEMO_SEED_VERSION,
+    generatedAt: now().toISOString(),
+    credentialPepper: randomBytes(32).toString('base64url'),
+    admin: {
+      id: 'admin-shared',
+      username: 'demo-admin',
+      password: randomBytes(24).toString('base64url'),
+    },
+    participants,
+    programs: PROGRAMS,
+    gifts: GIFTS,
+  })
+}
+
+function writeManifestAtomically(
+  manifestPath: string,
+  manifest: DemoSeedManifest,
+): boolean {
+  const directory = path.dirname(manifestPath)
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const temporaryPath = `${manifestPath}.tmp-${process.pid}-${randomUUID()}`
+  try {
+    fs.writeFileSync(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    })
+    try {
+      fs.linkSync(temporaryPath, manifestPath)
+      return true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
+      throw error
+    }
+  } finally {
+    if (fs.existsSync(temporaryPath)) {
+      fs.rmSync(temporaryPath, { force: true })
+    }
+  }
+}
+
+export function readSeedManifest(manifestPath: string): DemoSeedManifest {
+  return DemoSeedManifestSchema.parse(
+    JSON.parse(fs.readFileSync(manifestPath, 'utf8')),
+  )
+}
+
+function databaseHasSeedState(database: SqliteDatabase): boolean {
+  if (!databaseTableExists(database, 'demo_seed_meta')) return false
+  const meta = database
+    .prepare('SELECT 1 AS present FROM demo_seed_meta WHERE id = 1')
+    .get() as { present: number } | undefined
+  const identities = database
+    .prepare('SELECT COUNT(*) AS count FROM synthetic_identities')
+    .get() as { count: number }
+  return meta?.present === 1 || identities.count > 0
+}
+
+function loadOrCreateManifest(
+  database: SqliteDatabase,
+  options: SeedOptions,
+): { manifest: DemoSeedManifest; created: boolean } {
+  if (fs.existsSync(options.manifestPath)) {
+    const manifest = readSeedManifest(options.manifestPath)
+    validateManifestInvariants(manifest, options.participantCount)
+    return { manifest, created: false }
+  }
+
+  if (databaseHasSeedState(database)) {
+    throw new Error(
+      'Seed manifest is missing while the database already contains seed state; refusing to replace credentials',
+    )
+  }
+
+  const manifest = generateManifest(
+    options.participantCount,
+    options.now ?? (() => new Date()),
+  )
+  validateManifestInvariants(manifest, options.participantCount)
+  const created = writeManifestAtomically(options.manifestPath, manifest)
+  const selectedManifest = created
+    ? manifest
+    : readSeedManifest(options.manifestPath)
+  validateManifestInvariants(selectedManifest, options.participantCount)
+  return { manifest: selectedManifest, created }
+}
+
+export function seedDemoDatabase(
+  database: SqliteDatabase,
+  options: SeedOptions,
+): SeedResult {
+  for (const table of [
+    'app_state',
+    'demo_seed_meta',
+    'synthetic_identities',
+    'invitation_tokens',
+    'program_catalog',
+    'gift_catalog',
+    'admin_accounts',
+  ]) {
+    if (!databaseTableExists(database, table)) {
+      throw new Error('Database migrations must be applied before seeding')
+    }
+  }
+
+  const { manifest, created } = loadOrCreateManifest(database, options)
+  const fingerprint = fingerprintManifest(manifest)
+  const appliedAt = (options.now ?? (() => new Date()))().toISOString()
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    const existing = database
+      .prepare(
+        `SELECT seed_version AS seedVersion,
+                seed_fingerprint AS fingerprint,
+                participant_count AS participantCount
+         FROM demo_seed_meta WHERE id = 1`,
+      )
+      .get() as
+      | { seedVersion: string; fingerprint: string; participantCount: number }
+      | undefined
+
+    if (existing) {
+      if (
+        existing.seedVersion !== manifest.seedVersion ||
+        existing.fingerprint !== fingerprint ||
+        existing.participantCount !== options.participantCount
+      ) {
+        throw new Error('Seed manifest does not match the initialized database')
+      }
+    } else {
+      const partialCount = (
+        database
+          .prepare(
+            `SELECT
+               (SELECT COUNT(*) FROM synthetic_identities) +
+               (SELECT COUNT(*) FROM invitation_tokens) +
+               (SELECT COUNT(*) FROM program_catalog) +
+               (SELECT COUNT(*) FROM gift_catalog) +
+               (SELECT COUNT(*) FROM admin_accounts) AS count`,
+          )
+          .get() as { count: number }
+      ).count
+      if (partialCount !== 0) {
+        throw new Error('Database contains partial seed rows without seed metadata')
+      }
+
+    const insertIdentity = database.prepare(
+      `INSERT INTO synthetic_identities (
+         id, seed_index, display_name, demo_code_digest, public_star_id,
+         visual_seed, enabled, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+    )
+    const insertInvitation = database.prepare(
+      `INSERT INTO invitation_tokens (
+         id, identity_id, token_digest, token_hint, status, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?)`,
+    )
+    for (const participant of manifest.participants) {
+      insertIdentity.run(
+        participant.id,
+        participant.seedIndex,
+        participant.displayName,
+        credentialDigest(
+          manifest.credentialPepper,
+          'demo-code',
+          participant.id,
+          participant.demoCode,
+        ),
+        participant.publicStarId,
+        participant.visualSeed,
+        appliedAt,
+      )
+      insertInvitation.run(
+        `invitation-${participant.seedIndex.toString().padStart(3, '0')}`,
+        participant.id,
+        sha256(participant.inviteToken),
+        `…${participant.inviteToken.slice(-4)}`,
+        appliedAt,
+        appliedAt,
+      )
+    }
+
+    const insertProgram = database.prepare(
+      `INSERT INTO program_catalog (
+         id, sort_order, title, heat, enabled, created_at, updated_at
+       ) VALUES (?, ?, ?, 0, 1, ?, ?)`,
+    )
+    for (const program of manifest.programs) {
+      insertProgram.run(
+        program.id,
+        program.sortOrder,
+        program.title,
+        appliedAt,
+        appliedAt,
+      )
+    }
+
+    if (databaseTableExists(database, 'program_runtime_state')) {
+      database
+        .prepare(
+          `UPDATE program_runtime_state
+           SET current_program_id = ?, updated_at = ?
+           WHERE id = 1`,
+        )
+        .run(manifest.programs[0]?.id ?? null, appliedAt)
+    }
+
+    const insertGift = database.prepare(
+      `INSERT INTO gift_catalog (
+         id, sort_order, name, power_cost, enabled, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, 1, ?, ?)`,
+    )
+    for (const gift of manifest.gifts) {
+      insertGift.run(
+        gift.id,
+        gift.sortOrder,
+        gift.name,
+        gift.powerCost,
+        appliedAt,
+        appliedAt,
+      )
+    }
+
+    database
+      .prepare(
+        `INSERT INTO admin_accounts (
+           id, username, password_digest, enabled, created_at, updated_at
+         ) VALUES (?, ?, ?, 1, ?, ?)`,
+      )
+      .run(
+        manifest.admin.id,
+        manifest.admin.username,
+        credentialDigest(
+          manifest.credentialPepper,
+          'admin-password',
+          manifest.admin.id,
+          manifest.admin.password,
+        ),
+        appliedAt,
+        appliedAt,
+      )
+
+    database
+      .prepare(
+        `INSERT INTO demo_seed_meta (
+           id, seed_version, seed_fingerprint, participant_count,
+           generated_at, applied_at
+         ) VALUES (1, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        manifest.seedVersion,
+        fingerprint,
+        manifest.participants.length,
+        manifest.generatedAt,
+        appliedAt,
+      )
+    database
+      .prepare(
+        `UPDATE app_state
+         SET seed_version = ?, seed_fingerprint = ?, updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(manifest.seedVersion, fingerprint, appliedAt)
+    }
+
+    const verification = verifyDemoSeed(database, options)
+    if (!verification.ready) {
+      throw new Error(`Seed verification failed: ${verification.issues.join('; ')}`)
+    }
+    database.exec('COMMIT')
+  } catch (error) {
+    if (database.inTransaction) database.exec('ROLLBACK')
+    throw error
+  }
+
+  return {
+    createdManifest: created,
+    seedVersion: manifest.seedVersion,
+    participantCount: manifest.participants.length,
+    fingerprint,
+  }
+}
+
+export function restoreDemoSeedCatalogInTransaction(
+  database: SqliteDatabase,
+  options: Omit<SeedOptions, 'now'>,
+  updatedAt: string,
+): void {
+  if (!database.inTransaction) {
+    throw new Error('Seed catalog restoration requires an active transaction')
+  }
+
+  const manifest = readSeedManifest(options.manifestPath)
+  validateManifestInvariants(manifest, options.participantCount)
+  const fingerprint = fingerprintManifest(manifest)
+  const meta = database
+    .prepare(
+      `SELECT seed_version AS seedVersion,
+              seed_fingerprint AS fingerprint,
+              participant_count AS participantCount
+       FROM demo_seed_meta WHERE id = 1`,
+    )
+    .get() as
+    | { seedVersion: string; fingerprint: string; participantCount: number }
+    | undefined
+  if (
+    !meta ||
+    meta.seedVersion !== manifest.seedVersion ||
+    meta.fingerprint !== fingerprint ||
+    meta.participantCount !== options.participantCount
+  ) {
+    throw new Error('Seed manifest does not match the initialized database')
+  }
+
+  database.exec(`
+    UPDATE synthetic_identities
+    SET seed_index = seed_index + 1000000,
+        demo_code_digest = lower(hex(randomblob(32))),
+        public_star_id = 'RESTORE-' || id || '-' || lower(hex(randomblob(8))),
+        visual_seed = lower(hex(randomblob(16)));
+    UPDATE invitation_tokens
+    SET token_digest = lower(hex(randomblob(32)));
+    UPDATE program_catalog
+    SET sort_order = sort_order + 1000000,
+        title = 'RESTORE-' || id || '-' || lower(hex(randomblob(8)));
+    UPDATE gift_catalog
+    SET sort_order = sort_order + 1000000,
+        name = 'RESTORE-' || id || '-' || lower(hex(randomblob(8)));
+  `)
+
+  const updateIdentity = database.prepare(
+    `UPDATE synthetic_identities
+     SET seed_index = ?, display_name = ?, demo_code_digest = ?,
+         public_star_id = ?, visual_seed = ?, enabled = 1
+     WHERE id = ?`,
+  )
+  const updateInvitation = database.prepare(
+    `UPDATE invitation_tokens
+     SET token_digest = ?, token_hint = ?, status = 'ACTIVE', updated_at = ?
+     WHERE identity_id = ?`,
+  )
+  for (const participant of manifest.participants) {
+    const identity = updateIdentity.run(
+      participant.seedIndex,
+      participant.displayName,
+      credentialDigest(
+        manifest.credentialPepper,
+        'demo-code',
+        participant.id,
+        participant.demoCode,
+      ),
+      participant.publicStarId,
+      participant.visualSeed,
+      participant.id,
+    )
+    const invitation = updateInvitation.run(
+      sha256(participant.inviteToken),
+      `…${participant.inviteToken.slice(-4)}`,
+      updatedAt,
+      participant.id,
+    )
+    if (identity.changes !== 1 || invitation.changes !== 1) {
+      throw new Error('Seed identity or invitation catalog is incomplete')
+    }
+  }
+
+  const updateProgram = database.prepare(
+    `UPDATE program_catalog
+     SET sort_order = ?, title = ?, heat = 0, enabled = 1, updated_at = ?
+     WHERE id = ?`,
+  )
+  for (const program of manifest.programs) {
+    if (
+      updateProgram.run(
+        program.sortOrder,
+        program.title,
+        updatedAt,
+        program.id,
+      ).changes !== 1
+    ) {
+      throw new Error('Seed program catalog is incomplete')
+    }
+  }
+
+  if (databaseTableExists(database, 'program_runtime_state')) {
+    database
+      .prepare(
+        `UPDATE program_runtime_state
+         SET current_program_id = ?, updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(manifest.programs[0]?.id ?? null, updatedAt)
+  }
+
+  const updateGift = database.prepare(
+    `UPDATE gift_catalog
+     SET sort_order = ?, name = ?, power_cost = ?, enabled = 1,
+         updated_at = ?
+     WHERE id = ?`,
+  )
+  for (const gift of manifest.gifts) {
+    if (
+      updateGift.run(
+        gift.sortOrder,
+        gift.name,
+        gift.powerCost,
+        updatedAt,
+        gift.id,
+      ).changes !== 1
+    ) {
+      throw new Error('Seed gift catalog is incomplete')
+    }
+  }
+
+  const admin = database
+    .prepare(
+      `UPDATE admin_accounts
+       SET username = ?, password_digest = ?, enabled = 1, updated_at = ?
+       WHERE id = ?`,
+    )
+    .run(
+      manifest.admin.username,
+      credentialDigest(
+        manifest.credentialPepper,
+        'admin-password',
+        manifest.admin.id,
+        manifest.admin.password,
+      ),
+      updatedAt,
+      manifest.admin.id,
+    )
+  if (admin.changes !== 1) {
+    throw new Error('Seed admin account is incomplete')
+  }
+
+  const verification = verifyDemoSeed(database, options)
+  if (!verification.ready) {
+    throw new Error(`Seed restoration failed: ${verification.issues.join('; ')}`)
+  }
+}
+
+export function verifyDemoSeed(
+  database: SqliteDatabase,
+  options: Omit<SeedOptions, 'now'>,
+): SeedVerification {
+  const issues: string[] = []
+  let manifest: DemoSeedManifest | null = null
+  let fingerprint: string | null = null
+
+  try {
+    manifest = readSeedManifest(options.manifestPath)
+    validateManifestInvariants(manifest, options.participantCount)
+    fingerprint = fingerprintManifest(manifest)
+  } catch {
+    issues.push('Seed manifest is missing or invalid')
+  }
+
+  if (!manifest || !fingerprint) {
+    return {
+      ready: false,
+      issues,
+      seedVersion: null,
+      participantCount: 0,
+      fingerprint: null,
+    }
+  }
+
+  try {
+    const meta = database
+      .prepare(
+        `SELECT seed_version AS seedVersion,
+                seed_fingerprint AS fingerprint,
+                participant_count AS participantCount
+         FROM demo_seed_meta WHERE id = 1`,
+      )
+      .get() as
+      | { seedVersion: string; fingerprint: string; participantCount: number }
+      | undefined
+    const state = database
+      .prepare(
+        `SELECT seed_version AS seedVersion,
+                seed_fingerprint AS fingerprint
+         FROM app_state WHERE id = 1`,
+      )
+      .get() as { seedVersion: string | null; fingerprint: string | null }
+    const counts = database
+      .prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM synthetic_identities) AS identities,
+           (SELECT COUNT(*) FROM invitation_tokens) AS invitations,
+           (SELECT COUNT(*) FROM program_catalog) AS programs,
+           (SELECT COUNT(*) FROM gift_catalog) AS gifts,
+           (SELECT COUNT(*) FROM admin_accounts) AS admins`,
+      )
+      .get() as {
+      identities: number
+      invitations: number
+      programs: number
+      gifts: number
+      admins: number
+    }
+
+    if (!meta) issues.push('Seed metadata is missing')
+    if (meta?.seedVersion !== manifest.seedVersion)
+      issues.push('Seed version does not match')
+    if (meta?.fingerprint !== fingerprint)
+      issues.push('Seed fingerprint does not match')
+    if (meta?.participantCount !== options.participantCount)
+      issues.push('Seed metadata participant count does not match')
+    if (state.seedVersion !== manifest.seedVersion)
+      issues.push('Application seed version does not match')
+    if (state.fingerprint !== fingerprint)
+      issues.push('Application seed fingerprint does not match')
+    if (counts.identities !== options.participantCount)
+      issues.push('Synthetic identity count does not match')
+    if (counts.invitations !== options.participantCount)
+      issues.push('Invitation token count does not match')
+    if (counts.programs !== manifest.programs.length)
+      issues.push('Program catalog count does not match')
+    if (counts.gifts !== manifest.gifts.length)
+      issues.push('Gift catalog count does not match')
+    if (counts.admins !== 1) issues.push('Admin account count does not match')
+
+    const identityRows = database
+      .prepare(
+        `SELECT id, seed_index AS seedIndex, display_name AS displayName,
+                demo_code_digest AS demoCodeDigest,
+                public_star_id AS publicStarId, visual_seed AS visualSeed,
+                enabled
+         FROM synthetic_identities`,
+      )
+      .all() as Array<{
+      id: string
+      seedIndex: number
+      displayName: string
+      demoCodeDigest: string
+      publicStarId: string
+      visualSeed: string
+      enabled: number
+    }>
+    const identityById = new Map(identityRows.map((row) => [row.id, row]))
+    const tokenRows = database
+      .prepare(
+        `SELECT identity_id AS identityId, token_digest AS tokenDigest
+         FROM invitation_tokens`,
+      )
+      .all() as { identityId: string; tokenDigest: string }[]
+    const tokenByIdentity = new Map(
+      tokenRows.map((row) => [row.identityId, row.tokenDigest]),
+    )
+    for (const participant of manifest.participants) {
+      const identity = identityById.get(participant.id)
+      const expectedCodeDigest = credentialDigest(
+        manifest.credentialPepper,
+        'demo-code',
+        participant.id,
+        participant.demoCode,
+      )
+      if (
+        !identity ||
+        identity.seedIndex !== participant.seedIndex ||
+        identity.displayName !== participant.displayName ||
+        identity.demoCodeDigest !== expectedCodeDigest ||
+        identity.publicStarId !== participant.publicStarId ||
+        identity.visualSeed !== participant.visualSeed ||
+        identity.enabled !== 1
+      ) {
+        issues.push('Synthetic identity catalog does not match')
+        break
+      }
+      if (tokenByIdentity.get(participant.id) !== sha256(participant.inviteToken)) {
+        issues.push('Invitation token digest set does not match')
+        break
+      }
+    }
+
+    const storedPrograms = database
+      .prepare(
+        `SELECT id, sort_order AS sortOrder, title, enabled
+         FROM program_catalog ORDER BY sort_order`,
+      )
+      .all() as Array<{
+      id: string
+      sortOrder: number
+      title: string
+      enabled: number
+    }>
+    if (
+      JSON.stringify(
+        storedPrograms.map(({ id, sortOrder, title }) => ({
+          id,
+          sortOrder,
+          title,
+        })),
+      ) !== JSON.stringify(manifest.programs) ||
+      storedPrograms.some(({ enabled }) => enabled !== 1)
+    ) {
+      issues.push('Program catalog does not match')
+    }
+
+    const storedGifts = database
+      .prepare(
+        `SELECT id, sort_order AS sortOrder, name,
+                power_cost AS powerCost, enabled
+         FROM gift_catalog ORDER BY sort_order`,
+      )
+      .all() as Array<{
+      id: string
+      sortOrder: number
+      name: string
+      powerCost: number
+      enabled: number
+    }>
+    if (
+      JSON.stringify(
+        storedGifts.map(({ id, sortOrder, name, powerCost }) => ({
+          id,
+          sortOrder,
+          name,
+          powerCost,
+        })),
+      ) !== JSON.stringify(manifest.gifts) ||
+      storedGifts.some(({ enabled }) => enabled !== 1)
+    ) {
+      issues.push('Gift catalog does not match')
+    }
+
+    const admin = database
+      .prepare(
+        `SELECT id, username, password_digest AS passwordDigest, enabled
+         FROM admin_accounts WHERE id = ?`,
+      )
+      .get(manifest.admin.id) as
+      | {
+          id: string
+          username: string
+          passwordDigest: string
+          enabled: number
+        }
+      | undefined
+    const expectedAdminDigest = credentialDigest(
+        manifest.credentialPepper,
+        'admin-password',
+        manifest.admin.id,
+        manifest.admin.password,
+      )
+    if (
+      !admin ||
+      admin.username !== manifest.admin.username ||
+      admin.passwordDigest !== expectedAdminDigest ||
+      admin.enabled !== 1
+    ) {
+      issues.push('Admin account seed does not match')
+    }
+  } catch {
+    issues.push('Seed tables are unavailable or inconsistent')
+  }
+
+  return {
+    ready: issues.length === 0,
+    issues,
+    seedVersion: manifest.seedVersion,
+    participantCount: manifest.participants.length,
+    fingerprint,
+  }
+}
