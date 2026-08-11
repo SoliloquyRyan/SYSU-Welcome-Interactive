@@ -59,6 +59,7 @@ const lightKey = ref(null)
 const barrageKey = ref(null)
 const giftKeys = new Map()
 const arrivalTransition = ref(false)
+const arrivalWelcomeOpen = ref(false)
 const reducedMotion = useReducedMotion()
 const visualViewportHeight = ref(null)
 const compactViewport = ref(false)
@@ -107,6 +108,7 @@ function clearParticipantSession() {
   capsuleMessageDirty.value = false
   capsuleNoticeAccepted.value = false
   arrivalTransition.value = false
+  arrivalWelcomeOpen.value = false
   starTemperatureKelvin.value = STAR_TEMPERATURE_DEFAULT
   starTemperatureKey.value = null
   entryState.value = 'missing'
@@ -272,7 +274,8 @@ async function submitActivation() {
     await refreshSnapshot()
     invitationToken.value = null
     activationKey.value = null
-    successMessage.value = '身份已激活，欢迎进入现场。'
+    arrivalWelcomeOpen.value = true
+    successMessage.value = ''
   } catch (error) {
     if (isDefinitiveFailure(error)) activationKey.value = null
     formError.value =
@@ -352,6 +355,10 @@ function finishArrivalTransition() {
     arrivalTimer = null
   }
   arrivalTransition.value = false
+}
+
+function enterStarJourney() {
+  arrivalWelcomeOpen.value = false
 }
 
 function playArrivalTransition() {
@@ -514,10 +521,11 @@ onMounted(() => {
   <section
     class="mobile-stage portal"
     :class="{
-      'portal--active': isActive && !needsStarTemperature && !arrivalTransition,
+      'portal--active': isActive && !needsStarTemperature && !arrivalTransition && !arrivalWelcomeOpen,
       'portal--compact': compactViewport,
       'portal--temperature': needsStarTemperature,
       'portal--transition': arrivalTransition,
+      'portal--arrival-welcome': arrivalWelcomeOpen,
     }"
     :style="portalViewportStyle"
     aria-labelledby="welcome-title"
@@ -596,6 +604,36 @@ onMounted(() => {
         <p class="helper">为了保护入口信息，本页不会保存已从地址栏移除的邀请令牌。</p>
       </section>
     </div>
+
+    <section
+      v-else-if="arrivalWelcomeOpen"
+      class="arrival-welcome"
+      :style="selectedStarStyle"
+      aria-labelledby="arrival-welcome-title"
+    >
+      <div class="arrival-welcome__warp" aria-hidden="true" data-motion="decorative">
+        <span
+          v-for="index in 28"
+          :key="index"
+          :style="{
+            '--warp-index': index,
+            '--warp-top': `${(index * 31) % 100}%`,
+            '--warp-left': `${(index * 47) % 100}%`,
+            '--warp-opacity': 0.22 + (index % 4) * 0.14,
+          }"
+        ></span>
+        <i></i>
+      </div>
+      <div class="arrival-welcome__copy">
+        <p class="eyebrow">NFC SIGNAL VERIFIED</p>
+        <h2 id="arrival-welcome-title">欢迎 {{ participant.displayName }} 同学<br />进入智工星河</h2>
+        <p>你今日的星星代号</p>
+        <strong>{{ participant.publicStarId }}</strong>
+      </div>
+      <BaseButton type="button" block size="lg" @click="enterStarJourney">
+        启动星程
+      </BaseButton>
+    </section>
 
     <section
       v-else-if="needsStarTemperature"
@@ -979,6 +1017,10 @@ onMounted(() => {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+.portal--arrival-welcome {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .portal h1,
 .portal h2,
 .portal h3,
@@ -1250,6 +1292,87 @@ onMounted(() => {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
+}
+
+.arrival-welcome {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 18px;
+  overflow: hidden;
+}
+
+.arrival-welcome__warp {
+  position: absolute;
+  inset: 0 -18px 9%;
+  overflow: hidden;
+  perspective: 240px;
+}
+
+.arrival-welcome__warp::before {
+  position: absolute;
+  inset: 15% -28%;
+  content: "";
+  background: radial-gradient(circle at center, color-mix(in srgb, var(--star-temperature-color) 16%, transparent), transparent 48%);
+  filter: blur(14px);
+}
+
+.arrival-welcome__warp span {
+  position: absolute;
+  top: var(--warp-top);
+  left: var(--warp-left);
+  width: 2px;
+  height: clamp(18px, 9vw, 42px);
+  border-radius: 999px;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--star-temperature-color) 85%, white), transparent);
+  opacity: var(--warp-opacity);
+  transform: rotate(28deg) translate3d(-60px, 50px, 0) scaleY(0.25);
+  animation: arrival-warp 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  animation-delay: calc(var(--warp-index) * -78ms);
+}
+
+.arrival-welcome__warp i {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  top: 44%;
+  left: 50%;
+  border-radius: 50%;
+  background: var(--star-temperature-color);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--star-temperature-color) 90%, white), 0 0 56px color-mix(in srgb, var(--star-temperature-color) 54%, transparent);
+  transform: translate(-50%, -50%);
+}
+
+.arrival-welcome__copy {
+  position: relative;
+  z-index: 1;
+  align-self: end;
+  padding-bottom: 4px;
+}
+
+.arrival-welcome__copy h2 {
+  max-width: 11em;
+  margin-top: 8px;
+  font-size: clamp(1.8rem, 8vw, 2.45rem);
+  font-weight: 610;
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+}
+
+.arrival-welcome__copy > p:last-of-type {
+  margin: 18px 0 4px;
+  color: var(--welcome-secondary);
+  font-size: 0.78rem;
+}
+
+.arrival-welcome__copy strong {
+  color: var(--star-temperature-color);
+  font-family: var(--font-family-mono);
+  font-size: clamp(1.45rem, 7vw, 2rem);
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 28px color-mix(in srgb, var(--star-temperature-color) 52%, transparent);
 }
 
 .arrival-transition__skip {
@@ -2258,6 +2381,13 @@ onMounted(() => {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes arrival-warp {
+  0% { transform: rotate(28deg) translate3d(-84px, 76px, 0) scaleY(0.2); opacity: 0; }
+  22% { opacity: 0.72; }
+  78% { opacity: 0.34; }
+  100% { transform: rotate(28deg) translate3d(92px, -86px, 0) scaleY(1.8); opacity: 0; }
+}
+
 @media (max-height: 760px) {
   .temperature-selection {
     grid-template-rows: auto minmax(100px, 1fr) auto;
@@ -2381,6 +2511,7 @@ onMounted(() => {
   .arrival-transition__wave,
   .arrival-transition__star,
   .arrival-transition__copy,
+  .arrival-welcome__warp span,
   .personal-star__core,
   .gift-sheet {
     animation: none;

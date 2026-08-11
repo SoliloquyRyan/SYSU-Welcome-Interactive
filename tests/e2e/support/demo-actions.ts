@@ -53,12 +53,13 @@ export async function activateParticipant(
   await page.getByLabel('虚构姓名').fill(participant.displayName)
   await page.getByLabel('六位 Demo 码').fill(participant.demoCode)
   await page.getByRole('button', { name: '进入现场' }).click()
+  const startJourney = page.getByRole('button', { name: '启动星程' })
   const confirmTemperature = page.getByRole('button', {
     name: '确认星色 · 进入星辰',
   })
   const exitButton = page.getByRole('button', { name: '退出' })
-  await expect(confirmTemperature.or(exitButton)).toBeVisible()
-  if (await confirmTemperature.isVisible()) {
+  await expect(startJourney.or(confirmTemperature).or(exitButton)).toBeVisible()
+  if (!(await exitButton.isVisible())) {
     await selectStarTemperature(page)
   }
   await expect(exitButton).toBeVisible()
@@ -69,9 +70,15 @@ export async function selectStarTemperature(
   page: Page,
   kelvin = 5800,
 ): Promise<void> {
-  await expect(
-    page.getByRole('heading', { name: '选择你的恒星色温' }),
-  ).toBeVisible()
+  const startJourney = page.getByRole('button', { name: '启动星程' })
+  const temperatureHeading = page.getByRole('heading', {
+    name: '选择你的恒星色温',
+  })
+  const exitButton = page.getByRole('button', { name: '退出' })
+  await expect(startJourney.or(temperatureHeading)).toBeVisible()
+  if (await startJourney.isVisible()) await startJourney.click()
+  await expect(temperatureHeading.or(exitButton)).toBeVisible()
+  if (await exitButton.isVisible()) return
   const range = page.getByRole('slider', { name: '恒星色温' })
   await range.evaluate((element, nextKelvin) => {
     const input = element as HTMLInputElement

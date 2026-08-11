@@ -124,6 +124,12 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     await expect(screenPage.locator('#screen-title')).toHaveText('星星集结')
     await expect(screenPage.locator('#star-title')).toBeVisible()
     await expect(screenPage.getByText('1 / 1', { exact: true })).toBeVisible()
+    const publicStar = screenPage.getByRole('button', { name: /^查看星号 /u })
+    await expect(publicStar).toHaveCount(1)
+    await expect(publicStar).toHaveAttribute('tabindex', '0')
+    const publicStarBox = await publicStar.boundingBox()
+    expect(publicStarBox?.width ?? 0).toBeGreaterThanOrEqual(44)
+    expect(publicStarBox?.height ?? 0).toBeGreaterThanOrEqual(44)
     expect(await hasVisibleInfiniteAnimation(screenPage)).toBe(false)
 
     checkpoint = 'stage-4-gift'

@@ -47,6 +47,12 @@ test('cleans the invitation token and restores one participant across mobile dev
     expect(focusOutlineVisible).toBe(true)
     await submitButton.click()
     await expect(
+      firstPage.getByRole('heading', { name: /欢迎.*进入智工星河/ }),
+    ).toBeVisible()
+    const startJourney = firstPage.getByRole('button', { name: '启动星程' })
+    await expectMinimumControlSize(startJourney)
+    await startJourney.click()
+    await expect(
       firstPage.getByRole('heading', { name: '选择你的恒星色温' }),
     ).toBeVisible()
     await expectMinimumControlSize(
@@ -139,6 +145,10 @@ test('moves the selected star into the capsule without page scrolling', async ({
     await page.getByLabel('虚构姓名').fill(demo.credentials.participant.displayName)
     await page.getByLabel('六位 Demo 码').fill(demo.credentials.participant.demoCode)
     await page.getByRole('button', { name: '进入现场' }).click()
+    await expect(
+      page.getByRole('heading', { name: /欢迎.*进入智工星河/ }),
+    ).toBeVisible()
+    await page.getByRole('button', { name: '启动星程' }).click()
 
     checkpoint = 'temperature'
     await page.getByRole('slider', { name: '恒星色温' }).evaluate((element) => {

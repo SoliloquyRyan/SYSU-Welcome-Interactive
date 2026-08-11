@@ -136,7 +136,7 @@ try {
   await page.getByLabel('虚构姓名').fill(participant.displayName)
   await page.getByLabel('六位 Demo 码').fill(participant.demoCode)
   await page.getByRole('button', { name: '进入现场' }).click()
-  await page.getByRole('heading', { name: '选择你的恒星色温' }).waitFor()
+  await page.getByRole('heading', { name: /欢迎.*进入智工星河/ }).waitFor()
   await page.evaluate(() => {
     document.title = '手机端动画预览 · SYSU Welcome'
   })
@@ -144,6 +144,8 @@ try {
   const controller = await openAdminController(demo, browser)
 
   if (smokeMode) {
+    await page.getByRole('button', { name: '启动星程' }).click()
+    await page.getByRole('heading', { name: '选择你的恒星色温' }).waitFor()
     await page.getByRole('button', { name: '确认星色 · 进入星辰' }).click()
     await page.getByRole('button', { name: '退出' }).waitFor()
     for (let stage = 1; stage <= STAGE_NAMES.length; stage += 1) {
@@ -159,9 +161,9 @@ try {
       [
         '',
         `动画排练载体已打开（${launched.label}）。`,
-        '窗口一：390×844 手机端，当前停在“选择你的恒星色温”。',
+        '窗口一：390×844 手机端，当前停在 NFC 核验后的欢迎画面。',
         '窗口二：动画阶段控制台，已登录、取得全部能力并启动排练。',
-        '先在手机端确认星色，再到控制台选择阶段 1–6 并点击“跳转”。',
+        '先在手机端点击“启动星程”并确认星色，再到控制台选择阶段 1–6 并点击“跳转”。',
         '两个窗口会通过真实 HTTP/WebSocket 状态实时联动；可用 Alt+Tab 切换。',
         '前端源文件变更会由开发服务器更新；刷新页面可继续调试。',
         '关闭手机端窗口或按 Ctrl+C 将关闭全部窗口、清理临时数据库并退出。',
