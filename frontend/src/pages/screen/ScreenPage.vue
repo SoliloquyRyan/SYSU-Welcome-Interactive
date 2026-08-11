@@ -6,6 +6,7 @@ import { useRealtime } from '../../composables/useRealtime'
 import { useReducedMotion } from '../../composables/useReducedMotion'
 import { publicErrorMessage, screenApi } from '../../services/api'
 import { starTemperatureStyle } from '../../services/star-temperature'
+import { formationText, starFormationStyle } from '../../services/star-formation'
 import {
   createRefreshCoalescer,
   shouldCommitSnapshot,
@@ -18,6 +19,9 @@ const staleSince = ref(null)
 const giftEvents = ref([])
 const giftTimers = new Set()
 const reducedMotion = useReducedMotion()
+const selectedStarId = ref(null)
+const finalePhase = ref('idle')
+let finaleTimer = null
 
 async function refreshSnapshot() {
   try {
@@ -150,6 +154,14 @@ const cooperationPercent = computed(() => {
 })
 const visibleBarrages = computed(() => snapshot.value?.publishedBarrages?.slice(-14) ?? [])
 const visibleStars = computed(() => snapshot.value?.starNodes?.slice(0, 300) ?? [])
+const selectedStar = computed(() =>
+  visibleStars.value.find((star) => star.id === selectedStarId.value) ?? null,
+)
+const finaleIntensity = computed(() => {
+  const active = aggregates.value.activatedCount || 1
+  const averageStarlight = (aggregates.value.totalStarlight || 0) / active
+  return Math.min(1, Math.max(0.42, averageStarlight / 100))
+})
 const connectionTone = computed(() =>
   realtime.state.value === 'online' ? 'success' : realtime.state.value === 'offline' ? 'danger' : 'warning',
 )
@@ -173,10 +185,47 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => runtime.value?.status,
+  (status, previousStatus) => {
+    if (finaleTimer !== null) {
+      window.clearTimeout(finaleTimer)
+      finaleTimer = null
+    }
+    if (status !== 'COMPLETED') {
+      finalePhase.value = 'idle'
+      return
+    }
+    // When the screen is already open, retain the short closing animation.
+    // A newly opened screen at COMPLETED goes straight to the locked end card.
+    if (previousStatus && previousStatus !== 'COMPLETED' && !reducedMotion.value) {
+      finalePhase.value = 'gathering'
+      finaleTimer = window.setTimeout(() => {
+        finalePhase.value = 'locked'
+        finaleTimer = null
+      }, 5200)
+      return
+    }
+    finalePhase.value = 'locked'
+  },
+)
+
+function selectStar(starId) {
+  selectedStarId.value = selectedStarId.value === starId ? null : starId
+}
+
+function formationStyle(star, index) {
+  return {
+    ...starFormationStyle(star, index),
+    ...starTemperatureStyle(star.starTemperatureKelvin),
+  }
+}
+
 onBeforeUnmount(() => {
   realtimeRefresh.cancel()
   giftTimers.forEach((timer) => window.clearTimeout(timer))
   giftTimers.clear()
+  if (finaleTimer !== null) window.clearTimeout(finaleTimer)
 })
 </script>
 
@@ -212,7 +261,15 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="scene" :data-stage="runtime.stage" aria-label="现场阶段画面">
-        <section v-if="runtime.stage === 1" class="activation-scene" aria-labelledby="activation-title">
+        <section v-if="runtime.status === 'COMPLETED' && finalePhase === 'locked'" class="final-lock-scene" aria-labelledby="final-lock-title">
+          <p class="scene-kicker">INTELLIGENT ENGINEERING · 2026</p>
+          <div class="final-lock-scene__glow" aria-hidden="true"></div>
+          <h2 id="final-lock-title">智工星河<br />迎新晚会圆满结束</h2>
+          <p>每一束星光，都会成为下一段旅程的起点。</p>
+          <span>感谢 {{ aggregates.activatedCount }} 位新同学共同点亮今晚</span>
+        </section>
+
+        <section v-else-if="runtime.stage === 1" class="activation-scene" aria-labelledby="activation-title">
           <p class="scene-kicker">SIGNAL RECEIVED</p>
           <h2 id="activation-title">新的信标正在接入</h2>
           <strong class="hero-number">{{ aggregates.activatedCount }}</strong>
@@ -235,17 +292,24 @@ onBeforeUnmount(() => {
 
         <section v-else-if="runtime.stage === 3" class="star-scene" aria-labelledby="star-title">
           <div class="scene-title-row">
-            <div><p class="scene-kicker">STAR ASSEMBLY</p><h2 id="star-title">匿名星点正在集结</h2></div>
+            <div><p class="scene-kicker">STAR ASSEMBLY</p><h2 id="star-title">{{ formationText }} 启动仪式</h2></div>
             <strong>{{ aggregates.starStartedCount }} / {{ aggregates.starCreatedCount }}</strong>
           </div>
-          <div class="star-field" :class="{ static: reducedMotion }" aria-hidden="true" data-motion="decorative">
-            <i
-              v-for="star in visibleStars"
+          <p class="formation-instruction">星群正在汇入「{{ formationText }}」；点击任意星点可查看它的公开代号。</p>
+          <div class="formation-field" :class="{ static: reducedMotion }" aria-label="智工2026 星群集结">
+            <button
+              v-for="(star, index) in visibleStars"
               :key="star.id"
-              :class="{ started: star.started }"
-              :style="starTemperatureStyle(star.starTemperatureKelvin)"
-            ></i>
+              type="button"
+              class="formation-star"
+              :class="{ selected: selectedStarId === star.id, started: star.started }"
+              :style="formationStyle(star, index)"
+              :aria-label="`查看星号 ${star.id}`"
+              :aria-pressed="selectedStarId === star.id"
+              @click="selectStar(star.id)"
+            ></button>
           </div>
+          <p v-if="selectedStar" class="star-callout" role="status">公开星号 · {{ selectedStar.id }}</p>
           <p v-if="visibleStars.length === 0" class="empty-screen-state">等待参与者启动第一颗匿名星星</p>
         </section>
 
@@ -278,6 +342,26 @@ onBeforeUnmount(() => {
             <span :style="{ width: `${cooperationPercent}%` }"></span>
           </div>
           <p>{{ aggregates.cooperativeLightCount }} / {{ aggregates.eligibleParticipantCount }} 位有效参与者已点亮</p>
+        </section>
+
+        <section v-else-if="runtime.status === 'COMPLETED'" class="finale-formation" :style="{ '--finale-intensity': finaleIntensity }" aria-labelledby="finale-title">
+          <p class="scene-kicker">STARLIGHT FINALE</p>
+          <h2 id="finale-title">{{ formationText }}</h2>
+          <p>每一颗星都带着今晚积累的星光，正在共同闪耀。</p>
+          <div class="formation-field formation-field--finale" :class="{ static: reducedMotion }" aria-label="由星光点亮的智工2026">
+            <button
+              v-for="(star, index) in visibleStars"
+              :key="star.id"
+              type="button"
+              class="formation-star"
+              :class="{ selected: selectedStarId === star.id, started: star.started }"
+              :style="formationStyle(star, index)"
+              :aria-label="`查看星号 ${star.id}`"
+              :aria-pressed="selectedStarId === star.id"
+              @click="selectStar(star.id)"
+            ></button>
+          </div>
+          <p v-if="selectedStar" class="star-callout" role="status">公开星号 · {{ selectedStar.id }}</p>
         </section>
 
         <section v-else class="archive-scene" aria-labelledby="archive-title">
@@ -447,37 +531,64 @@ onBeforeUnmount(() => {
 
 .star-scene {
   display: grid;
-  grid-template-rows: auto 1fr;
-  gap: var(--space-5);
+  grid-template-rows: auto auto minmax(260px, 1fr) auto;
+  gap: var(--space-3);
 }
 
 .scene-title-row > strong {
   font-size: clamp(2rem, 4vw, 4rem);
 }
 
-.star-field {
-  display: grid;
-  grid-template-columns: repeat(20, minmax(4px, 1fr));
-  align-content: center;
-  gap: clamp(4px, 0.55vw, 10px);
+.formation-instruction {
+  margin: 0;
+  color: rgba(247, 243, 234, 0.72);
+  font-size: clamp(0.9rem, 1.4vw, 1.18rem);
 }
 
-.star-field i {
-  width: 100%;
-  aspect-ratio: 1;
-  border: 1px solid rgba(247, 243, 234, 0.35);
-  background: rgba(247, 243, 234, 0.12);
+.formation-field {
+  position: relative;
+  min-height: 270px;
+  overflow: hidden;
+  border: 1px solid rgba(247, 243, 234, 0.2);
+  background:
+    radial-gradient(ellipse at center, rgba(116, 137, 210, 0.13), transparent 58%),
+    rgba(4, 8, 20, 0.5);
 }
 
-.star-field i.started {
-  border-color: var(--star-temperature-color, var(--color-signal-orange));
+.formation-star {
+  position: absolute;
+  width: var(--star-size);
+  height: var(--star-size);
+  left: var(--star-x);
+  top: var(--star-y);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
   background: var(--star-temperature-color, var(--color-signal-orange));
-  box-shadow: 0 0 18px color-mix(in srgb, var(--star-temperature-color, var(--color-signal-orange)) 70%, transparent);
-  animation: signal-node-settle var(--motion-duration-slow) var(--motion-ease-emphasized) both;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--star-temperature-color, var(--color-signal-orange)) 88%, white), 0 0 22px color-mix(in srgb, var(--star-temperature-color, var(--color-signal-orange)) 62%, transparent);
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  animation: star-assemble 2.9s var(--motion-ease-emphasized) var(--star-delay) both;
 }
 
-.star-field.static i.started {
-  box-shadow: none;
+.formation-star.selected {
+  z-index: 2;
+  outline: 2px solid rgba(255, 255, 255, 0.94);
+  outline-offset: 4px;
+  box-shadow: 0 0 12px white, 0 0 32px var(--star-temperature-color);
+}
+
+.formation-field.static .formation-star {
+  animation: none;
+}
+
+.star-callout {
+  min-height: 1.5em;
+  margin: 0;
+  color: var(--color-on-dark);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.08em;
 }
 
 .program-scene {
@@ -608,6 +719,97 @@ onBeforeUnmount(() => {
 
 .archive-star-field.static i.started {
   animation: none;
+}
+
+.finale-formation {
+  display: grid;
+  grid-template-rows: auto auto minmax(300px, 1fr) auto;
+  align-content: center;
+  gap: var(--space-3);
+}
+
+.finale-formation > p:not(.scene-kicker, .star-callout) {
+  margin: 0;
+  color: rgba(247, 243, 234, 0.72);
+}
+
+.formation-field--finale {
+  min-height: 330px;
+  border-color: color-mix(in srgb, var(--color-signal-orange) 62%, rgba(247, 243, 234, 0.24));
+  box-shadow: 0 0 38px rgba(255, 193, 111, 0.22);
+}
+
+.formation-field--finale .formation-star {
+  opacity: calc(0.44 + var(--finale-intensity) * 0.56);
+  animation: star-assemble 2.9s var(--motion-ease-emphasized) var(--star-delay) both, finale-star-glow 1.8s ease-in-out 3.3s infinite alternate;
+}
+
+.formation-field--finale.static .formation-star {
+  animation: none;
+}
+
+.final-lock-scene {
+  position: relative;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  overflow: hidden;
+  text-align: center;
+}
+
+.final-lock-scene__glow {
+  position: absolute;
+  width: min(68vw, 760px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 219, 155, 0.24), rgba(139, 170, 255, 0.1) 38%, transparent 70%);
+  filter: blur(10px);
+}
+
+.final-lock-scene > *:not(.final-lock-scene__glow) {
+  position: relative;
+  z-index: 1;
+}
+
+.final-lock-scene h2 {
+  max-width: 12em;
+  margin: var(--space-2) 0 var(--space-4);
+  text-shadow: 0 0 32px rgba(255, 218, 153, 0.4);
+}
+
+.final-lock-scene p:not(.scene-kicker) {
+  margin: 0;
+  color: rgba(247, 243, 234, 0.78);
+  font-size: clamp(1rem, 1.8vw, 1.45rem);
+}
+
+.final-lock-scene span {
+  margin-top: var(--space-6);
+  color: var(--color-accent-on-dark);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.08em;
+}
+
+@keyframes star-assemble {
+  from {
+    opacity: 0;
+    left: calc(var(--star-x) + var(--star-from-x));
+    top: calc(var(--star-y) + var(--star-from-y));
+    transform: translate(-50%, -50%) scale(0.45);
+  }
+  72% { opacity: 1; }
+  to {
+    opacity: 1;
+    left: var(--star-x);
+    top: var(--star-y);
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes finale-star-glow {
+  from { filter: brightness(1); box-shadow: 0 0 10px var(--star-temperature-color), 0 0 22px color-mix(in srgb, var(--star-temperature-color) 58%, transparent); }
+  to { filter: brightness(1.85); box-shadow: 0 0 16px white, 0 0 48px var(--star-temperature-color); }
 }
 
 .screen-footer {

@@ -83,7 +83,7 @@ try {
   await page.getByLabel('虚构姓名').fill(participant.displayName)
   await page.getByLabel('六位 Demo 码').fill(participant.demoCode)
   await page.getByRole('button', { name: '进入现场' }).click()
-  await page.getByRole('heading', { name: '选择你的恒星色温' }).waitFor()
+  await page.getByRole('heading', { name: /欢迎.*进入智工星河/ }).waitFor()
 
   if (smokeMode) {
     await browser.close()
@@ -92,7 +92,8 @@ try {
       [
         '',
         `手机端动画预览已打开（${launched.label}，390×844）。`,
-        '页面停在“选择你的恒星色温”；点击“确认星色 · 进入星辰”即可查看入场动画。',
+        '页面停在 NFC 核验后的欢迎画面；点击“启动星程”进入恒星色温选择。',
+        '确认星色后，即可继续查看既有的星辰入轨过场与主界面。',
         '前端源文件变更会由开发服务器更新；刷新页面可继续调试。',
         '关闭浏览器或按 Ctrl+C 将清理临时数据库并退出。',
         '',

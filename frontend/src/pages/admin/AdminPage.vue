@@ -295,7 +295,7 @@ function runtimeAction(action, options = {}) {
     PAUSE: '暂停互动',
     RESUME: '恢复互动',
     ADVANCE: '推进到下一阶段',
-    COMPLETE: '结束活动',
+    COMPLETE: '结束活动并播放星河收束',
   }
   const needsConfirm = ['ADVANCE', 'COMPLETE'].includes(action)
   if (needsConfirm && !window.confirm(`确认${labels[action]}？`)) return
@@ -502,7 +502,7 @@ onMounted(boot)
               <BaseButton :disabled="!canControl || !hasRole('STAGE_CONTROLLER') || runtime.status !== 'RUNNING'" @click="runtimeAction('PAUSE')">暂停互动</BaseButton>
               <BaseButton :disabled="!canControl || !hasRole('STAGE_CONTROLLER') || runtime.status !== 'PAUSED'" @click="runtimeAction('RESUME')">恢复</BaseButton>
               <BaseButton :disabled="!canControl || !hasRole('STAGE_CONTROLLER') || runtime.mode !== 'LIVE' || runtime.status !== 'RUNNING' || runtime.stage >= 6" @click="runtimeAction('ADVANCE')">现场推进</BaseButton>
-              <BaseButton variant="danger" :disabled="!canControl || !hasRole('STAGE_CONTROLLER') || runtime.stage !== 6 || runtime.status !== 'RUNNING'" @click="runtimeAction('COMPLETE')">结束活动</BaseButton>
+              <BaseButton variant="danger" :disabled="!canControl || !hasRole('STAGE_CONTROLLER') || runtime.stage !== 6 || runtime.status !== 'RUNNING'" @click="runtimeAction('COMPLETE')">结束并播放星河收束</BaseButton>
             </div>
             <label for="target-stage">排练跳转阶段</label>
             <div class="control-row">
