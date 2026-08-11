@@ -8,7 +8,7 @@ import { expect } from './test.js'
 
 const STAGE_NAMES = [
   '身份激活',
-  '未来寄语',
+  '时光胶囊',
   '星星集结',
   '节目应援',
   '协同点亮',
@@ -53,8 +53,38 @@ export async function activateParticipant(
   await page.getByLabel('虚构姓名').fill(participant.displayName)
   await page.getByLabel('六位 Demo 码').fill(participant.demoCode)
   await page.getByRole('button', { name: '进入现场' }).click()
-  await expect(page.getByRole('button', { name: '退出' })).toBeVisible()
+  const confirmTemperature = page.getByRole('button', {
+    name: '确认星色 · 进入星辰',
+  })
+  const exitButton = page.getByRole('button', { name: '退出' })
+  await expect(confirmTemperature.or(exitButton)).toBeVisible()
+  if (await confirmTemperature.isVisible()) {
+    await selectStarTemperature(page)
+  }
+  await expect(exitButton).toBeVisible()
   await expect(page.getByText('实时同步', { exact: true })).toBeVisible()
+}
+
+export async function selectStarTemperature(
+  page: Page,
+  kelvin = 5800,
+): Promise<void> {
+  await expect(
+    page.getByRole('heading', { name: '选择你的恒星色温' }),
+  ).toBeVisible()
+  const range = page.getByRole('slider', { name: '恒星色温' })
+  await range.evaluate((element, nextKelvin) => {
+    const input = element as HTMLInputElement
+    input.value = String(nextKelvin)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }, kelvin)
+  await expect(page.locator('output[for="star-temperature"]')).toContainText(
+    kelvin.toLocaleString('zh-CN'),
+  )
+  await page
+    .getByRole('button', { name: '确认星色 · 进入星辰' })
+    .click()
+  await expect(page.getByRole('button', { name: '退出' })).toBeVisible()
 }
 
 export async function loginAdmin(

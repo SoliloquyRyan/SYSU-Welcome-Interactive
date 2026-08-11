@@ -82,10 +82,13 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     await expect(screenPage.getByText('减少动态效果', { exact: true })).toBeVisible()
     await activateParticipant(participantPage, demo)
 
-    checkpoint = 'save-private-message'
-    const privateMessage = `私密-${crypto.randomUUID()}`
-    await participantPage.getByLabel('私密未来寄语').fill(privateMessage)
-    await participantPage.getByRole('button', { name: '保存私密寄语' }).click()
+    checkpoint = 'submit-capsule-message'
+    const capsuleMessage = `胶囊-${crypto.randomUUID()}`
+    await participantPage.getByLabel('时光胶囊留言').fill(capsuleMessage)
+    await participantPage
+      .getByRole('checkbox', { name: /人工筛选候选池/u })
+      .check()
+    await participantPage.getByRole('button', { name: '提交时光胶囊' }).click()
     await expect(participantPage.locator('.value-grid')).toContainText('40 / 100')
 
     checkpoint = 'admin-start-rehearsal'
@@ -94,7 +97,7 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     await expectNoForbiddenDomText(
       [adminPage, screenPage],
       [
-        privateMessage,
+        capsuleMessage,
         demo.credentials.participant.displayName,
         demo.credentials.participant.demoCode,
         demo.credentials.participant.inviteToken,
@@ -104,9 +107,9 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
 
     checkpoint = 'stage-2'
     await jumpToStage(adminPage, 2)
-    await expectStage(participantPage, '未来寄语')
-    await expectStage(screenPage, '未来寄语')
-    await expectNoForbiddenDomText([adminPage, screenPage], [privateMessage])
+    await expectStage(participantPage, '时光胶囊')
+    await expectStage(screenPage, '时光胶囊')
+    await expectNoForbiddenDomText([adminPage, screenPage], [capsuleMessage])
 
     checkpoint = 'stage-3'
     await jumpToStage(adminPage, 3)
@@ -129,7 +132,10 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     await expectStage(screenPage, '节目应援')
     await adminPage.getByLabel('当前节目').selectOption('program-001')
     await adminPage.getByRole('button', { name: '设为当前' }).click()
-    await participantPage.getByRole('button', { name: '节目', exact: true }).click()
+    await participantPage.getByRole('button', { name: '节目单', exact: true }).click()
+    await expect(participantPage.getByRole('heading', { name: '轨道序章' })).toBeVisible()
+    await participantPage.getByRole('button', { name: '星程', exact: true }).click()
+    await participantPage.getByRole('button', { name: '礼物' }).click()
     await participantPage.getByRole('button', { name: '微光 · 5' }).click()
     await expect(participantPage.locator('.value-grid .power')).toHaveText('95')
     await expect(participantPage.locator('.value-grid .starlight')).toHaveText(
@@ -272,7 +278,7 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
 
     checkpoint = 'stage-5'
     await jumpToStage(adminPage, 5)
-    await participantPage.getByRole('button', { name: '现场', exact: true }).click()
+    await participantPage.getByRole('button', { name: '星程', exact: true }).click()
     await expectStage(participantPage, '协同点亮')
     await participantPage.getByRole('button', { name: '参与全场点亮' }).click()
     await expect(participantPage.locator('.value-grid .starlight')).toHaveText(
@@ -296,7 +302,7 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     await expect(archive).toContainText('互动次数6')
     await expect(archive).toContainText('礼物次数1')
     await expect(archive).toContainText('公开弹幕3')
-    await expect(archive).toContainText(privateMessage)
+    await expect(archive).toContainText(capsuleMessage)
     const collective = screenPage.locator('.archive-metrics')
     await expect(collective).toContainText('激活人数1')
     await expect(collective).toContainText('星光总量100')
@@ -306,7 +312,7 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     await expectNoForbiddenDomText(
       [adminPage, screenPage],
       [
-        privateMessage,
+        capsuleMessage,
         demo.credentials.participant.displayName,
         demo.credentials.participant.demoCode,
         demo.credentials.participant.inviteToken,

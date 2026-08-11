@@ -111,7 +111,7 @@ export function requireParticipantStage(
   }
 }
 
-export function requireFutureMessageStage(runtime: RuntimeContext): void {
+export function requireCapsuleMessageStage(runtime: RuntimeContext): void {
   if (runtime.status === 'PAUSED') {
     throw new ApiError(
       'RUNTIME_PAUSED',
@@ -126,7 +126,7 @@ export function requireFutureMessageStage(runtime: RuntimeContext): void {
   if (!allowed) {
     throw new ApiError(
       'STAGE_LOCKED',
-      '当前阶段不能保存未来寄语。',
+      '当前阶段不能提交时光胶囊。',
       409,
       runtime,
     )
@@ -272,9 +272,13 @@ export function readParticipantSnapshot(
     .prepare(
       `SELECT p.identity_id AS id, i.display_name AS displayName,
               i.public_star_id AS publicStarId, i.visual_seed AS visualSeed,
+              p.star_temperature_kelvin AS starTemperatureKelvin,
+              p.star_temperature_locked_at AS starTemperatureLockedAt,
               p.power_balance AS powerBalance, p.starlight,
-              p.activated_at AS activatedAt, p.future_message AS futureMessage,
-              p.future_message_saved_at AS futureMessageSavedAt,
+              p.activated_at AS activatedAt, p.capsule_message AS capsuleMessage,
+              p.capsule_message_submitted_at AS capsuleMessageSubmittedAt,
+              p.capsule_public_notice_at AS capsulePublicNoticeAt,
+              p.capsule_candidate_status AS capsuleCandidateStatus,
               p.star_started_at AS starStartedAt,
               p.first_gift_at AS firstGiftAt,
               p.first_barrage_at AS firstBarrageAt,
@@ -295,11 +299,21 @@ export function readParticipantSnapshot(
         displayName: string
         publicStarId: string
         visualSeed: string
+        starTemperatureKelvin: number | null
+        starTemperatureLockedAt: string | null
         powerBalance: number
         starlight: number
         activatedAt: string
-        futureMessage: string | null
-        futureMessageSavedAt: string | null
+        capsuleMessage: string | null
+        capsuleMessageSubmittedAt: string | null
+        capsulePublicNoticeAt: string | null
+        capsuleCandidateStatus:
+          | 'NOT_SUBMITTED'
+          | 'LEGACY_PRIVATE'
+          | 'SUBMITTED'
+          | 'SELECTED'
+          | 'DISPLAYED'
+          | 'REMOVED'
         starStartedAt: string | null
         firstGiftAt: string | null
         firstBarrageAt: string | null
@@ -349,11 +363,17 @@ export function readParticipantSnapshot(
       displayName: participant.displayName,
       publicStarId: participant.publicStarId,
       visualSeed: participant.visualSeed,
+      starTemperatureKelvin: participant.starTemperatureKelvin,
+      starTemperatureLocked: participant.starTemperatureLockedAt !== null,
       powerBalance: participant.powerBalance,
       starlight: participant.starlight,
       activatedAt: participant.activatedAt,
-      futureMessage: participant.futureMessage,
-      futureMessageSaved: participant.futureMessageSavedAt !== null,
+      capsuleMessage: participant.capsuleMessage,
+      capsuleMessageSubmitted:
+        participant.capsuleCandidateStatus !== 'NOT_SUBMITTED'
+        && participant.capsuleCandidateStatus !== 'LEGACY_PRIVATE',
+      capsulePublicNoticeAccepted: participant.capsulePublicNoticeAt !== null,
+      capsuleCandidateStatus: participant.capsuleCandidateStatus,
       starStarted: participant.starStartedAt !== null,
       firstGiftCompleted: participant.firstGiftAt !== null,
       firstBarrageCompleted: participant.firstBarrageAt !== null,

@@ -4,6 +4,7 @@ import {
   activateParticipant,
   expectMinimumControlSize,
   openInvitation,
+  selectStarTemperature,
 } from './support/demo-actions.js'
 import { expect, test } from './support/test.js'
 
@@ -45,13 +46,34 @@ test('cleans the invitation token and restores one participant across mobile dev
     })
     expect(focusOutlineVisible).toBe(true)
     await submitButton.click()
+    await expect(
+      firstPage.getByRole('heading', { name: '选择你的恒星色温' }),
+    ).toBeVisible()
+    await expectMinimumControlSize(
+      firstPage.getByRole('slider', { name: '恒星色温' }),
+    )
+    await selectStarTemperature(firstPage, 7350)
     await expect(firstPage.getByRole('button', { name: '退出' })).toBeVisible()
     await expect(firstPage.getByText('实时同步', { exact: true })).toBeVisible()
 
-    const privateMessage = `私密-${crypto.randomUUID()}`
-    await firstPage.getByLabel('私密未来寄语').fill(privateMessage)
-    await firstPage.getByRole('button', { name: '保存私密寄语' }).click()
-    await expect(firstPage.getByText('私密寄语已保存，仅你本人可在档案中查看。')).toBeVisible()
+    const capsuleMessage = `胶囊-${crypto.randomUUID()}`
+    await firstPage.getByLabel('时光胶囊留言').fill(capsuleMessage)
+    const noticeCheckbox = firstPage.getByRole('checkbox', {
+      name: /人工筛选候选池/u,
+    })
+    const saveButton = firstPage.getByRole('button', { name: '提交时光胶囊' })
+    await expect(saveButton).toBeDisabled()
+    await noticeCheckbox.check()
+    await expect(saveButton).toBeEnabled()
+    const saveResponsePromise = firstPage.waitForResponse(
+      (response) =>
+        response.request().method() === 'PUT'
+        && new URL(response.url()).pathname === '/api/participant/capsule-message',
+      { timeout: 10_000 },
+    )
+    await saveButton.click()
+    expect((await saveResponsePromise).status()).toBe(200)
+    await expect(firstPage.getByText('时光胶囊已提交，现已进入人工筛选候选池。')).toBeVisible()
     await expect(firstPage.locator('.value-grid')).toContainText('40 / 100')
     const firstStarId = await firstPage
       .locator('.participant-bar > div > span')
@@ -61,9 +83,12 @@ test('cleans the invitation token and restores one participant across mobile dev
     await expect(firstPage.getByRole('button', { name: '退出' })).toBeVisible()
     expect(new URL(firstPage.url()).searchParams.has('token')).toBe(false)
     expect(
-      (await firstPage.getByLabel('私密未来寄语').inputValue()) ===
-        privateMessage,
+      (await firstPage.getByLabel('时光胶囊留言').inputValue()) ===
+        capsuleMessage,
     ).toBe(true)
+    await expect(
+      firstPage.getByRole('checkbox', { name: /人工筛选候选池/u }),
+    ).toBeChecked()
     const mobileOverflow = await firstPage.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth,
     )
@@ -82,13 +107,78 @@ test('cleans the invitation token and restores one participant across mobile dev
         firstStarId,
     ).toBe(true)
     expect(
-      (await secondPage.getByLabel('私密未来寄语').inputValue()) ===
-        privateMessage,
+      (await secondPage.getByLabel('时光胶囊留言').inputValue()) ===
+        capsuleMessage,
     ).toBe(true)
     await expect(secondPage.locator('.value-grid')).toContainText('40 / 100')
+    await secondPage.getByRole('button', { name: '档案' }).click()
+    await expect(secondPage.locator('.archive-card')).toContainText('7,350 K')
     expect(new URL(secondPage.url()).searchParams.has('token')).toBe(false)
   } finally {
     await secondContext?.close()
     await firstContext?.close()
+  }
+})
+
+test('moves the selected star into the capsule without page scrolling', async ({
+  browser,
+  demo,
+}) => {
+  let context: BrowserContext | null = null
+  try {
+    context = await browser.newContext({
+      baseURL: demo.baseURL,
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+      reducedMotion: 'no-preference',
+    })
+    const page = await context.newPage()
+    await openInvitation(page, demo)
+    await page.getByLabel('虚构姓名').fill(demo.credentials.participant.displayName)
+    await page.getByLabel('六位 Demo 码').fill(demo.credentials.participant.demoCode)
+    await page.getByRole('button', { name: '进入现场' }).click()
+
+    await page.getByRole('slider', { name: '恒星色温' }).evaluate((element) => {
+      const input = element as HTMLInputElement
+      input.value = '7350'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await page.getByRole('button', { name: '确认星色 · 进入星辰' }).click()
+    await expect(
+      page.getByRole('heading', { name: '你的星辰正在进入轨道' }),
+    ).toBeVisible()
+    await expectMinimumControlSize(
+      page.getByRole('button', { name: '跳过过场' }),
+    )
+    await page.getByRole('button', { name: '跳过过场' }).click()
+
+    const submitButton = page.getByRole('button', { name: '提交时光胶囊' })
+    await page.getByLabel('时光胶囊留言').fill('写给此刻，也写给共同抵达的我们。')
+    await expect(submitButton).toBeDisabled()
+    await page.getByRole('checkbox', { name: /人工筛选候选池/u }).check()
+    await expect(submitButton).toBeEnabled()
+    await expectMinimumControlSize(submitButton)
+
+    const viewport = await page.evaluate(() => {
+      const submit = [...document.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('提交时光胶囊'),
+      )
+      const box = submit?.getBoundingClientRect()
+      return {
+        widthOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        heightOverflow: document.documentElement.scrollHeight - window.innerHeight,
+        submitVisible: Boolean(
+          box && box.top >= 0 && box.bottom <= window.innerHeight,
+        ),
+      }
+    })
+    expect(viewport).toEqual({
+      widthOverflow: 0,
+      heightOverflow: 0,
+      submitVisible: true,
+    })
+  } finally {
+    await context?.close()
   }
 })

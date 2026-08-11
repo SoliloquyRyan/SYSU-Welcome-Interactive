@@ -63,12 +63,18 @@ export function readScreenSnapshot(
   const starNodes = database
     .prepare(
       `SELECT i.public_star_id AS id, i.visual_seed AS visualSeed,
+              p.star_temperature_kelvin AS starTemperatureKelvin,
               CASE WHEN p.star_started_at IS NULL THEN 0 ELSE 1 END AS started
        FROM participant_states p
        JOIN synthetic_identities i ON i.id = p.identity_id
        ORDER BY i.seed_index`,
     )
-    .all() as Array<{ id: string; visualSeed: string; started: number }>
+    .all() as Array<{
+      id: string
+      visualSeed: string
+      starTemperatureKelvin: number | null
+      started: number
+    }>
   const publishedBarrages = database
     .prepare(
       `SELECT id, text, display_seq AS displaySeq,
@@ -104,6 +110,7 @@ export function readScreenSnapshot(
     starNodes: starNodes.map((node) => ({
       id: node.id,
       visualSeed: node.visualSeed,
+      starTemperatureKelvin: node.starTemperatureKelvin,
       started: node.started === 1,
     })),
     publishedBarrages: publishedBarrages.reverse(),

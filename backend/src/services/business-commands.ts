@@ -43,7 +43,7 @@ import {
   readParticipantSnapshot,
   readRuntimeContext,
   requireAdminRole,
-  requireFutureMessageStage,
+  requireCapsuleMessageStage,
   requireParticipantStage,
 } from './business-state.js'
 
@@ -74,7 +74,7 @@ function insertLedger(
     businessKey: string
     reason:
       | 'ACTIVATION'
-      | 'FUTURE_MESSAGE'
+      | 'CAPSULE_MESSAGE'
       | 'STAR_STARTED'
       | 'FIRST_GIFT'
       | 'FIRST_BARRAGE'
@@ -249,11 +249,15 @@ export function activateParticipant(
           .prepare(
             `INSERT INTO participant_states (
                identity_id, source_id, power_balance, starlight,
-               future_message, future_message_saved_at,
+               capsule_message, capsule_message_submitted_at,
+               capsule_public_notice_at, capsule_candidate_status,
                star_created_at, star_started_at, first_gift_at,
                first_barrage_at, cooperative_light_at,
                activated_at, updated_at
-             ) VALUES (?, ?, 100, 20, NULL, NULL, ?, NULL, NULL, NULL, NULL, ?, ?)`,
+             ) VALUES (
+               ?, ?, 100, 20, NULL, NULL, NULL, 'NOT_SUBMITTED',
+               ?, NULL, NULL, NULL, NULL, ?, ?
+             )`,
           )
           .run(
             identity.id,
@@ -383,50 +387,59 @@ function participantCommand(
   return result
 }
 
-export function saveFutureMessage(
+export function submitCapsuleMessage(
   database: SqliteDatabase,
   session: AuthenticatedSession,
-  request: Version & { text: string },
+  request: Version & { text: string; publicDisplayNoticeAccepted: true },
   key: string,
   now: Date = new Date(),
 ) {
   return participantCommand(
     database,
     session,
-    'participant:future-message',
+    'participant:capsule-message',
     key,
     request,
     now,
     ({ now: commandNow, runtime }) => {
-      requireFutureMessageStage(runtime)
+      requireCapsuleMessageStage(runtime)
       const timestamp = commandNow.toISOString()
       const state = database
         .prepare(
           `SELECT power_balance AS powerBalance, starlight,
-                  future_message_saved_at AS savedAt
+                  capsule_message_submitted_at AS submittedAt
            FROM participant_states WHERE identity_id = ?`,
         )
         .get(session.subjectId) as {
         powerBalance: number
         starlight: number
-        savedAt: string | null
+        submittedAt: string | null
       }
-      const reward = state.savedAt === null ? 20 : 0
+      const reward = state.submittedAt === null ? 20 : 0
       const nextStarlight = Math.min(100, state.starlight + reward)
       database
         .prepare(
           `UPDATE participant_states
-           SET future_message = ?,
-               future_message_saved_at = COALESCE(future_message_saved_at, ?),
+           SET capsule_message = ?,
+               capsule_message_submitted_at = COALESCE(capsule_message_submitted_at, ?),
+               capsule_public_notice_at = COALESCE(capsule_public_notice_at, ?),
+               capsule_candidate_status = 'SUBMITTED',
                starlight = ?, updated_at = ?
            WHERE identity_id = ?`,
         )
-        .run(request.text, timestamp, nextStarlight, timestamp, session.subjectId)
+        .run(
+          request.text,
+          timestamp,
+          timestamp,
+          nextStarlight,
+          timestamp,
+          session.subjectId,
+        )
       if (reward > 0) {
         insertLedger(database, {
           identityId: session.subjectId,
-          businessKey: `reward:future-message:${session.subjectId}`,
-          reason: 'FUTURE_MESSAGE',
+          businessKey: `reward:capsule-message:${session.subjectId}`,
+          reason: 'CAPSULE_MESSAGE',
           starlightDelta: reward,
           powerAfter: state.powerBalance,
           starlightAfter: nextStarlight,
@@ -435,7 +448,60 @@ export function saveFutureMessage(
         return [aggregateEvent(database, timestamp)]
       }
       // The event contains only anonymous totals and prompts another device
-      // belonging to the same participant to refresh its private snapshot.
+      // belonging to the same participant to refresh its capsule snapshot.
+      return [aggregateEvent(database, timestamp)]
+    },
+  )
+}
+
+export function lockStarTemperature(
+  database: SqliteDatabase,
+  session: AuthenticatedSession,
+  request: Version & { temperatureKelvin: number },
+  key: string,
+  now: Date = new Date(),
+) {
+  return participantCommand(
+    database,
+    session,
+    'participant:star-temperature',
+    key,
+    request,
+    now,
+    ({ now: commandNow, runtime }) => {
+      const state = database
+        .prepare(
+          `SELECT star_temperature_kelvin AS temperatureKelvin,
+                  star_temperature_locked_at AS lockedAt
+           FROM participant_states WHERE identity_id = ?`,
+        )
+        .get(session.subjectId) as {
+        temperatureKelvin: number | null
+        lockedAt: string | null
+      }
+      if (state.lockedAt !== null) {
+        if (state.temperatureKelvin === request.temperatureKelvin) return []
+        throw new ApiError(
+          'STAR_TEMPERATURE_LOCKED',
+          '本场活动的恒星色温已经确认，重置 Demo 后才能重新选择。',
+          409,
+          runtime,
+        )
+      }
+      const timestamp = commandNow.toISOString()
+      database
+        .prepare(
+          `UPDATE participant_states
+           SET star_temperature_kelvin = ?,
+               star_temperature_locked_at = ?, updated_at = ?
+           WHERE identity_id = ? AND star_temperature_locked_at IS NULL`,
+        )
+        .run(
+          request.temperatureKelvin,
+          timestamp,
+          timestamp,
+          session.subjectId,
+        )
       return [aggregateEvent(database, timestamp)]
     },
   )

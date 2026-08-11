@@ -93,8 +93,11 @@ export const participantApi = {
   logout(idempotencyKey) {
     return write('/api/participant/logout', 'POST', {}, idempotencyKey)
   },
-  saveFutureMessage(body, idempotencyKey) {
-    return write('/api/participant/future-message', 'PUT', body, idempotencyKey)
+  submitCapsuleMessage(body, idempotencyKey) {
+    return write('/api/participant/capsule-message', 'PUT', body, idempotencyKey)
+  },
+  lockStarTemperature(body, idempotencyKey) {
+    return write('/api/participant/star-temperature', 'PUT', body, idempotencyKey)
   },
   startStar(body, idempotencyKey) {
     return write('/api/participant/star/start', 'POST', body, idempotencyKey)
@@ -167,6 +170,7 @@ export function publicErrorMessage(error) {
     RESET_EPOCH_CHANGED: 'Demo 已重置，请重新进入。',
     RUNTIME_PAUSED: '现场互动已暂停。',
     STAGE_LOCKED: '该任务当前尚未开放。',
+    STAR_TEMPERATURE_LOCKED: '本场活动的恒星色温已经确认。',
     INSUFFICIENT_BALANCE: '动力值余额不足。',
     CONTENT_REJECTED: error.message,
     SOURCE_BLOCKED: '当前入口已暂停发送公开弹幕。',

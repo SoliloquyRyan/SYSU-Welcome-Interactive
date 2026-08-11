@@ -660,11 +660,12 @@ describe('G2 committed WebSocket facts and high-water recovery', () => {
     const firstSave = await harness.unsafeRequest(
       {
         method: 'PUT',
-        url: '/api/participant/future-message',
+        url: '/api/participant/capsule-message',
         headers: { 'idempotency-key': idempotencyKey('private-recovery', 1) },
         payload: {
           ...commandVersion(initial),
           text: '断线期间保存的合成寄语',
+          publicDisplayNoticeAccepted: true,
         },
       },
       activation.cookie,
@@ -684,8 +685,8 @@ describe('G2 committed WebSocket facts and high-water recovery', () => {
     )
     expect(recovered.eventSeq).toBe(committed.eventSeq)
     expect(recovered.participant).toMatchObject({
-      futureMessage: '断线期间保存的合成寄语',
-      futureMessageSaved: true,
+      capsuleMessage: '断线期间保存的合成寄语',
+      capsuleMessageSubmitted: true,
       starlight: 40,
     })
 
@@ -704,11 +705,12 @@ describe('G2 committed WebSocket facts and high-water recovery', () => {
     const secondSave = await harness.unsafeRequest(
       {
         method: 'PUT',
-        url: '/api/participant/future-message',
+        url: '/api/participant/capsule-message',
         headers: { 'idempotency-key': idempotencyKey('private-recovery', 2) },
         payload: {
           ...commandVersion(recovered),
           text: '恢复连接后的更新寄语',
+          publicDisplayNoticeAccepted: true,
         },
       },
       activation.cookie,
@@ -725,7 +727,7 @@ describe('G2 committed WebSocket facts and high-water recovery', () => {
     })
     expect(
       ParticipantSnapshotSchema.parse(secondSave.json()).participant
-        .futureMessage,
+        .capsuleMessage,
     ).toBe('恢复连接后的更新寄语')
     resumedSocket.close()
   })

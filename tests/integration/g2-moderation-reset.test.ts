@@ -526,8 +526,12 @@ describe('G2 deterministic barrage moderation and complete reset', () => {
     expect(restored.participant).toMatchObject({
       powerBalance: 100,
       starlight: 20,
-      futureMessage: null,
-      futureMessageSaved: false,
+      capsuleMessage: null,
+      capsuleMessageSubmitted: false,
+      capsulePublicNoticeAccepted: false,
+      capsuleCandidateStatus: 'NOT_SUBMITTED',
+      starTemperatureKelvin: null,
+      starTemperatureLocked: false,
       starStarted: false,
       firstGiftCompleted: false,
       firstBarrageCompleted: false,
@@ -538,9 +542,13 @@ describe('G2 deterministic barrage moderation and complete reset', () => {
     const staleEpoch = await harness.unsafeRequest(
       {
         method: 'PUT',
-        url: '/api/participant/future-message',
+        url: '/api/participant/capsule-message',
         headers: { 'idempotency-key': idempotencyKey('old-reset-epoch') },
-        payload: { ...oldParticipantVersion, text: '旧 epoch 写入' },
+        payload: {
+          ...oldParticipantVersion,
+          text: '旧 epoch 写入',
+          publicDisplayNoticeAccepted: true,
+        },
       },
       reactivated.cookie,
     )

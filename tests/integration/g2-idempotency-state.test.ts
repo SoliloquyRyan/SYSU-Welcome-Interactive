@@ -212,11 +212,12 @@ describe('G2 runtime state machine and idempotent transactions', () => {
     const pausedWrite = await harness.unsafeRequest(
       {
         method: 'PUT',
-        url: '/api/participant/future-message',
+        url: '/api/participant/capsule-message',
         headers: { 'idempotency-key': idempotencyKey('paused-write') },
         payload: {
           ...commandVersion(snapshot),
           text: '暂停时不得写入',
+          publicDisplayNoticeAccepted: true,
         },
       },
       participant.cookie,

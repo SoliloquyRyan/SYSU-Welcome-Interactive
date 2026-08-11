@@ -51,8 +51,16 @@ interface ParticipantSnapshot {
     id: string
     powerBalance: number
     starlight: number
-    futureMessage: string | null
-    futureMessageSaved: boolean
+    capsuleMessage: string | null
+    capsuleMessageSubmitted: boolean
+    capsulePublicNoticeAccepted: boolean
+    capsuleCandidateStatus:
+      | 'NOT_SUBMITTED'
+      | 'LEGACY_PRIVATE'
+      | 'SUBMITTED'
+      | 'SELECTED'
+      | 'DISPLAYED'
+      | 'REMOVED'
     starStarted: boolean
     firstGiftCompleted: boolean
     firstBarrageCompleted: boolean
@@ -155,7 +163,9 @@ function asParticipantSnapshot(value: unknown): ParticipantSnapshot {
       typeof participant.id === 'string' &&
       typeof participant.powerBalance === 'number' &&
       typeof participant.starlight === 'number' &&
-      typeof participant.futureMessageSaved === 'boolean' &&
+      typeof participant.capsuleMessageSubmitted === 'boolean' &&
+      typeof participant.capsulePublicNoticeAccepted === 'boolean' &&
+      typeof participant.capsuleCandidateStatus === 'string' &&
       typeof participant.starStarted === 'boolean' &&
       typeof participant.firstGiftCompleted === 'boolean' &&
       typeof participant.firstBarrageCompleted === 'boolean' &&
@@ -764,7 +774,10 @@ function readInvariants(fixture: LoadFixture): InvariantReport {
       wrongParticipantStateCount: scalar(
         `SELECT COUNT(*) AS count FROM participant_states
          WHERE power_balance <> 15 OR starlight <> 100
-            OR future_message_saved_at IS NULL OR star_started_at IS NULL
+            OR capsule_message_submitted_at IS NULL
+            OR capsule_public_notice_at IS NULL
+            OR capsule_candidate_status <> 'SUBMITTED'
+            OR star_started_at IS NULL
             OR first_gift_at IS NULL OR first_barrage_at IS NULL
             OR cooperative_light_at IS NULL`,
       ),
@@ -959,7 +972,7 @@ async function run(): Promise<void> {
   const failures: FailureCounts = {}
   const recorders = {
     activation: new OperationRecorder(),
-    futureMessage: new OperationRecorder(),
+    capsuleMessage: new OperationRecorder(),
     stage: new OperationRecorder(),
     star: new OperationRecorder(),
     gift: new OperationRecorder(),
@@ -1135,13 +1148,14 @@ async function run(): Promise<void> {
       const body = {
         ...stageOneVersion,
         text: `合成寄语 ${String(participant.index + 1).padStart(3, '0')}`,
+        publicDisplayNoticeAccepted: true,
       }
-      const key = idempotencyKey('future-message', participant.index)
+      const key = idempotencyKey('capsule-message', participant.index)
       try {
         const response = await (fixture as LoadFixture).request(
-          'future-message',
+          'capsule-message',
           'PUT',
-          '/api/participant/future-message',
+          '/api/participant/capsule-message',
           { cookie: participant.cookie, idempotencyKey: key, body },
         )
         const snapshot = asParticipantSnapshot(response.body)
@@ -1151,22 +1165,22 @@ async function run(): Promise<void> {
           (screenObserver as ScreenAuthorityObserver).waitFor(snapshot.eventSeq),
           ownObserver.waitForPrivate(snapshot.eventSeq),
         ])
-        recorders.futureMessage.success(
+        recorders.capsuleMessage.success(
           Math.max(performance.now(), screenAt, participantAt) - operationStarted,
         )
         if (participant.index === 0) {
           replaySamples.push({
-            operation: 'futureMessage',
+            operation: 'capsuleMessage',
             method: 'PUT',
-            requestPath: '/api/participant/future-message',
+            requestPath: '/api/participant/capsule-message',
             cookie: participant.cookie,
             idempotencyKey: key,
             body,
           })
         }
       } catch (error) {
-        recorders.futureMessage.failure()
-        recordFailure(failures, 'futureMessage', error)
+        recorders.capsuleMessage.failure()
+        recordFailure(failures, 'capsuleMessage', error)
       }
     })
 
@@ -1503,8 +1517,10 @@ async function run(): Promise<void> {
           snapshot.participant.id === participant.identityId &&
             snapshot.participant.powerBalance === 15 &&
             snapshot.participant.starlight === 100 &&
-            snapshot.participant.futureMessageSaved &&
-            snapshot.participant.futureMessage !== null &&
+            snapshot.participant.capsuleMessageSubmitted &&
+            snapshot.participant.capsulePublicNoticeAccepted &&
+            snapshot.participant.capsuleCandidateStatus === 'SUBMITTED' &&
+            snapshot.participant.capsuleMessage !== null &&
             snapshot.participant.starStarted &&
             snapshot.participant.firstGiftCompleted &&
             snapshot.participant.firstBarrageCompleted &&

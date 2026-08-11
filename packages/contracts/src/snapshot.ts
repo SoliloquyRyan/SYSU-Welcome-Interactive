@@ -4,6 +4,7 @@ import {
   EventSequenceSchema,
   IsoDateTimeSchema,
   ProtocolVersionSchema,
+  StarTemperatureKelvinSchema,
 } from './primitives.js'
 import { RuntimeSnapshotSchema } from './runtime.js'
 
@@ -41,6 +42,7 @@ export const ScreenStarNodeSchema = z
   .object({
     id: z.string().min(1).max(40),
     visualSeed: z.string().regex(/^[a-f0-9]{32}$/),
+    starTemperatureKelvin: StarTemperatureKelvinSchema.nullable(),
     started: z.boolean(),
   })
   .strict()

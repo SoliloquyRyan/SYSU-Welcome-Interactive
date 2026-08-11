@@ -157,13 +157,16 @@ test('enforces the admin boundary and the LIVE forward-only control lifecycle', 
     })
     const participantPage = await participantContext.newPage()
     await activateParticipant(participantPage, demo)
-    const privateMessage = `私密-${crypto.randomUUID()}`
-    await participantPage.getByLabel('私密未来寄语').fill(privateMessage)
+    const capsuleMessage = `胶囊-${crypto.randomUUID()}`
+    await participantPage.getByLabel('时光胶囊留言').fill(capsuleMessage)
     await participantPage
-      .getByRole('button', { name: '保存私密寄语' })
+      .getByRole('checkbox', { name: /人工筛选候选池/u })
+      .check()
+    await participantPage
+      .getByRole('button', { name: '提交时光胶囊' })
       .click()
     await expect(
-      participantPage.getByText('私密寄语已保存，仅你本人可在档案中查看。'),
+      participantPage.getByText('时光胶囊已提交，现已进入人工筛选候选池。'),
     ).toBeVisible()
 
     await loginAdmin(adminPage, demo)
@@ -318,7 +321,7 @@ test('enforces the admin boundary and the LIVE forward-only control lifecycle', 
       },
       {
         forbiddenValues: [
-          privateMessage,
+          capsuleMessage,
           demo.credentials.admin.password,
           demo.credentials.participant.displayName,
           demo.credentials.participant.demoCode,

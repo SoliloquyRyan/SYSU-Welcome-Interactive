@@ -27,14 +27,21 @@ const label = computed(
     aria-hidden="true"
     data-ambient-motion
   >
-    <span class="ambient-field__rule ambient-field__rule--top"></span>
-    <span class="ambient-field__rule ambient-field__rule--bottom"></span>
-    <span class="ambient-field__index">
-      <span class="ambient-field__bar"></span>
-      <span class="ambient-field__line"></span>
-      <span class="ambient-field__node"></span>
-      <b>{{ label }}</b>
-    </span>
+    <template v-if="variant === 'welcome'">
+      <span class="ambient-field__stellar ambient-field__stellar--far"></span>
+      <span class="ambient-field__stellar ambient-field__stellar--near"></span>
+      <span class="ambient-field__nebula"></span>
+    </template>
+    <template v-else>
+      <span class="ambient-field__rule ambient-field__rule--top"></span>
+      <span class="ambient-field__rule ambient-field__rule--bottom"></span>
+      <span class="ambient-field__index">
+        <span class="ambient-field__bar"></span>
+        <span class="ambient-field__line"></span>
+        <span class="ambient-field__node"></span>
+        <b>{{ label }}</b>
+      </span>
+    </template>
   </div>
 </template>
 
@@ -129,6 +136,58 @@ const label = computed(
   background: var(--color-ink-950);
 }
 
+.ambient-field--welcome {
+  color: #dfe9f8;
+  background:
+    radial-gradient(ellipse at 50% 42%, rgba(67, 91, 132, 0.18), transparent 42%),
+    radial-gradient(ellipse at 76% 12%, rgba(51, 72, 111, 0.12), transparent 30%),
+    linear-gradient(180deg, #02050c 0%, #050b16 52%, #02050b 100%);
+}
+
+.ambient-field__stellar,
+.ambient-field__nebula {
+  position: absolute;
+  inset: -8%;
+  display: block;
+}
+
+.ambient-field__stellar {
+  background-repeat: repeat;
+  transform: translate3d(0, 0, 0);
+}
+
+.ambient-field__stellar--far {
+  opacity: 0.48;
+  background-image:
+    radial-gradient(circle at 14px 18px, rgba(238, 245, 255, 0.72) 0 0.65px, transparent 0.9px),
+    radial-gradient(circle at 73px 91px, rgba(172, 197, 236, 0.48) 0 0.55px, transparent 0.85px),
+    radial-gradient(circle at 121px 42px, rgba(238, 245, 255, 0.5) 0 0.5px, transparent 0.8px);
+  background-size: 137px 151px, 181px 197px, 223px 211px;
+}
+
+.ambient-field__stellar--near {
+  opacity: 0.7;
+  background-image:
+    radial-gradient(circle at 31px 64px, rgba(255, 255, 255, 0.9) 0 0.85px, transparent 1.2px),
+    radial-gradient(circle at 152px 28px, rgba(185, 209, 244, 0.72) 0 0.75px, transparent 1.1px),
+    radial-gradient(circle at 88px 133px, rgba(255, 226, 171, 0.7) 0 0.7px, transparent 1.05px);
+  background-size: 197px 181px, 251px 233px, 293px 277px;
+  animation: stellar-drift 18s ease-in-out infinite alternate;
+}
+
+.ambient-field__nebula {
+  inset: 8% -15% auto;
+  height: 56%;
+  opacity: 0.22;
+  background: radial-gradient(ellipse, rgba(93, 121, 167, 0.3), transparent 64%);
+  filter: blur(44px);
+}
+
+@keyframes stellar-drift {
+  from { transform: translate3d(-4px, -3px, 0); }
+  to { transform: translate3d(5px, 4px, 0); }
+}
+
 .ambient-field--screen .ambient-field__bar {
   background: var(--color-on-dark);
 }
@@ -161,6 +220,12 @@ const label = computed(
 
   .ambient-field--admin .ambient-field__index {
     top: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-field__stellar--near {
+    animation: none;
   }
 }
 </style>

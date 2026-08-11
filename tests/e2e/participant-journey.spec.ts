@@ -8,6 +8,7 @@ import {
   jumpToStage,
   loginAdmin,
   openInvitation,
+  selectStarTemperature,
   startRehearsal,
 } from './support/demo-actions.js'
 import { expect, test } from './support/test.js'
@@ -23,12 +24,15 @@ async function expectPersonalValues(
   )
 }
 
-async function savePrivateMessage(page: Page, message: string): Promise<void> {
-  await page.getByLabel('私密未来寄语').fill(message)
+async function submitCapsuleMessage(page: Page, message: string): Promise<void> {
+  await page.getByLabel('时光胶囊留言').fill(message)
+  await page.getByRole('checkbox', { name: /人工筛选候选池/u }).check()
   await page
-    .getByRole('button', { name: /^(?:保存|更新)私密寄语$/u })
+    .getByRole('button', { name: /^(?:提交|更新)时光胶囊$/u })
     .click()
-  await expect(page.getByRole('status')).toContainText('仅你本人可在档案中查看')
+  await expect(
+    page.locator('.inline-message.success[role="status"]'),
+  ).toContainText('人工筛选候选池')
 }
 
 async function replayParticipantCommand(
@@ -60,7 +64,7 @@ async function replayParticipantCommand(
   }, pathname)
 }
 
-test('recovers from generic activation failures and safely replays a lost private-message response', async ({
+test('recovers from generic activation failures and safely replays a lost capsule-message response', async ({
   browser,
   demo,
 }) => {
@@ -98,6 +102,7 @@ test('recovers from generic activation failures and safely replays a lost privat
 
     await participantPage.getByLabel('六位 Demo 码').fill(credential.demoCode)
     await participantPage.getByRole('button', { name: '进入现场' }).click()
+    await selectStarTemperature(participantPage, 6500)
     await expect(participantPage.getByRole('button', { name: '退出' })).toBeVisible()
     await expectPersonalValues(participantPage, 100, 20)
 
@@ -122,13 +127,13 @@ test('recovers from generic activation failures and safely replays a lost privat
         ),
     ).toBe(true)
 
-    const firstMessage = `私密重试-${crypto.randomUUID().slice(0, 8)}`
+    const firstMessage = `胶囊重试-${crypto.randomUUID().slice(0, 8)}`
     let firstKey: string | null = null
     let observedRequestCount = 0
     let reusedOriginalKey = true
     let responseDropped = false
     await participantPage.route(
-      '**/api/participant/future-message',
+      '**/api/participant/capsule-message',
       async (route) => {
         const key = route.request().headers()['idempotency-key']
         observedRequestCount += 1
@@ -145,29 +150,32 @@ test('recovers from generic activation failures and safely replays a lost privat
         await route.continue()
       },
     )
-    await participantPage.getByLabel('私密未来寄语').fill(firstMessage)
+    await participantPage.getByLabel('时光胶囊留言').fill(firstMessage)
     await participantPage
-      .getByRole('button', { name: '保存私密寄语' })
+      .getByRole('checkbox', { name: /人工筛选候选池/u })
+      .check()
+    await participantPage
+      .getByRole('button', { name: '提交时光胶囊' })
       .click()
     await expect(participantPage.getByRole('alert')).toContainText(
       '本地 Demo 服务暂时不可用',
     )
     await participantPage
-      .getByRole('button', { name: /^(?:保存|更新)私密寄语$/u })
+      .getByRole('button', { name: /^(?:提交|更新)时光胶囊$/u })
       .click()
-    await expect(participantPage.getByRole('status')).toContainText(
-      '仅你本人可在档案中查看',
+    await expect(participantPage.locator('.inline-message.success[role="status"]')).toContainText(
+      '人工筛选候选池',
     )
     expect(observedRequestCount === 2 && reusedOriginalKey).toBe(true)
     await expectPersonalValues(participantPage, 100, 40)
 
-    const updatedMessage = `私密更新-${crypto.randomUUID().slice(0, 8)}`
-    await savePrivateMessage(participantPage, updatedMessage)
+    const updatedMessage = `胶囊更新-${crypto.randomUUID().slice(0, 8)}`
+    await submitCapsuleMessage(participantPage, updatedMessage)
     await expectPersonalValues(participantPage, 100, 40)
-    await participantPage.unroute('**/api/participant/future-message')
+    await participantPage.unroute('**/api/participant/capsule-message')
 
     await participantPage.getByRole('button', { name: '档案', exact: true }).click()
-    await expect(participantPage.locator('.private-message')).toContainText(
+    await expect(participantPage.locator('.capsule-message')).toContainText(
       updatedMessage,
     )
     await screenPage.goto(new URL('/screen', demo.baseURL).toString())
@@ -230,20 +238,22 @@ test('keeps two participants independent across stage locks, four gift tiers, re
     const adminPage = await adminContext.newPage()
     const screenPage = await screenContext.newPage()
     const [participantA, participantB] = demo.credentials.participants
-    const privateMessageA = `私密甲-${crypto.randomUUID().slice(0, 8)}`
-    const privateMessageB = `私密乙-${crypto.randomUUID().slice(0, 8)}`
+    const capsuleMessageA = `胶囊甲-${crypto.randomUUID().slice(0, 8)}`
+    const capsuleMessageB = `胶囊乙-${crypto.randomUUID().slice(0, 8)}`
 
     await screenPage.goto(new URL('/screen', demo.baseURL).toString())
     await activateParticipant(participantAPage, demo, participantA)
     await activateParticipant(participantBPage, demo, participantB)
     await activateParticipant(repeatedAPage, demo, participantA)
-    safeCheckpoint = 'independent activation'
+    safeCheckpoint = 'screen activation aggregate'
     await expect(screenPage.locator('.activation-scene .hero-number')).toHaveText('2')
+    safeCheckpoint = 'participant A initial values'
     await expectPersonalValues(participantAPage, 100, 20)
+    safeCheckpoint = 'participant B initial values'
     await expectPersonalValues(participantBPage, 100, 20)
 
-    await savePrivateMessage(participantAPage, privateMessageA)
-    await savePrivateMessage(participantBPage, privateMessageB)
+    await submitCapsuleMessage(participantAPage, capsuleMessageA)
+    await submitCapsuleMessage(participantBPage, capsuleMessageB)
     safeCheckpoint = 'private message rewards'
     await expectPersonalValues(participantAPage, 100, 40)
     await expectPersonalValues(participantBPage, 100, 40)
@@ -259,19 +269,16 @@ test('keeps two participants independent across stage locks, four gift tiers, re
 
     await jumpToStage(adminPage, 3)
     await expectStage(participantAPage, '星星集结')
-    await participantAPage.getByRole('button', { name: '节目', exact: true }).click()
+    await participantAPage.getByRole('button', { name: '节目单', exact: true }).click()
     await expect(participantAPage.getByText('只读', { exact: true })).toBeVisible()
     await expect(
       participantAPage.getByText('下一节目：协同回声', { exact: true }),
     ).toBeVisible()
-    for (const giftName of ['微光 · 5', '信标 · 10', '星轨 · 20', '星舰 · 50']) {
-      await expect(
-        participantAPage.getByRole('button', { name: giftName }),
-      ).toBeDisabled()
-    }
+    await expect(participantAPage.getByRole('button', { name: '礼物' })).toHaveCount(0)
+    await expect(participantAPage.getByLabel('弹幕内容')).toHaveCount(0)
     safeCheckpoint = 'non-stage-four read only'
 
-    await participantAPage.getByRole('button', { name: '现场', exact: true }).click()
+    await participantAPage.getByRole('button', { name: '星程', exact: true }).click()
     await participantAPage.getByRole('button', { name: '启动我的星星' }).click()
     await participantBPage.getByRole('button', { name: '启动我的星星' }).click()
     await expectPersonalValues(participantAPage, 100, 60)
@@ -294,7 +301,7 @@ test('keeps two participants independent across stage locks, four gift tiers, re
     safeCheckpoint = 'duplicate star guard'
 
     await jumpToStage(adminPage, 4)
-    await participantAPage.getByRole('button', { name: '节目', exact: true }).click()
+    await participantAPage.getByRole('button', { name: '节目单', exact: true }).click()
     await expect(participantAPage.getByText('互动开放', { exact: true })).toBeVisible()
     await expect(
       participantAPage.getByRole('heading', { name: '轨道序章' }),
@@ -302,15 +309,18 @@ test('keeps two participants independent across stage locks, four gift tiers, re
     await expect(
       participantAPage.getByText('下一节目：协同回声', { exact: true }),
     ).toBeVisible()
+    await participantAPage.getByRole('button', { name: '星程', exact: true }).click()
 
-    await participantAPage.getByRole('button', { name: '微光 · 5' }).click()
-    await expectPersonalValues(participantAPage, 95, 70)
-    await participantAPage.getByRole('button', { name: '信标 · 10' }).click()
-    await expectPersonalValues(participantAPage, 85, 70)
-    await participantAPage.getByRole('button', { name: '星轨 · 20' }).click()
-    await expectPersonalValues(participantAPage, 65, 70)
-    await participantAPage.getByRole('button', { name: '星舰 · 50' }).click()
-    await expectPersonalValues(participantAPage, 15, 70)
+    for (const [giftName, expectedPower] of [
+      ['微光 · 5', 95],
+      ['信标 · 10', 85],
+      ['星轨 · 20', 65],
+      ['星舰 · 50', 15],
+    ] as const) {
+      await participantAPage.getByRole('button', { name: '礼物' }).click()
+      await participantAPage.getByRole('button', { name: giftName }).click()
+      await expectPersonalValues(participantAPage, expectedPower, 70)
+    }
     await expect(screenPage.getByText('热度 85', { exact: true })).toBeVisible()
     safeCheckpoint = 'four gift tiers'
 
@@ -335,7 +345,7 @@ test('keeps two participants independent across stage locks, four gift tiers, re
     safeCheckpoint = 'first published barrage reward'
 
     await jumpToStage(adminPage, 5)
-    await participantAPage.getByRole('button', { name: '现场', exact: true }).click()
+    await participantAPage.getByRole('button', { name: '星程', exact: true }).click()
     await expectStage(participantAPage, '协同点亮')
     await participantAPage.getByRole('button', { name: '参与全场点亮' }).click()
     await expectPersonalValues(participantAPage, 15, 100)
@@ -368,7 +378,7 @@ test('keeps two participants independent across stage locks, four gift tiers, re
     await expect(archive).toContainText('互动次数7')
     await expect(archive).toContainText('礼物次数4')
     await expect(archive).toContainText('公开弹幕1')
-    await expect(archive).toContainText(privateMessageA)
+    await expect(archive).toContainText(capsuleMessageA)
 
     const collective = screenPage.locator('.archive-metrics')
     await expect(collective).toContainText('激活人数2')
@@ -378,8 +388,8 @@ test('keeps two participants independent across stage locks, four gift tiers, re
     await expectNoForbiddenDomText(
       [screenPage],
       [
-        privateMessageA,
-        privateMessageB,
+        capsuleMessageA,
+        capsuleMessageB,
         participantA.displayName,
         participantA.demoCode,
         participantA.inviteToken,

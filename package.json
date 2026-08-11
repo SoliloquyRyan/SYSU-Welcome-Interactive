@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "preview:mobile": "pnpm build:contracts && pnpm build:backend && tsx scripts/mobile-animation-preview.mjs",
     "build": "pnpm build:contracts && pnpm build:backend && pnpm --filter @sysu-welcome/frontend build",
     "build:contracts": "tsc -p packages/contracts/tsconfig.json",
     "build:backend": "tsc -p backend/tsconfig.json",

@@ -94,7 +94,9 @@ describe('G2 six-stage participant and screen flow', () => {
     expect(participant.participant).toMatchObject({
       powerBalance: 100,
       starlight: 20,
-      futureMessageSaved: false,
+      capsuleMessageSubmitted: false,
+      capsulePublicNoticeAccepted: false,
+      capsuleCandidateStatus: 'NOT_SUBMITTED',
       starStarted: false,
       firstGiftCompleted: false,
       firstBarrageCompleted: false,
@@ -126,26 +128,34 @@ describe('G2 six-stage participant and screen flow', () => {
       harness,
       activation.cookie,
       'PUT',
-      '/api/participant/future-message',
+      '/api/participant/capsule-message',
       commandVersion(admin),
-      { text: '写给未来的合成寄语' },
-      idempotencyKey('future-message', 1),
+      {
+        text: '写给未来的合成寄语',
+        publicDisplayNoticeAccepted: true,
+      },
+      idempotencyKey('capsule-message', 1),
     )
     expect(participant.participant).toMatchObject({
-      futureMessage: '写给未来的合成寄语',
-      futureMessageSaved: true,
+      capsuleMessage: '写给未来的合成寄语',
+      capsuleMessageSubmitted: true,
+      capsulePublicNoticeAccepted: true,
+      capsuleCandidateStatus: 'SUBMITTED',
       starlight: 40,
     })
     participant = await participantWrite(
       harness,
       activation.cookie,
       'PUT',
-      '/api/participant/future-message',
+      '/api/participant/capsule-message',
       commandVersion(admin),
-      { text: '更新后的私密寄语' },
-      idempotencyKey('future-message', 2),
+      {
+        text: '更新后的时光胶囊',
+        publicDisplayNoticeAccepted: true,
+      },
+      idempotencyKey('capsule-message', 2),
     )
-    expect(participant.participant.futureMessage).toBe('更新后的私密寄语')
+    expect(participant.participant.capsuleMessage).toBe('更新后的时光胶囊')
     expect(participant.participant.starlight).toBe(40)
 
     admin = await runtimeCommand(
@@ -278,7 +288,7 @@ describe('G2 six-stage participant and screen flow', () => {
     expect(screen.publishedBarrages).toHaveLength(1)
     const publicJson = JSON.stringify(screen)
     expect(publicJson).not.toContain(finalParticipant.participant.displayName)
-    expect(publicJson).not.toContain('更新后的私密寄语')
+    expect(publicJson).not.toContain('更新后的时光胶囊')
     expect(publicJson).not.toContain(harness.manifest.participants[0].demoCode)
     expect(publicJson).not.toContain(harness.manifest.participants[0].inviteToken)
   })
@@ -307,5 +317,85 @@ describe('G2 six-stage participant and screen flow', () => {
     expect(
       ParticipantSnapshotSchema.parse(snapshot.json()).participant.starlight,
     ).toBe(20)
+  })
+
+  it('locks one stellar temperature across sessions and projects it anonymously', async () => {
+    const activation = await harness.activate()
+    const initial = ParticipantSnapshotSchema.parse(activation.response.json())
+    expect(initial.participant).toMatchObject({
+      starTemperatureKelvin: null,
+      starTemperatureLocked: false,
+    })
+
+    const selectedResponse = await harness.unsafeRequest(
+      {
+        method: 'PUT',
+        url: '/api/participant/star-temperature',
+        headers: { 'idempotency-key': idempotencyKey('star-temperature') },
+        payload: {
+          ...commandVersion(initial),
+          temperatureKelvin: 7350,
+        },
+      },
+      activation.cookie,
+    )
+    expect(selectedResponse.statusCode).toBe(200)
+    const selected = ParticipantSnapshotSchema.parse(selectedResponse.json())
+    expect(selected.participant).toMatchObject({
+      starTemperatureKelvin: 7350,
+      starTemperatureLocked: true,
+    })
+
+    const sameValue = await harness.unsafeRequest(
+      {
+        method: 'PUT',
+        url: '/api/participant/star-temperature',
+        headers: { 'idempotency-key': idempotencyKey('star-temperature', 2) },
+        payload: {
+          ...commandVersion(selected),
+          temperatureKelvin: 7350,
+        },
+      },
+      activation.cookie,
+    )
+    expect(sameValue.statusCode).toBe(200)
+
+    const changedValue = await harness.unsafeRequest(
+      {
+        method: 'PUT',
+        url: '/api/participant/star-temperature',
+        headers: { 'idempotency-key': idempotencyKey('star-temperature', 3) },
+        payload: {
+          ...commandVersion(selected),
+          temperatureKelvin: 9200,
+        },
+      },
+      activation.cookie,
+    )
+    expect(changedValue.statusCode).toBe(409)
+    expect(responseErrorCode(changedValue)).toBe('STAR_TEMPERATURE_LOCKED')
+
+    const secondDevice = await harness.activate(0, {
+      idempotencyKey: idempotencyKey('second-device-activation'),
+    })
+    expect(
+      ParticipantSnapshotSchema.parse(secondDevice.response.json()).participant,
+    ).toMatchObject({
+      starTemperatureKelvin: 7350,
+      starTemperatureLocked: true,
+    })
+
+    const screen = ScreenSnapshotSchema.parse(
+      (
+        await harness.request({ method: 'GET', url: '/api/screen/snapshot' })
+      ).json(),
+    )
+    expect(screen.starNodes).toEqual([
+      expect.objectContaining({
+        id: selected.participant.publicStarId,
+        starTemperatureKelvin: 7350,
+      }),
+    ])
+    expect(JSON.stringify(screen)).not.toContain(selected.participant.displayName)
   })
 })

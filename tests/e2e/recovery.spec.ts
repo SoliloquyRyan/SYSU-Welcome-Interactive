@@ -64,7 +64,8 @@ test('locks offline writes, recovers one database after restart, safely retries 
     await jumpToStage(adminPage, 4)
     await adminPage.getByLabel('当前节目').selectOption('program-001')
     await adminPage.getByRole('button', { name: '设为当前' }).click()
-    await participantPage.getByRole('button', { name: '节目', exact: true }).click()
+    await participantPage.getByRole('button', { name: '星程', exact: true }).click()
+    await participantPage.getByRole('button', { name: '礼物' }).click()
     await participantPage.getByRole('button', { name: '微光 · 5' }).click()
     await expect(participantPage.locator('.value-grid')).toContainText('95')
 
@@ -81,7 +82,7 @@ test('locks offline writes, recovers one database after restart, safely retries 
       participantPage.getByText('设备离线', { exact: true }),
     ).toBeVisible()
     await expect(
-      participantPage.getByRole('button', { name: '微光 · 5' }),
+      participantPage.getByRole('button', { name: '礼物' }),
     ).toBeDisabled()
     await expect(screenPage.locator('.safe-banner')).toContainText(
       '实时连接中断',

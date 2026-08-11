@@ -5,12 +5,13 @@ import StatusPill from '../../components/ui/StatusPill.vue'
 import { useRealtime } from '../../composables/useRealtime'
 import { useReducedMotion } from '../../composables/useReducedMotion'
 import { publicErrorMessage, screenApi } from '../../services/api'
+import { starTemperatureStyle } from '../../services/star-temperature'
 import {
   createRefreshCoalescer,
   shouldCommitSnapshot,
 } from '../../services/refresh-coalescer'
 
-const stageNames = ['身份激活', '未来寄语', '星星集结', '节目应援', '协同点亮', '星际档案']
+const stageNames = ['身份激活', '时光胶囊', '星星集结', '节目应援', '协同点亮', '星际档案']
 const snapshot = ref(null)
 const loadError = ref('')
 const staleSince = ref(null)
@@ -223,9 +224,9 @@ onBeforeUnmount(() => {
         </section>
 
         <section v-else-if="runtime.stage === 2" class="message-scene" aria-labelledby="message-title">
-          <p class="scene-kicker">PRIVATE ARCHIVE</p>
-          <h2 id="message-title">把此刻写给未来</h2>
-          <p class="scene-copy">未来寄语始终只属于参与者本人。大屏不会读取、展示或审核任何正文。</p>
+          <p class="scene-kicker">TIME CAPSULE CANDIDATES</p>
+          <h2 id="message-title">把此刻留在星海</h2>
+          <p class="scene-copy">参与者提交的内容会进入人工筛选候选池；未被人工选中的正文不会进入大屏。</p>
           <div class="scene-metrics">
             <div><span>匿名参与者</span><strong>{{ aggregates.activatedCount }}</strong></div>
             <div><span>累计星光</span><strong>{{ aggregates.totalStarlight }}</strong></div>
@@ -238,7 +239,12 @@ onBeforeUnmount(() => {
             <strong>{{ aggregates.starStartedCount }} / {{ aggregates.starCreatedCount }}</strong>
           </div>
           <div class="star-field" :class="{ static: reducedMotion }" aria-hidden="true" data-motion="decorative">
-            <i v-for="star in visibleStars" :key="star.id" :class="{ started: star.started }"></i>
+            <i
+              v-for="star in visibleStars"
+              :key="star.id"
+              :class="{ started: star.started }"
+              :style="starTemperatureStyle(star.starTemperatureKelvin)"
+            ></i>
           </div>
           <p v-if="visibleStars.length === 0" class="empty-screen-state">等待参与者启动第一颗匿名星星</p>
         </section>
@@ -287,7 +293,12 @@ onBeforeUnmount(() => {
             <span v-for="(count, level) in aggregates.levelDistribution" :key="level"><b>{{ level }}</b>{{ count }}</span>
           </div>
           <div class="archive-star-field" :class="{ static: reducedMotion }" aria-label="匿名集体星图" data-motion="decorative">
-            <i v-for="star in visibleStars" :key="star.id" :class="{ started: star.started }"></i>
+            <i
+              v-for="star in visibleStars"
+              :key="star.id"
+              :class="{ started: star.started }"
+              :style="starTemperatureStyle(star.starTemperatureKelvin)"
+            ></i>
           </div>
         </section>
       </div>
@@ -459,9 +470,9 @@ onBeforeUnmount(() => {
 }
 
 .star-field i.started {
-  border-color: var(--color-signal-orange);
-  background: var(--color-signal-orange);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--color-signal-orange) 70%, transparent);
+  border-color: var(--star-temperature-color, var(--color-signal-orange));
+  background: var(--star-temperature-color, var(--color-signal-orange));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--star-temperature-color, var(--color-signal-orange)) 70%, transparent);
   animation: signal-node-settle var(--motion-duration-slow) var(--motion-ease-emphasized) both;
 }
 
@@ -590,8 +601,8 @@ onBeforeUnmount(() => {
 }
 
 .archive-star-field i.started {
-  border-color: var(--color-signal-orange);
-  background: var(--color-signal-orange);
+  border-color: var(--star-temperature-color, var(--color-signal-orange));
+  background: var(--star-temperature-color, var(--color-signal-orange));
   animation: signal-node-settle var(--motion-duration-slow) var(--motion-ease-emphasized) both;
 }
 

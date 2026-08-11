@@ -58,7 +58,7 @@ async function watchForPrivateParticipantDom(page: Page): Promise<void> {
     const observer = new MutationObserver(() => {
       if (
         document.querySelector(
-          '.participant-bar, #future-message, .archive-card',
+          '.participant-bar, #capsule-message, .archive-card',
         )
       ) {
         root.dataset.privateStateReappeared = 'true'
@@ -114,10 +114,13 @@ test('does not restore participant private state when an old snapshot arrives af
     )
 
     await peerPage
-      .getByLabel('私密未来寄语')
+      .getByLabel('时光胶囊留言')
       .fill(`race-${crypto.randomUUID()}`)
     await peerPage
-      .getByRole('button', { name: '保存私密寄语' })
+      .getByRole('checkbox', { name: /人工筛选候选池/u })
+      .check()
+    await peerPage
+      .getByRole('button', { name: '提交时光胶囊' })
       .click()
     await waitForSignal(snapshotReturned.promise, 'participant snapshot')
 
@@ -139,7 +142,7 @@ test('does not restore participant private state when an old snapshot arrives af
       }),
     ).toBeVisible()
     await expect(participantPage.locator('.participant-bar')).toHaveCount(0)
-    await expect(participantPage.locator('#future-message')).toHaveCount(0)
+    await expect(participantPage.locator('#capsule-message')).toHaveCount(0)
     expect(
       await participantPage
         .locator('html')
@@ -252,7 +255,7 @@ test('clears participant private DOM when an external reset expires the session'
       }),
     ).toBeVisible()
     await expect(participantPage.locator('.participant-bar')).toHaveCount(0)
-    await expect(participantPage.locator('#future-message')).toHaveCount(0)
+    await expect(participantPage.locator('#capsule-message')).toHaveCount(0)
     await expect(
       participantPage.getByRole('button', { name: '退出' }),
     ).toHaveCount(0)

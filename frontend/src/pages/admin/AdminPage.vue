@@ -22,7 +22,7 @@ const roles = [
   { id: 'DEMO_ADMIN', label: 'Demo 管理' },
   { id: 'ALL', label: '全部能力' },
 ]
-const stageNames = ['身份激活', '未来寄语', '星星集结', '节目应援', '协同点亮', '星际档案']
+const stageNames = ['身份激活', '时光胶囊', '星星集结', '节目应援', '协同点亮', '星际档案']
 
 const authState = ref('checking')
 const username = ref('demo-admin')
@@ -372,7 +372,7 @@ function toggleBarragePause() {
 }
 
 function clearBarrages() {
-  if (!window.confirm('确认紧急清除当前大屏弹幕？私密未来寄语不会受影响。')) return
+  if (!window.confirm('确认紧急清除当前大屏弹幕？时光胶囊候选不会受影响。')) return
   const body = { ...commandVersion(snapshot.value), confirmed: true }
   return execute(
     `clear:${runtime.value.resetEpoch}:${runtime.value.stageRevision}`,
@@ -552,7 +552,7 @@ onMounted(boot)
               <BaseButton variant="danger" size="sm" :disabled="!canControl || !hasRole('DEMO_ADMIN')" @click="clearBarrages">紧急清屏</BaseButton>
             </div>
           </div>
-          <p v-if="snapshot.publishedBarrages.length === 0" class="empty-state">当前没有公开弹幕。私密未来寄语不会出现在本模块。</p>
+          <p v-if="snapshot.publishedBarrages.length === 0" class="empty-state">当前没有公开弹幕。时光胶囊候选需由后续人工筛选模块处理。</p>
           <ul v-else class="moderation-list">
             <li v-for="barrage in snapshot.publishedBarrages" :key="barrage.id">
               <div><strong>{{ barrage.text }}</strong><small>#{{ barrage.displaySeq }} · {{ barrage.publishedAt }}</small></div>

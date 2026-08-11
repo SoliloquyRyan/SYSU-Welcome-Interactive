@@ -8,7 +8,7 @@ import {
   BarragePauseRequestSchema,
   BarrageRequestSchema,
   DemoResetRequestSchema,
-  FutureMessageRequestSchema,
+  CapsuleMessageRequestSchema,
   GiftRequestSchema,
   HealthResponseSchema,
   InvitationStatusRequestSchema,
@@ -17,6 +17,7 @@ import {
   RuntimeCommandRequestSchema,
   SessionEndedResponseSchema,
   StageCommandRequestSchema,
+  StarTemperatureRequestSchema,
 } from '@sysu-welcome/contracts'
 import Fastify, {
   type FastifyInstance,
@@ -61,10 +62,11 @@ import {
   completeCooperativeLight,
   controlRuntime,
   loginAdmin,
+  lockStarTemperature,
   publishBarrage,
   removeBarrage,
   resetDemoFromAdmin,
-  saveFutureMessage,
+  submitCapsuleMessage,
   sendGift,
   setBarragePaused,
   setInvitationStatus,
@@ -269,10 +271,24 @@ export async function buildApp(
       .send(SessionEndedResponseSchema.parse({ status: 'ok' }))
   })
 
-  app.put('/api/participant/future-message', async (request, reply) => {
+  app.put('/api/participant/capsule-message', async (request, reply) => {
     const session = requireSession(request, 'PARTICIPANT')
-    const body = FutureMessageRequestSchema.parse(request.body)
-    const result = saveFutureMessage(
+    const body = CapsuleMessageRequestSchema.parse(request.body)
+    const result = submitCapsuleMessage(
+      database,
+      session,
+      body,
+      idempotencyKey(request),
+      now(),
+    )
+    realtime.broadcast(result.events)
+    return reply.header('cache-control', 'no-store').send(result.body)
+  })
+
+  app.put('/api/participant/star-temperature', async (request, reply) => {
+    const session = requireSession(request, 'PARTICIPANT')
+    const body = StarTemperatureRequestSchema.parse(request.body)
+    const result = lockStarTemperature(
       database,
       session,
       body,

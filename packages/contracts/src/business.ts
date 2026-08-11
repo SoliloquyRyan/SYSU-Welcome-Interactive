@@ -6,6 +6,7 @@ import {
   ProtocolVersionSchema,
   ResetEpochSchema,
   RuntimeStageSchema,
+  StarTemperatureKelvinSchema,
   StageRevisionSchema,
 } from './primitives.js'
 import { RuntimeSnapshotSchema } from './runtime.js'
@@ -14,13 +15,13 @@ import {
   ScreenProgramSchema,
 } from './snapshot.js'
 
-const FutureMessageTextSchema = z
+const CapsuleMessageTextSchema = z
   .string()
   .trim()
   .min(1)
   .max(160)
   .refine((value) => Array.from(value).length <= 80, {
-    message: '未来寄语最多 80 个可见字符',
+    message: '时光胶囊最多 80 个可见字符',
   })
 
 const BarrageTextSchema = z
@@ -70,11 +71,22 @@ export const ParticipantPrivateStateSchema = z
     displayName: z.string().min(1).max(40),
     publicStarId: z.string().min(1).max(40),
     visualSeed: z.string().regex(/^[a-f0-9]{32}$/),
+    starTemperatureKelvin: StarTemperatureKelvinSchema.nullable(),
+    starTemperatureLocked: z.boolean(),
     powerBalance: z.number().int().nonnegative(),
     starlight: z.number().int().min(0).max(100),
     activatedAt: IsoDateTimeSchema,
-    futureMessage: FutureMessageTextSchema.nullable(),
-    futureMessageSaved: z.boolean(),
+    capsuleMessage: CapsuleMessageTextSchema.nullable(),
+    capsuleMessageSubmitted: z.boolean(),
+    capsulePublicNoticeAccepted: z.boolean(),
+    capsuleCandidateStatus: z.enum([
+      'NOT_SUBMITTED',
+      'LEGACY_PRIVATE',
+      'SUBMITTED',
+      'SELECTED',
+      'DISPLAYED',
+      'REMOVED',
+    ]),
     starStarted: z.boolean(),
     firstGiftCompleted: z.boolean(),
     firstBarrageCompleted: z.boolean(),
@@ -125,8 +137,13 @@ export const ActivateParticipantRequestSchema = z
   })
   .strict()
 
-export const FutureMessageRequestSchema = CommandVersionSchema.extend({
-  text: FutureMessageTextSchema,
+export const CapsuleMessageRequestSchema = CommandVersionSchema.extend({
+  text: CapsuleMessageTextSchema,
+  publicDisplayNoticeAccepted: z.literal(true),
+}).strict()
+
+export const StarTemperatureRequestSchema = CommandVersionSchema.extend({
+  temperatureKelvin: StarTemperatureKelvinSchema,
 }).strict()
 
 export const StageCommandRequestSchema = CommandVersionSchema

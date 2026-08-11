@@ -6,12 +6,13 @@ import {
   AdminSnapshotSchema,
   BarrageRequestSchema,
   DemoResetRequestSchema,
-  FutureMessageRequestSchema,
+  CapsuleMessageRequestSchema,
   G2RealtimeEventEnvelopeSchema,
   GiftRequestSchema,
   ParticipantSnapshotSchema,
   RuntimeCommandRequestSchema,
   ScreenSnapshotSchema,
+  StarTemperatureRequestSchema,
 } from '../../packages/contracts/src/index.js'
 
 const NOW = '2026-08-10T04:00:00.000Z'
@@ -41,11 +42,15 @@ function participantSnapshot() {
       displayName: '合成访客',
       publicStarId: 'STAR-001',
       visualSeed: 'a'.repeat(32),
+      starTemperatureKelvin: null,
+      starTemperatureLocked: false,
       powerBalance: 100,
       starlight: 20,
       activatedAt: NOW,
-      futureMessage: null,
-      futureMessageSaved: false,
+      capsuleMessage: null,
+      capsuleMessageSubmitted: false,
+      capsulePublicNoticeAccepted: false,
+      capsuleCandidateStatus: 'NOT_SUBMITTED',
       starStarted: false,
       firstGiftCompleted: false,
       firstBarrageCompleted: false,
@@ -103,8 +108,16 @@ describe('G2 strict business contracts', () => {
       value: { username: 'demo-admin', password: 'synthetic-password' },
     },
     {
-      schema: FutureMessageRequestSchema,
-      value: { ...VERSION, text: '给未来的一句话' },
+      schema: CapsuleMessageRequestSchema,
+      value: {
+        ...VERSION,
+        text: '给未来的一句话',
+        publicDisplayNoticeAccepted: true,
+      },
+    },
+    {
+      schema: StarTemperatureRequestSchema,
+      value: { ...VERSION, temperatureKelvin: 5800 },
     },
     {
       schema: GiftRequestSchema,
@@ -143,9 +156,17 @@ describe('G2 strict business contracts', () => {
       }),
     ).toThrow()
     expect(() =>
-      FutureMessageRequestSchema.parse({
+      CapsuleMessageRequestSchema.parse({
         ...VERSION,
         text: '寄'.repeat(81),
+        publicDisplayNoticeAccepted: true,
+      }),
+    ).toThrow()
+    expect(() =>
+      CapsuleMessageRequestSchema.parse({
+        ...VERSION,
+        text: '还没有确认公开候选告知',
+        publicDisplayNoticeAccepted: false,
       }),
     ).toThrow()
     expect(() =>
@@ -153,6 +174,12 @@ describe('G2 strict business contracts', () => {
         ...VERSION,
         text: '没有公开告知确认',
         publicNoticeAccepted: false,
+      }),
+    ).toThrow()
+    expect(() =>
+      StarTemperatureRequestSchema.parse({
+        ...VERSION,
+        temperatureKelvin: 12050,
       }),
     ).toThrow()
   })
@@ -184,7 +211,7 @@ describe('G2 strict business contracts', () => {
     expect(() =>
       AdminSnapshotSchema.parse({
         ...admin,
-        futureMessages: ['forbidden'],
+        capsuleMessages: ['forbidden'],
       }),
     ).toThrow()
   })
@@ -219,7 +246,7 @@ describe('G2 strict business contracts', () => {
 
     for (const field of [
       'displayName',
-      'futureMessage',
+      'capsuleMessage',
       'demoCode',
       'inviteToken',
       'cookie',
