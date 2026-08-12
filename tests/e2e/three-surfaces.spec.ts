@@ -274,12 +274,20 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
       '80 / 100',
     )
     await expectNoForbiddenDomText([adminPage, screenPage], [blockedRetry])
+    await expectNoViewportOverflow(participantPage)
     await expectNoViewportOverflow(screenPage)
 
     checkpoint = 'stage-5'
     await jumpToStage(adminPage, 5)
     await participantPage.getByRole('button', { name: '星程', exact: true }).click()
     await expectStage(participantPage, '协同点亮')
+    await expect(participantPage.getByLabel('弹幕内容')).toBeVisible()
+    await expect(participantPage.getByLabel('弹幕内容')).toBeDisabled()
+    await expect(participantPage.getByRole('button', { name: '礼物' })).toBeDisabled()
+    await expect(
+      participantPage.getByRole('button', { name: '互动已结束' }),
+    ).toBeDisabled()
+    await expectNoViewportOverflow(participantPage)
     await participantPage.getByRole('button', { name: '参与全场点亮' }).click()
     await expect(participantPage.locator('.value-grid .starlight')).toHaveText(
       '100 / 100',
@@ -294,6 +302,11 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     await jumpToStage(adminPage, 6)
     await expectStage(participantPage, '星际档案')
     await expectStage(screenPage, '星际档案')
+    await expect(participantPage.getByLabel('弹幕内容')).toBeDisabled()
+    await expect(
+      participantPage.getByRole('button', { name: '互动已结束' }),
+    ).toBeDisabled()
+    await expectNoViewportOverflow(participantPage)
     await participantPage.getByRole('button', { name: '查看个人档案' }).click()
     await expect(participantPage.getByRole('heading', { name: '个人星际档案' })).toBeVisible()
     const archive = participantPage.locator('.archive-card')

@@ -125,6 +125,7 @@ test('moves the selected star into the capsule without page scrolling', async ({
   demo,
 }) => {
   let context: BrowserContext | null = null
+  let checkpoint = 'entry'
   try {
     context = await browser.newContext({
       baseURL: demo.baseURL,
@@ -139,6 +140,7 @@ test('moves the selected star into the capsule without page scrolling', async ({
     await page.getByLabel('六位 Demo 码').fill(demo.credentials.participant.demoCode)
     await page.getByRole('button', { name: '进入现场' }).click()
 
+    checkpoint = 'temperature'
     await page.getByRole('slider', { name: '恒星色温' }).evaluate((element) => {
       const input = element as HTMLInputElement
       input.value = '7350'
@@ -153,6 +155,16 @@ test('moves the selected star into the capsule without page scrolling', async ({
     )
     await page.getByRole('button', { name: '跳过过场' }).click()
 
+    // A short visual viewport models the space left above a mobile soft keyboard.
+    // Secondary telemetry may collapse, but the current task must remain reachable.
+    checkpoint = 'compact-mode'
+    await page.setViewportSize({ width: 390, height: 560 })
+    await expect(page.locator('.portal')).toHaveClass(/portal--compact/u)
+    await expect(page.locator('.participant-bar')).toBeHidden()
+    await expect(page.locator('.value-grid')).toBeHidden()
+    await expect(page.locator('.scene-canvas')).toBeHidden()
+
+    checkpoint = 'capsule-controls'
     const submitButton = page.getByRole('button', { name: '提交时光胶囊' })
     await page.getByLabel('时光胶囊留言').fill('写给此刻，也写给共同抵达的我们。')
     await expect(submitButton).toBeDisabled()
@@ -160,6 +172,7 @@ test('moves the selected star into the capsule without page scrolling', async ({
     await expect(submitButton).toBeEnabled()
     await expectMinimumControlSize(submitButton)
 
+    checkpoint = 'compact-viewport'
     const viewport = await page.evaluate(() => {
       const submit = [...document.querySelectorAll('button')].find((button) =>
         button.textContent?.includes('提交时光胶囊'),
@@ -173,11 +186,20 @@ test('moves the selected star into the capsule without page scrolling', async ({
         ),
       }
     })
+    if (viewport.widthOverflow !== 0) checkpoint = 'compact-width-overflow'
+    else if (viewport.heightOverflow !== 0) checkpoint = 'compact-height-overflow'
+    else if (!viewport.submitVisible) checkpoint = 'compact-submit-hidden'
     expect(viewport).toEqual({
       widthOverflow: 0,
       heightOverflow: 0,
       submitVisible: true,
     })
+  } catch {
+    test.info().annotations.push({
+      type: 'failure-checkpoint',
+      description: checkpoint,
+    })
+    throw new Error(`Static failure checkpoint: ${checkpoint}`)
   } finally {
     await context?.close()
   }

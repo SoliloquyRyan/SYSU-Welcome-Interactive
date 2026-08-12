@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BaseButton from '../../components/ui/BaseButton.vue'
 import BaseCard from '../../components/ui/BaseCard.vue'
 import StatusPill from '../../components/ui/StatusPill.vue'
@@ -60,8 +60,22 @@ const barrageKey = ref(null)
 const giftKeys = new Map()
 const arrivalTransition = ref(false)
 const reducedMotion = useReducedMotion()
+const visualViewportHeight = ref(null)
+const compactViewport = ref(false)
 let sessionGeneration = 0
 let arrivalTimer = null
+
+const portalViewportStyle = computed(() =>
+  visualViewportHeight.value === null
+    ? undefined
+    : { '--mobile-visual-height': `${visualViewportHeight.value}px` },
+)
+
+function syncVisualViewport() {
+  const height = window.visualViewport?.height ?? window.innerHeight
+  visualViewportHeight.value = Math.round(height)
+  compactViewport.value = height <= 620 || height <= window.innerHeight * 0.72
+}
 
 const isActive = computed(() => entryState.value === 'active' && Boolean(snapshot.value))
 const runtime = computed(() => snapshot.value?.runtime ?? null)
@@ -153,6 +167,8 @@ const realtime = useRealtime({
 onBeforeUnmount(() => {
   sessionGeneration += 1
   if (arrivalTimer !== null) window.clearTimeout(arrivalTimer)
+  window.visualViewport?.removeEventListener('resize', syncVisualViewport)
+  window.removeEventListener('resize', syncVisualViewport)
   realtimeRefresh.cancel()
 })
 
@@ -162,6 +178,19 @@ const messageWritesAllowed = computed(
 const interactionWritesAllowed = computed(
   () => realtime.canWrite.value && runtimeRunning.value,
 )
+const liveInteractionOpen = computed(
+  () => stage.value === 4 && interactionWritesAllowed.value,
+)
+const barrageComposerLabel = computed(() => {
+  if (runtime.value?.barragePaused) return '弹幕已暂停'
+  if (stage.value > 4) return '互动已结束'
+  return '匿名发送'
+})
+const barragePlaceholder = computed(() => {
+  if (runtime.value?.barragePaused) return '现场暂时停止接收'
+  if (stage.value > 4) return '本轮节目互动已结束'
+  return '说点什么…'
+})
 const connectionTone = computed(() =>
   realtime.state.value === 'online' ? 'success' : realtime.state.value === 'offline' ? 'danger' : 'warning',
 )
@@ -175,6 +204,10 @@ const connectionLabel = computed(() => {
     idle: '等待会话',
   }
   return labels[realtime.state.value] ?? '连接检查中'
+})
+
+watch([stage, activeTab], ([nextStage, nextTab]) => {
+  if (nextStage !== 4 || nextTab !== 'scene') giftSheetOpen.value = false
 })
 
 function resetActivationKey() {
@@ -469,7 +502,12 @@ async function logout() {
   }
 }
 
-onMounted(boot)
+onMounted(() => {
+  syncVisualViewport()
+  window.visualViewport?.addEventListener('resize', syncVisualViewport)
+  window.addEventListener('resize', syncVisualViewport)
+  void boot()
+})
 </script>
 
 <template>
@@ -477,9 +515,11 @@ onMounted(boot)
     class="mobile-stage portal"
     :class="{
       'portal--active': isActive && !needsStarTemperature && !arrivalTransition,
+      'portal--compact': compactViewport,
       'portal--temperature': needsStarTemperature,
       'portal--transition': arrivalTransition,
     }"
+    :style="portalViewportStyle"
     aria-labelledby="welcome-title"
   >
     <header class="portal-brand">
@@ -776,9 +816,13 @@ onMounted(boot)
             <BaseButton block @click="activeTab = 'archive'">查看个人档案</BaseButton>
           </section>
 
-          <form v-if="stage === 4" class="live-area" @submit.prevent="sendBarrage">
+          <form v-if="stage >= 4" class="live-area" @submit.prevent="sendBarrage">
             <label class="check-row">
-              <input v-model="publicNoticeAccepted" type="checkbox" />
+              <input
+                v-model="publicNoticeAccepted"
+                type="checkbox"
+                :disabled="!liveInteractionOpen || runtime.barragePaused"
+              />
               <span>我知道这条内容会以匿名形式公开出现在现场大屏。</span>
             </label>
             <div class="live-dock">
@@ -787,13 +831,14 @@ onMounted(boot)
                 id="barrage-text"
                 v-model="barrageText"
                 maxlength="120"
-                placeholder="说点什么…"
+                :placeholder="barragePlaceholder"
+                :disabled="!liveInteractionOpen || runtime.barragePaused"
                 @input="barrageKey = null"
               />
               <button
                 type="button"
                 class="gift-trigger"
-                :disabled="!interactionWritesAllowed || !currentProgram"
+                :disabled="!liveInteractionOpen || !currentProgram || runtime.barragePaused"
                 :aria-expanded="giftSheetOpen"
                 aria-controls="gift-sheet"
                 @click="giftSheetOpen = !giftSheetOpen"
@@ -802,10 +847,10 @@ onMounted(boot)
               </button>
               <BaseButton
                 type="submit"
-                :disabled="!interactionWritesAllowed || runtime.barragePaused"
+                :disabled="!liveInteractionOpen || runtime.barragePaused"
                 :loading="busy === 'barrage'"
               >
-                {{ runtime.barragePaused ? '弹幕已暂停' : '匿名发送' }}
+                {{ barrageComposerLabel }}
               </BaseButton>
             </div>
           </form>
@@ -905,7 +950,7 @@ onMounted(boot)
   --welcome-danger: #ff8796;
   position: relative;
   width: min(100%, 430px);
-  height: 100%;
+  height: min(100%, var(--mobile-visual-height, 100%));
   min-height: 0;
   margin: 0 auto;
   padding:
@@ -1946,6 +1991,7 @@ onMounted(boot)
 }
 
 .live-area {
+  align-self: end;
   display: grid;
   gap: 5px;
 }
@@ -1968,6 +2014,10 @@ onMounted(boot)
   accent-color: var(--welcome-blue);
 }
 
+.check-row:has(input:disabled) {
+  color: var(--welcome-tertiary);
+}
+
 .live-dock {
   min-height: 52px;
   padding: 4px;
@@ -1985,6 +2035,12 @@ onMounted(boot)
   padding-inline: 10px;
   border-color: transparent;
   background: transparent;
+}
+
+.live-dock input:disabled {
+  color: var(--welcome-tertiary);
+  -webkit-text-fill-color: var(--welcome-tertiary);
+  opacity: 1;
 }
 
 .live-dock :deep(.base-button),
@@ -2069,8 +2125,12 @@ onMounted(boot)
 .program-list {
   min-height: 0;
   display: grid;
-  align-content: center;
+  align-content: start;
   gap: 0;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
 }
 
 .program-row {
@@ -2241,6 +2301,70 @@ onMounted(boot)
   .task-surface {
     padding-block: 9px;
   }
+}
+
+.portal--active.portal--compact {
+  padding-top: max(6px, env(safe-area-inset-top));
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
+  grid-template-rows: auto 44px 36px auto minmax(0, 1fr);
+  gap: 3px;
+}
+
+.portal--active.portal--compact .participant-bar,
+.portal--active.portal--compact .value-grid,
+.portal--active.portal--compact .scene-canvas {
+  display: none;
+}
+
+.portal--active.portal--compact .compact-stages {
+  height: 36px;
+}
+
+.portal--active.portal--compact .compact-stages li.current em {
+  display: none;
+}
+
+.portal--active.portal--compact .scene-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 4px;
+}
+
+.portal--active.portal--compact .scene-panel:has(.live-area) {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.portal--active.portal--compact .section-heading {
+  min-height: 36px;
+}
+
+.portal--active.portal--compact .section-heading .eyebrow {
+  display: none;
+}
+
+.portal--active.portal--compact .task-surface {
+  min-height: 0;
+  padding-block: 6px;
+}
+
+.portal--active.portal--compact .task-surface--capsule .form-stack {
+  gap: 4px 8px;
+}
+
+.portal--active.portal--compact .task-surface--capsule .capsule-disclosure {
+  margin-top: 3px;
+  padding: 4px 7px;
+  font-size: 0.6rem;
+  line-height: 1.3;
+}
+
+.portal--active.portal--compact .task-surface--capsule .capsule-consent {
+  min-height: 28px;
+  font-size: 0.58rem;
+  line-height: 1.25;
+}
+
+.portal--active.portal--compact .task-surface--capsule textarea {
+  min-height: 48px;
 }
 
 @media (min-width: 700px) {
