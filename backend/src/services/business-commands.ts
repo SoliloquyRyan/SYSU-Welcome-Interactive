@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 
 import {
   ApiErrorResponseSchema,
+  type ActivateParticipantRequest,
   type AdminRole,
   type AdminSnapshot,
   type ParticipantSnapshot,
@@ -21,7 +22,7 @@ import {
   invitationTokenDigest,
   restoreDemoSeedCatalogInTransaction,
   verifyAdminPasswordCredential,
-  verifyDemoCodeCredential,
+  verifyStudentNumberCredential,
 } from '../db/seed.js'
 import { ApiError } from '../http/api-error.js'
 import {
@@ -166,29 +167,50 @@ function genericActivationFailure(): ApiError {
 export function activateParticipant(
   database: SqliteDatabase,
   credentialContext: DemoCredentialContext,
-  request: { token: string; displayName: string; demoCode: string },
+  request: ActivateParticipantRequest,
   idempotencyKey: string,
   requestId: string,
   now: Date = new Date(),
 ): ActivationResult {
-  const identity = database
-    .prepare(
-      `SELECT i.id, i.display_name AS displayName,
-              i.demo_code_digest AS demoCodeDigest,
-              i.enabled, t.status AS invitationStatus
-       FROM invitation_tokens t
-       JOIN synthetic_identities i ON i.id = t.identity_id
-       WHERE t.token_digest = ?`,
+  type IdentityCredential = {
+    id: string
+    displayName: string
+    studentNumberDigest: string
+    enabled: number
+    invitationStatus: 'ACTIVE' | 'REVOKED'
+  }
+  let identity: IdentityCredential | undefined
+  if (request.method === 'INVITATION_TOKEN') {
+    identity = database
+      .prepare(
+        `SELECT i.id, i.display_name AS displayName,
+                i.student_number_digest AS studentNumberDigest,
+                i.enabled, t.status AS invitationStatus
+         FROM invitation_tokens t
+         JOIN synthetic_identities i ON i.id = t.identity_id
+         WHERE t.token_digest = ?`,
+      )
+      .get(invitationTokenDigest(request.token)) as IdentityCredential | undefined
+  } else {
+    const candidates = database
+      .prepare(
+        `SELECT i.id, i.display_name AS displayName,
+                i.student_number_digest AS studentNumberDigest,
+                i.enabled, t.status AS invitationStatus
+         FROM synthetic_identities i
+         JOIN invitation_tokens t ON t.identity_id = i.id
+         WHERE i.display_name = ?`,
+      )
+      .all(request.displayName.trim()) as IdentityCredential[]
+    identity = candidates.find((candidate) =>
+      verifyStudentNumberCredential(
+        credentialContext,
+        candidate.id,
+        request.studentNumber,
+        candidate.studentNumberDigest,
+      ),
     )
-    .get(invitationTokenDigest(request.token)) as
-    | {
-        id: string
-        displayName: string
-        demoCodeDigest: string
-        enabled: number
-        invitationStatus: 'ACTIVE' | 'REVOKED'
-      }
-    | undefined
+  }
 
   if (!identity || identity.enabled !== 1) {
     recordActivationAttempt(database, 'INVALID', requestId, now)
@@ -203,17 +225,6 @@ export function activateParticipant(
     key: idempotencyKey,
     request,
   })
-  const validCode = verifyDemoCodeCredential(
-    credentialContext,
-    identity.id,
-    request.demoCode,
-    identity.demoCodeDigest,
-  )
-  if (identity.displayName !== request.displayName.trim() || !validCode) {
-    recordActivationAttempt(database, 'INVALID', requestId, now)
-    throw genericActivationFailure()
-  }
-
   const existing = database
     .prepare('SELECT 1 AS present FROM participant_states WHERE identity_id = ?')
     .get(identity.id) as { present: number } | undefined

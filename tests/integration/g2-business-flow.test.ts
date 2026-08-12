@@ -289,7 +289,7 @@ describe('G2 six-stage participant and screen flow', () => {
     const publicJson = JSON.stringify(screen)
     expect(publicJson).not.toContain(finalParticipant.participant.displayName)
     expect(publicJson).not.toContain('更新后的时光胶囊')
-    expect(publicJson).not.toContain(harness.manifest.participants[0].demoCode)
+    expect(publicJson).not.toContain(harness.manifest.participants[0].studentNumber)
     expect(publicJson).not.toContain(harness.manifest.participants[0].inviteToken)
   })
 

@@ -31,7 +31,7 @@ export interface G2Harness {
   unsafeRequest(options: InjectOptions, cookie?: string): Promise<TestResponse>
   activate(
     participantIndex?: number,
-    options?: { displayName?: string; idempotencyKey?: string },
+    options?: { idempotencyKey?: string },
   ): Promise<{
     response: TestResponse
     cookie: string
@@ -172,10 +172,8 @@ export async function createG2Harness(options?: {
           idempotencyKey('activate', participantIndex + 1),
       },
       payload: {
+        method: 'INVITATION_TOKEN',
         token: participant.inviteToken,
-        displayName:
-          activationOptions.displayName ?? participant.displayName,
-        demoCode: participant.demoCode,
       },
     })
     if (response.statusCode !== 200) {

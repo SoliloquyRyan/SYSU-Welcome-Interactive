@@ -93,6 +93,18 @@ describe('SQLite platform foundation', () => {
     })
   })
 
+  it('exposes only the G5 student identity digest after the atomic migration', () => {
+    const migrated = openMigratedDatabase()
+    const columns = (
+      migrated.prepare('PRAGMA table_info(synthetic_identities)').all() as Array<{
+        name: string
+      }>
+    ).map(({ name }) => name)
+
+    expect(columns).toContain('student_number_digest')
+    expect(columns).not.toContain('demo_code_digest')
+  })
+
   it('detects an applied migration whose checksum was changed', () => {
     const migrated = openMigratedDatabase()
     migrated

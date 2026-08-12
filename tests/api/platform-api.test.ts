@@ -207,8 +207,8 @@ describe('G1 system HTTP and WebSocket boundary', () => {
     const publicKeys = collectObjectKeys(publicBodies)
     for (const forbiddenKey of [
       'displayName',
-      'demoCode',
-      'demoCodeDigest',
+      'studentNumber',
+      'studentNumberDigest',
       'inviteToken',
       'invitationToken',
       'tokenDigest',

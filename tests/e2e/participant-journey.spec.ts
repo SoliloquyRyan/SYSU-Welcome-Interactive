@@ -7,6 +7,7 @@ import {
   grantAllRoles,
   jumpToStage,
   loginAdmin,
+  openFallbackActivation,
   openInvitation,
   selectStarTemperature,
   startRehearsal,
@@ -84,23 +85,23 @@ test('recovers from generic activation failures and safely replays a lost capsul
     const participantPage = await participantContext.newPage()
     const screenPage = await screenContext.newPage()
     const credential = demo.credentials.participant
-    const genericFailure = '核验未通过，请确认邀请入口和填写信息后重试。'
+    const genericFailure = '核验未通过，请确认姓名和合成学号后重试。'
 
-    await openInvitation(participantPage, demo, credential)
+    await openFallbackActivation(participantPage, demo)
     await participantPage
       .getByLabel('虚构姓名')
       .fill(`${credential.displayName}（错误）`)
-    await participantPage.getByLabel('六位 Demo 码').fill(credential.demoCode)
+    await participantPage.getByLabel('合成学号').fill(credential.studentNumber)
     await participantPage.getByRole('button', { name: '进入现场' }).click()
     await expect(participantPage.getByRole('alert')).toHaveText(genericFailure)
 
-    const wrongCode = credential.demoCode === '000000' ? '999999' : '000000'
+    const wrongCode = '99999999'
     await participantPage.getByLabel('虚构姓名').fill(credential.displayName)
-    await participantPage.getByLabel('六位 Demo 码').fill(wrongCode)
+    await participantPage.getByLabel('合成学号').fill(wrongCode)
     await participantPage.getByRole('button', { name: '进入现场' }).click()
     await expect(participantPage.getByRole('alert')).toHaveText(genericFailure)
 
-    await participantPage.getByLabel('六位 Demo 码').fill(credential.demoCode)
+    await participantPage.getByLabel('合成学号').fill(credential.studentNumber)
     await participantPage.getByRole('button', { name: '进入现场' }).click()
     await selectStarTemperature(participantPage, 6500)
     await expect(participantPage.getByRole('button', { name: '退出' })).toBeVisible()
@@ -186,7 +187,7 @@ test('recovers from generic activation failures and safely replays a lost capsul
         firstMessage,
         updatedMessage,
         credential.displayName,
-        credential.demoCode,
+        credential.studentNumber,
         credential.inviteToken,
       ],
     )
@@ -391,10 +392,10 @@ test('keeps two participants independent across stage locks, four gift tiers, re
         capsuleMessageA,
         capsuleMessageB,
         participantA.displayName,
-        participantA.demoCode,
+        participantA.studentNumber,
         participantA.inviteToken,
         participantB.displayName,
-        participantB.demoCode,
+        participantB.studentNumber,
         participantB.inviteToken,
       ],
     )

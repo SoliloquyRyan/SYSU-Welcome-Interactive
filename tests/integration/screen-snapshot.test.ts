@@ -41,7 +41,7 @@ describe('public screen snapshot', () => {
     database
       .prepare(
         `INSERT INTO synthetic_identities (
-           id, seed_index, display_name, demo_code_digest, public_star_id,
+           id, seed_index, display_name, student_number_digest, public_star_id,
            visual_seed, enabled, created_at
          ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
       )

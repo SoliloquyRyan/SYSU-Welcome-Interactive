@@ -129,13 +129,21 @@ export const ParticipantSnapshotSchema = z
   })
   .strict()
 
-export const ActivateParticipantRequestSchema = z
-  .object({
-    token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
-    displayName: z.string().trim().min(1).max(40),
-    demoCode: z.string().regex(/^\d{6}$/),
-  })
-  .strict()
+export const ActivateParticipantRequestSchema = z.discriminatedUnion('method', [
+  z
+    .object({
+      method: z.literal('INVITATION_TOKEN'),
+      token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    })
+    .strict(),
+  z
+    .object({
+      method: z.literal('STUDENT_ID'),
+      displayName: z.string().trim().min(1).max(40),
+      studentNumber: z.string().regex(/^\d{8,20}$/),
+    })
+    .strict(),
+])
 
 export const CapsuleMessageRequestSchema = CommandVersionSchema.extend({
   text: CapsuleMessageTextSchema,
@@ -277,5 +285,6 @@ export const SessionEndedResponseSchema = z
 export type AdminRole = z.infer<typeof AdminRoleSchema>
 export type CommandVersion = z.infer<typeof CommandVersionSchema>
 export type ParticipantSnapshot = z.infer<typeof ParticipantSnapshotSchema>
+export type ActivateParticipantRequest = z.infer<typeof ActivateParticipantRequestSchema>
 export type AdminSnapshot = z.infer<typeof AdminSnapshotSchema>
 export type RuntimeAction = z.infer<typeof RuntimeActionSchema>

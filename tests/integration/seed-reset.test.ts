@@ -23,7 +23,7 @@ function collectCredentialStrings(
   result = new Set<string>(),
 ): Set<string> {
   if (typeof value === 'string') {
-    if (/(?:token|code|password|pepper)/i.test(parentKey) && value.length >= 6) {
+    if (/(?:token|studentNumber|password|pepper)/i.test(parentKey) && value.length >= 6) {
       result.add(value)
     }
     return result
@@ -49,7 +49,7 @@ function catalogSnapshot(database: Database.Database) {
   return {
     identities: database
       .prepare(
-        `SELECT id, seed_index, display_name, demo_code_digest,
+        `SELECT id, seed_index, display_name, student_number_digest,
                 public_star_id, visual_seed, enabled
          FROM synthetic_identities ORDER BY seed_index`,
       )
@@ -176,7 +176,7 @@ describe('deterministic 300-participant seed and reset', () => {
         `SELECT
            count(DISTINCT id) AS ids,
            count(DISTINCT seed_index) AS seedIndexes,
-           count(DISTINCT demo_code_digest) AS codeDigests,
+           count(DISTINCT student_number_digest) AS codeDigests,
            count(DISTINCT public_star_id) AS starIds,
            count(DISTINCT visual_seed) AS visualSeeds
          FROM synthetic_identities`,
@@ -203,7 +203,7 @@ describe('deterministic 300-participant seed and reset', () => {
     const plaintextCredentials = collectCredentialStrings(manifest)
     const storedDigests = [
       ...(database
-        .prepare('SELECT demo_code_digest FROM synthetic_identities')
+        .prepare('SELECT student_number_digest FROM synthetic_identities')
         .pluck()
         .all() as string[]),
       ...(database
@@ -238,6 +238,59 @@ describe('deterministic 300-participant seed and reset', () => {
         false,
       )
     }
+  })
+
+  it('upgrades the legacy local credential manifest without rotating invitation tokens', () => {
+    seed()
+    const current = readSeedManifest(manifestPath)
+    const tokenDigestsBefore = database
+      .prepare('SELECT token_digest FROM invitation_tokens ORDER BY identity_id')
+      .pluck()
+      .all()
+    const legacy = {
+      schemaVersion: 1,
+      seedVersion: 'demo-v0-g1-v1',
+      generatedAt: current.generatedAt,
+      credentialPepper: current.credentialPepper,
+      admin: current.admin,
+      participants: current.participants.map((participant) => ({
+        id: participant.id,
+        seedIndex: participant.seedIndex,
+        displayName: `旧合成身份 ${participant.seedIndex}`,
+        demoCode: participant.seedIndex.toString().padStart(6, '0'),
+        inviteToken: participant.inviteToken,
+        publicStarId: `STAR-${participant.seedIndex.toString().padStart(3, '0')}`,
+        visualSeed: participant.visualSeed,
+      })),
+      programs: current.programs,
+      gifts: current.gifts,
+    }
+    fs.writeFileSync(manifestPath, `${JSON.stringify(legacy, null, 2)}\n`, 'utf8')
+    database.exec(`
+      UPDATE synthetic_identities
+      SET display_name = '旧合成身份 ' || seed_index,
+          student_number_digest = lower(hex(randomblob(32))),
+          public_star_id = 'STAR-' || printf('%03d', seed_index);
+      UPDATE demo_seed_meta
+      SET seed_version = 'demo-v0-g1-v1', seed_fingerprint = '${'0'.repeat(64)}';
+      UPDATE app_state
+      SET seed_version = 'demo-v0-g1-v1', seed_fingerprint = '${'0'.repeat(64)}';
+    `)
+
+    seed()
+
+    const upgraded = readSeedManifest(manifestPath)
+    const tokenDigestsAfter = database
+      .prepare('SELECT token_digest FROM invitation_tokens ORDER BY identity_id')
+      .pluck()
+      .all()
+    expect(upgraded.schemaVersion).toBe(2)
+    expect(upgraded.seedVersion).toBe('demo-v0-g5-v2')
+    expect(upgraded.participants[0]?.publicStarId).toMatch(/^[A-Z]-\d{4}$/u)
+    expect(tokenDigestsAfter).toEqual(tokenDigestsBefore)
+    expect(
+      verifyDemoSeed(database, { manifestPath, participantCount: 300 }).ready,
+    ).toBe(true)
   })
 
   it('does not silently regenerate a missing manifest for a seeded database', () => {
@@ -412,7 +465,7 @@ describe('deterministic 300-participant seed and reset', () => {
         `UPDATE synthetic_identities
          SET seed_index = 999,
              display_name = '被篡改的身份',
-             demo_code_digest = ?,
+             student_number_digest = ?,
              public_star_id = 'STAR-TAMPERED',
              visual_seed = ?,
              enabled = 0

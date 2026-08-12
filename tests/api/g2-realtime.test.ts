@@ -277,7 +277,7 @@ describe('G2 committed WebSocket facts and high-water recovery', () => {
     const publicEvent = JSON.stringify(event)
     for (const participant of harness.manifest.participants.slice(0, 2)) {
       expect(publicEvent).not.toContain(participant.displayName)
-      expect(publicEvent).not.toContain(participant.demoCode)
+      expect(publicEvent).not.toContain(participant.studentNumber)
       expect(publicEvent).not.toContain(participant.inviteToken)
     }
 
@@ -623,7 +623,7 @@ describe('G2 committed WebSocket facts and high-water recovery', () => {
     expect(privateEvent.stream).toBe('participant')
     const privateJson = JSON.stringify(privateEvent)
     expect(privateJson).not.toContain(harness.manifest.participants[1].displayName)
-    expect(privateJson).not.toContain(harness.manifest.participants[1].demoCode)
+    expect(privateJson).not.toContain(harness.manifest.participants[1].studentNumber)
     expect(privateJson).not.toContain(harness.manifest.participants[1].inviteToken)
     expect(await nothingForB).toBe(true)
     const [afterA, afterB] = await Promise.all(

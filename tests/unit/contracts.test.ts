@@ -91,7 +91,7 @@ describe('shared protocol contracts', () => {
 
     for (const privateField of [
       'displayName',
-      'demoCode',
+      'studentNumber',
       'inviteToken',
       'privateFutureMessage',
     ]) {

@@ -134,26 +134,12 @@ describe('G2 session, cookie and local network security', () => {
     ).toBe(401)
   })
 
-  it('replays activation once, issues a fresh device session and conflicts on a changed request', async () => {
+  it('replays token activation once and issues a fresh device session without duplicate participant facts', async () => {
     const key = idempotencyKey('activation-replay')
     const first = await harness.activate(0, { idempotencyKey: key })
     const replay = await harness.activate(0, { idempotencyKey: key })
     expect(replay.response.json()).toEqual(first.response.json())
     expect(replay.cookie).not.toBe(first.cookie)
-
-    const seed = harness.manifest.participants[0]
-    const conflict = await harness.unsafeRequest({
-      method: 'POST',
-      url: '/api/participant/activate',
-      headers: { 'idempotency-key': key },
-      payload: {
-        token: seed.inviteToken,
-        displayName: '相同键的不同虚构姓名',
-        demoCode: seed.demoCode,
-      },
-    })
-    expect(conflict.statusCode).toBe(409)
-    expect(responseErrorCode(conflict)).toBe('IDEMPOTENCY_CONFLICT')
 
     const screen = await harness.request({
       method: 'GET',
@@ -168,20 +154,16 @@ describe('G2 session, cookie and local network security', () => {
   it('uses the same generic failure for an unknown token, wrong name and wrong code', async () => {
     const participant = harness.manifest.participants[0]
     const attempts = [
+      { method: 'INVITATION_TOKEN', token: 'z'.repeat(43) },
       {
-        token: 'z'.repeat(43),
-        displayName: participant.displayName,
-        demoCode: participant.demoCode,
-      },
-      {
-        token: participant.inviteToken,
+        method: 'STUDENT_ID',
         displayName: '不存在的虚构姓名',
-        demoCode: participant.demoCode,
+        studentNumber: participant.studentNumber,
       },
       {
-        token: participant.inviteToken,
+        method: 'STUDENT_ID',
         displayName: participant.displayName,
-        demoCode: participant.demoCode === '000000' ? '999999' : '000000',
+        studentNumber: '99999999',
       },
     ]
 
@@ -207,6 +189,23 @@ describe('G2 session, cookie and local network security', () => {
     expect(publicFailures[1]).toEqual(publicFailures[0])
     expect(publicFailures[2]).toEqual(publicFailures[0])
     expect(publicFailures[0].statusCode).toBeGreaterThanOrEqual(400)
+  })
+
+  it('accepts the name and synthetic student ID fallback without an invitation token', async () => {
+    const participant = harness.manifest.participants[0]
+    const response = await harness.unsafeRequest({
+      method: 'POST',
+      url: '/api/participant/activate',
+      headers: { 'idempotency-key': idempotencyKey('student-number-fallback') },
+      payload: {
+        method: 'STUDENT_ID',
+        displayName: participant.displayName,
+        studentNumber: participant.studentNumber,
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['set-cookie']).toBeDefined()
   })
 
   it('rejects unauthenticated reads and never lets one cookie cross the participant/admin boundary', async () => {
@@ -380,9 +379,8 @@ describe('G2 session, cookie and local network security', () => {
       url: '/api/participant/activate',
       headers: value ? { 'idempotency-key': value } : undefined,
       payload: {
+        method: 'INVITATION_TOKEN',
         token: participant.inviteToken,
-        displayName: participant.displayName,
-        demoCode: participant.demoCode,
       },
     })
     expect(response.statusCode).toBe(400)

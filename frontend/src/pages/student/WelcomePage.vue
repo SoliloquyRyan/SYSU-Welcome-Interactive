@@ -39,7 +39,7 @@ const invitationToken = ref(null)
 const snapshot = ref(null)
 const activeTab = ref('scene')
 const displayName = ref('')
-const demoCode = ref('')
+const studentNumber = ref('')
 const capsuleMessage = ref('')
 const capsuleMessageDirty = ref(false)
 const capsuleNoticeAccepted = ref(false)
@@ -229,17 +229,50 @@ function validateActivation() {
   if (!displayName.value.trim() || visibleLength(displayName.value) > 40) {
     return '请输入 1–40 个字符的虚构姓名。'
   }
-  if (!/^\d{6}$/.test(demoCode.value)) return '请输入邀请函上的六位 Demo 码。'
+  if (!/^\d{8,20}$/.test(studentNumber.value)) return '请输入 8–20 位合成学号。'
   return ''
+}
+
+async function activateWithInvitationToken(token) {
+  busy.value = 'activation'
+  activationKey.value ??= createIdempotencyKey()
+  try {
+    await participantApi.activate(
+      { method: 'INVITATION_TOKEN', token },
+      activationKey.value,
+    )
+    await refreshSnapshot()
+    invitationToken.value = null
+    activationKey.value = null
+    arrivalWelcomeOpen.value = true
+    successMessage.value = ''
+    return true
+  } catch (error) {
+    if (isDefinitiveFailure(error)) activationKey.value = null
+    invitationToken.value = null
+    entryState.value = 'activation'
+    formError.value =
+      error instanceof ApiError && ['VALIDATION_FAILED', 'AUTH_REQUIRED'].includes(error.code)
+        ? '个性入口核验未通过，请改用姓名和合成学号。'
+        : publicErrorMessage(error)
+    return false
+  } finally {
+    busy.value = ''
+  }
 }
 
 async function boot() {
   invitationToken.value = takePendingInvitationToken()
   try {
     await refreshSnapshot()
+    return
   } catch (error) {
     if (error instanceof ApiError && error.code === 'AUTH_REQUIRED') {
-      entryState.value = invitationToken.value ? 'activation' : 'missing'
+      if (invitationToken.value) {
+        await activateWithInvitationToken(invitationToken.value)
+      } else {
+        entryState.value = 'missing'
+      }
       return
     }
     serviceNotice.value = publicErrorMessage(error)
@@ -251,10 +284,6 @@ async function submitActivation() {
   formError.value = validateActivation()
   successMessage.value = ''
   if (formError.value) return
-  if (!invitationToken.value) {
-    formError.value = '入口信息已从本页清除，请重新轻触或扫码。'
-    return
-  }
   if (!navigator.onLine) {
     formError.value = '设备当前离线，无法核验。'
     return
@@ -265,14 +294,13 @@ async function submitActivation() {
   try {
     await participantApi.activate(
       {
-        token: invitationToken.value,
+        method: 'STUDENT_ID',
         displayName: displayName.value.trim(),
-        demoCode: demoCode.value,
+        studentNumber: studentNumber.value,
       },
       activationKey.value,
     )
     await refreshSnapshot()
-    invitationToken.value = null
     activationKey.value = null
     arrivalWelcomeOpen.value = true
     successMessage.value = ''
@@ -280,7 +308,7 @@ async function submitActivation() {
     if (isDefinitiveFailure(error)) activationKey.value = null
     formError.value =
       error instanceof ApiError && ['VALIDATION_FAILED', 'AUTH_REQUIRED'].includes(error.code)
-        ? '核验未通过，请确认邀请入口和填写信息后重试。'
+        ? '核验未通过，请确认姓名和合成学号后重试。'
         : publicErrorMessage(error)
   } finally {
     busy.value = ''
@@ -564,8 +592,8 @@ onMounted(() => {
         <form class="form-stack" novalidate @submit.prevent="submitActivation">
           <div>
             <p class="eyebrow">备用核验 · 01</p>
-            <h2>使用邀请函上的合成信息核验</h2>
-            <p class="helper">只使用虚构姓名和六位 Demo 码，请勿填写真实个人信息。</p>
+            <h2>使用姓名和合成学号核验</h2>
+            <p class="helper">NFC 个性入口为首选；这里只使用虚构姓名和合成学号，请勿填写真实个人信息。</p>
           </div>
           <div class="field-pair">
             <label for="display-name">虚构姓名</label>
@@ -579,15 +607,15 @@ onMounted(() => {
             />
           </div>
           <div class="field-pair">
-            <label for="demo-code">六位 Demo 码</label>
+            <label for="student-number">合成学号</label>
             <input
-              id="demo-code"
-              v-model="demoCode"
-              name="demoCode"
+              id="student-number"
+              v-model="studentNumber"
+              name="studentNumber"
               inputmode="numeric"
-              autocomplete="one-time-code"
-              maxlength="6"
-              pattern="[0-9]{6}"
+              autocomplete="off"
+              maxlength="20"
+              pattern="[0-9]{8,20}"
               @input="resetActivationKey"
             />
           </div>
@@ -601,7 +629,10 @@ onMounted(() => {
       <section v-else-if="entryState === 'missing'" class="entry-panel entry-panel--missing">
         <p class="eyebrow">入口已清除</p>
         <h2>请重新轻触邀请函或扫描二维码</h2>
-        <p class="helper">为了保护入口信息，本页不会保存已从地址栏移除的邀请令牌。</p>
+        <p class="helper">为了保护入口信息，本页不会保存已从地址栏移除的邀请令牌；无法使用邀请函时可改用备用核验。</p>
+        <BaseButton type="button" block @click="entryState = 'activation'">
+          使用姓名与学号备用核验
+        </BaseButton>
       </section>
     </div>
 

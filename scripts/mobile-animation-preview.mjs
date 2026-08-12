@@ -131,12 +131,8 @@ try {
     { baseURL: demo.baseURL, inviteToken: participant.inviteToken },
   )
   await page
-    .getByRole('heading', { name: '使用邀请函上的合成信息核验' })
+    .getByRole('heading', { name: /欢迎.*进入智工星河/ })
     .waitFor()
-  await page.getByLabel('虚构姓名').fill(participant.displayName)
-  await page.getByLabel('六位 Demo 码').fill(participant.demoCode)
-  await page.getByRole('button', { name: '进入现场' }).click()
-  await page.getByRole('heading', { name: /欢迎.*进入智工星河/ }).waitFor()
   await page.evaluate(() => {
     document.title = '手机端动画预览 · SYSU Welcome'
   })

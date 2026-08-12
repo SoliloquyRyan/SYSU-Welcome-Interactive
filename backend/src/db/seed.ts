@@ -2,7 +2,6 @@ import {
   createHash,
   createHmac,
   randomBytes,
-  randomInt,
   randomUUID,
   timingSafeEqual,
 } from 'node:crypto'
@@ -14,14 +13,35 @@ import { z } from 'zod'
 import type { SqliteDatabase } from './open-database.js'
 import { databaseTableExists } from './open-database.js'
 
-export const DEMO_SEED_VERSION = 'demo-v0-g1-v1'
+const LEGACY_DEMO_SEED_VERSION = 'demo-v0-g1-v1'
+export const DEMO_SEED_VERSION = 'demo-v0-g5-v2'
+
+const SyntheticSurnameSchema = z.enum([
+  '林', '陈', '黄', '李', '周', '吴', '梁', '何', '郑', '罗',
+])
+
+const SYNTHETIC_SURNAMES: ReadonlyArray<{
+  surname: z.infer<typeof SyntheticSurnameSchema>
+  initial: string
+}> = [
+  { surname: '林', initial: 'L' },
+  { surname: '陈', initial: 'C' },
+  { surname: '黄', initial: 'H' },
+  { surname: '李', initial: 'L' },
+  { surname: '周', initial: 'Z' },
+  { surname: '吴', initial: 'W' },
+  { surname: '梁', initial: 'L' },
+  { surname: '何', initial: 'H' },
+  { surname: '郑', initial: 'Z' },
+  { surname: '罗', initial: 'L' },
+]
 
 const ParticipantSchema = z
   .object({
     id: z.string().regex(/^synthetic-\d{3,4}$/),
     seedIndex: z.number().int().positive(),
     displayName: z.string().min(1).max(40),
-    demoCode: z.string().regex(/^\d{6}$/),
+    studentNumber: z.string().regex(/^\d{8,20}$/),
     inviteToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
     publicStarId: z.string().min(1).max(40),
     visualSeed: z.string().regex(/^[a-f0-9]{32}$/),
@@ -52,7 +72,7 @@ const GiftSchema = z
 
 export const DemoSeedManifestSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     seedVersion: z.literal(DEMO_SEED_VERSION),
     generatedAt: z.string().datetime({ offset: true }),
     credentialPepper: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
@@ -64,6 +84,35 @@ export const DemoSeedManifestSchema = z
       })
       .strict(),
     participants: z.array(ParticipantSchema).min(1).max(1_000),
+    programs: z.array(ProgramSchema).min(1),
+    gifts: z.array(GiftSchema).length(4),
+  })
+  .strict()
+
+const LegacyDemoSeedManifestSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    seedVersion: z.literal(LEGACY_DEMO_SEED_VERSION),
+    generatedAt: z.string().datetime({ offset: true }),
+    credentialPepper: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    admin: z
+      .object({
+        id: z.literal('admin-shared'),
+        username: z.literal('demo-admin'),
+        password: z.string().regex(/^[A-Za-z0-9_-]{32}$/),
+      })
+      .strict(),
+    participants: z.array(
+      z.object({
+        id: z.string().regex(/^synthetic-\d{3,4}$/),
+        seedIndex: z.number().int().positive(),
+        displayName: z.string().min(1).max(40),
+        demoCode: z.string().regex(/^\d{6}$/),
+        inviteToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+        publicStarId: z.string().min(1).max(40),
+        visualSeed: z.string().regex(/^[a-f0-9]{32}$/),
+      }).strict(),
+    ).min(1).max(1_000),
     programs: z.array(ProgramSchema).min(1),
     gifts: z.array(GiftSchema).length(4),
   })
@@ -144,18 +193,18 @@ export function readDemoCredentialContext(
   return Object.freeze({ credentialPepper: manifest.credentialPepper })
 }
 
-export function verifyDemoCodeCredential(
+export function verifyStudentNumberCredential(
   context: DemoCredentialContext,
   identityId: string,
-  demoCode: string,
+  studentNumber: string,
   storedDigest: string,
 ): boolean {
   return digestMatches(
     credentialDigest(
       context.credentialPepper,
-      'demo-code',
+      'student-number',
       identityId,
-      demoCode,
+      studentNumber,
     ),
     storedDigest,
   )
@@ -218,7 +267,7 @@ function validateManifestInvariants(
     }
   })
   assertUnique(manifest.participants.map(({ id }) => id), 'participant IDs')
-  assertUnique(manifest.participants.map(({ demoCode }) => demoCode), 'Demo codes')
+  assertUnique(manifest.participants.map(({ studentNumber }) => studentNumber), 'student IDs')
   assertUnique(
     manifest.participants.map(({ inviteToken }) => inviteToken),
     'invitation tokens',
@@ -240,34 +289,44 @@ function validateManifestInvariants(
   }
 }
 
+function syntheticIdentityFields(seedIndex: number): {
+  displayName: string
+  studentNumber: string
+  publicStarId: string
+} {
+  const suffix = seedIndex.toString().padStart(3, '0')
+  const studentNumber = `2026${seedIndex.toString().padStart(8, '0')}`
+  const surname = SYNTHETIC_SURNAMES[(seedIndex - 1) % SYNTHETIC_SURNAMES.length]
+  if (!surname) throw new Error('Synthetic surname catalog is empty')
+  return {
+    displayName: `${surname.surname}同学（合成${suffix}）`,
+    studentNumber,
+    publicStarId: `${surname.initial}-${studentNumber.slice(-4)}`,
+  }
+}
+
 function generateManifest(
   participantCount: number,
   now: () => Date,
 ): DemoSeedManifest {
-  const demoCodes = new Set<string>()
   const participants = Array.from({ length: participantCount }, (_, index) => {
-    let demoCode: string
-    do {
-      demoCode = randomInt(0, 1_000_000).toString().padStart(6, '0')
-    } while (demoCodes.has(demoCode))
-    demoCodes.add(demoCode)
-
     const seedIndex = index + 1
     const suffix = seedIndex.toString().padStart(3, '0')
     const id = `synthetic-${suffix}`
+    const identity = syntheticIdentityFields(seedIndex)
     return {
       id,
       seedIndex,
-      displayName: `星域学员 ${suffix}`,
-      demoCode,
+      displayName: identity.displayName,
+      studentNumber: identity.studentNumber,
       inviteToken: randomBytes(32).toString('base64url'),
-      publicStarId: `STAR-${suffix}`,
+      publicStarId: identity.publicStarId,
       visualSeed: sha256(`orbital-signal:${id}`).slice(0, 32),
     }
   })
 
   return DemoSeedManifestSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     seedVersion: DEMO_SEED_VERSION,
     generatedAt: now().toISOString(),
     credentialPepper: randomBytes(32).toString('base64url'),
@@ -280,6 +339,44 @@ function generateManifest(
     programs: PROGRAMS,
     gifts: GIFTS,
   })
+}
+
+function upgradeLegacyManifest(raw: unknown): DemoSeedManifest | null {
+  const legacy = LegacyDemoSeedManifestSchema.safeParse(raw)
+  if (!legacy.success) return null
+  return DemoSeedManifestSchema.parse({
+    schemaVersion: 2,
+    seedVersion: DEMO_SEED_VERSION,
+    generatedAt: legacy.data.generatedAt,
+    credentialPepper: legacy.data.credentialPepper,
+    admin: legacy.data.admin,
+    participants: legacy.data.participants.map((participant) => ({
+      id: participant.id,
+      seedIndex: participant.seedIndex,
+      ...syntheticIdentityFields(participant.seedIndex),
+      inviteToken: participant.inviteToken,
+      visualSeed: participant.visualSeed,
+    })),
+    programs: legacy.data.programs,
+    gifts: legacy.data.gifts,
+  })
+}
+
+function replaceManifestAtomically(
+  manifestPath: string,
+  manifest: DemoSeedManifest,
+): void {
+  const temporaryPath = `${manifestPath}.upgrade-${process.pid}-${randomUUID()}`
+  fs.writeFileSync(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, {
+    encoding: 'utf8',
+    flag: 'wx',
+    mode: 0o600,
+  })
+  try {
+    fs.renameSync(temporaryPath, manifestPath)
+  } finally {
+    if (fs.existsSync(temporaryPath)) fs.rmSync(temporaryPath, { force: true })
+  }
 }
 
 function writeManifestAtomically(
@@ -331,7 +428,11 @@ function loadOrCreateManifest(
   options: SeedOptions,
 ): { manifest: DemoSeedManifest; created: boolean } {
   if (fs.existsSync(options.manifestPath)) {
-    const manifest = readSeedManifest(options.manifestPath)
+    const raw = JSON.parse(fs.readFileSync(options.manifestPath, 'utf8')) as unknown
+    const current = DemoSeedManifestSchema.safeParse(raw)
+    const manifest = current.success ? current.data : upgradeLegacyManifest(raw)
+    if (!manifest) throw new Error('Seed manifest is missing or invalid')
+    if (!current.success) replaceManifestAtomically(options.manifestPath, manifest)
     validateManifestInvariants(manifest, options.participantCount)
     return { manifest, created: false }
   }
@@ -353,6 +454,88 @@ function loadOrCreateManifest(
     : readSeedManifest(options.manifestPath)
   validateManifestInvariants(selectedManifest, options.participantCount)
   return { manifest: selectedManifest, created }
+}
+
+function upgradeLegacySeedCatalogInTransaction(
+  database: SqliteDatabase,
+  manifest: DemoSeedManifest,
+  fingerprint: string,
+  participantCount: number,
+  appliedAt: string,
+): void {
+  const identities = database
+    .prepare(
+      `SELECT id, seed_index AS seedIndex, visual_seed AS visualSeed, enabled
+       FROM synthetic_identities`,
+    )
+    .all() as Array<{
+    id: string
+    seedIndex: number
+    visualSeed: string
+    enabled: number
+  }>
+  const identityById = new Map(identities.map((identity) => [identity.id, identity]))
+  const tokens = database
+    .prepare(
+      `SELECT identity_id AS identityId, token_digest AS tokenDigest
+       FROM invitation_tokens`,
+    )
+    .all() as Array<{ identityId: string; tokenDigest: string }>
+  const tokenByIdentity = new Map(tokens.map((token) => [token.identityId, token.tokenDigest]))
+
+  if (identities.length !== participantCount || tokens.length !== participantCount) {
+    throw new Error('Legacy seed catalog count does not match the upgraded manifest')
+  }
+  for (const participant of manifest.participants) {
+    const identity = identityById.get(participant.id)
+    if (
+      !identity
+      || identity.seedIndex !== participant.seedIndex
+      || identity.visualSeed !== participant.visualSeed
+      || identity.enabled !== 1
+      || tokenByIdentity.get(participant.id) !== invitationTokenDigest(participant.inviteToken)
+    ) {
+      throw new Error('Legacy seed catalog cannot be safely upgraded')
+    }
+  }
+
+  const updateIdentity = database.prepare(
+    `UPDATE synthetic_identities
+     SET display_name = ?, student_number_digest = ?, public_star_id = ?
+     WHERE id = ?`,
+  )
+  for (const participant of manifest.participants) {
+    if (
+      updateIdentity.run(
+        participant.displayName,
+        credentialDigest(
+          manifest.credentialPepper,
+          'student-number',
+          participant.id,
+          participant.studentNumber,
+        ),
+        participant.publicStarId,
+        participant.id,
+      ).changes !== 1
+    ) {
+      throw new Error('Legacy synthetic identity upgrade was incomplete')
+    }
+  }
+
+  database
+    .prepare(
+      `UPDATE demo_seed_meta
+       SET seed_version = ?, seed_fingerprint = ?, generated_at = ?, applied_at = ?
+       WHERE id = 1`,
+    )
+    .run(DEMO_SEED_VERSION, fingerprint, manifest.generatedAt, appliedAt)
+  database
+    .prepare(
+      `UPDATE app_state
+       SET seed_version = ?, seed_fingerprint = ?, updated_at = ?
+       WHERE id = 1`,
+    )
+    .run(DEMO_SEED_VERSION, fingerprint, appliedAt)
 }
 
 export function seedDemoDatabase(
@@ -391,6 +574,17 @@ export function seedDemoDatabase(
 
     if (existing) {
       if (
+        existing.seedVersion === LEGACY_DEMO_SEED_VERSION
+        && existing.participantCount === options.participantCount
+      ) {
+        upgradeLegacySeedCatalogInTransaction(
+          database,
+          manifest,
+          fingerprint,
+          options.participantCount,
+          appliedAt,
+        )
+      } else if (
         existing.seedVersion !== manifest.seedVersion ||
         existing.fingerprint !== fingerprint ||
         existing.participantCount !== options.participantCount
@@ -416,7 +610,7 @@ export function seedDemoDatabase(
 
     const insertIdentity = database.prepare(
       `INSERT INTO synthetic_identities (
-         id, seed_index, display_name, demo_code_digest, public_star_id,
+         id, seed_index, display_name, student_number_digest, public_star_id,
          visual_seed, enabled, created_at
        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
     )
@@ -432,9 +626,9 @@ export function seedDemoDatabase(
         participant.displayName,
         credentialDigest(
           manifest.credentialPepper,
-          'demo-code',
+          'student-number',
           participant.id,
-          participant.demoCode,
+          participant.studentNumber,
         ),
         participant.publicStarId,
         participant.visualSeed,
@@ -585,7 +779,7 @@ export function restoreDemoSeedCatalogInTransaction(
   database.exec(`
     UPDATE synthetic_identities
     SET seed_index = seed_index + 1000000,
-        demo_code_digest = lower(hex(randomblob(32))),
+        student_number_digest = lower(hex(randomblob(32))),
         public_star_id = 'RESTORE-' || id || '-' || lower(hex(randomblob(8))),
         visual_seed = lower(hex(randomblob(16)));
     UPDATE invitation_tokens
@@ -600,7 +794,7 @@ export function restoreDemoSeedCatalogInTransaction(
 
   const updateIdentity = database.prepare(
     `UPDATE synthetic_identities
-     SET seed_index = ?, display_name = ?, demo_code_digest = ?,
+     SET seed_index = ?, display_name = ?, student_number_digest = ?,
          public_star_id = ?, visual_seed = ?, enabled = 1
      WHERE id = ?`,
   )
@@ -615,9 +809,9 @@ export function restoreDemoSeedCatalogInTransaction(
       participant.displayName,
       credentialDigest(
         manifest.credentialPepper,
-        'demo-code',
+        'student-number',
         participant.id,
-        participant.demoCode,
+        participant.studentNumber,
       ),
       participant.publicStarId,
       participant.visualSeed,
@@ -794,7 +988,7 @@ export function verifyDemoSeed(
     const identityRows = database
       .prepare(
         `SELECT id, seed_index AS seedIndex, display_name AS displayName,
-                demo_code_digest AS demoCodeDigest,
+                student_number_digest AS studentNumberDigest,
                 public_star_id AS publicStarId, visual_seed AS visualSeed,
                 enabled
          FROM synthetic_identities`,
@@ -803,7 +997,7 @@ export function verifyDemoSeed(
       id: string
       seedIndex: number
       displayName: string
-      demoCodeDigest: string
+      studentNumberDigest: string
       publicStarId: string
       visualSeed: string
       enabled: number
@@ -820,17 +1014,17 @@ export function verifyDemoSeed(
     )
     for (const participant of manifest.participants) {
       const identity = identityById.get(participant.id)
-      const expectedCodeDigest = credentialDigest(
+      const expectedStudentNumberDigest = credentialDigest(
         manifest.credentialPepper,
-        'demo-code',
+        'student-number',
         participant.id,
-        participant.demoCode,
+        participant.studentNumber,
       )
       if (
         !identity ||
         identity.seedIndex !== participant.seedIndex ||
         identity.displayName !== participant.displayName ||
-        identity.demoCodeDigest !== expectedCodeDigest ||
+        identity.studentNumberDigest !== expectedStudentNumberDigest ||
         identity.publicStarId !== participant.publicStarId ||
         identity.visualSeed !== participant.visualSeed ||
         identity.enabled !== 1

@@ -37,7 +37,7 @@ export async function openInvitation(
     },
   )
   await expect(
-    page.getByRole('heading', { name: '使用邀请函上的合成信息核验' }),
+    page.getByRole('heading', { name: /欢迎.*进入智工星河/ }),
   ).toBeVisible()
   const currentUrl = new URL(page.url())
   expect(currentUrl.pathname).toBe('/welcome')
@@ -50,9 +50,6 @@ export async function activateParticipant(
   participant: DemoParticipantCredentials = demo.credentials.participant,
 ): Promise<void> {
   await openInvitation(page, demo, participant)
-  await page.getByLabel('虚构姓名').fill(participant.displayName)
-  await page.getByLabel('六位 Demo 码').fill(participant.demoCode)
-  await page.getByRole('button', { name: '进入现场' }).click()
   const startJourney = page.getByRole('button', { name: '启动星程' })
   const confirmTemperature = page.getByRole('button', {
     name: '确认星色 · 进入星辰',
@@ -64,6 +61,17 @@ export async function activateParticipant(
   }
   await expect(exitButton).toBeVisible()
   await expect(page.getByText('实时同步', { exact: true })).toBeVisible()
+}
+
+export async function openFallbackActivation(page: Page, demo: DemoTestStack): Promise<void> {
+  await page.goto(absoluteUrl(demo.baseURL, '/welcome'))
+  await expect(
+    page.getByRole('heading', { name: '请重新轻触邀请函或扫描二维码' }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: '使用姓名与学号备用核验' }).click()
+  await expect(
+    page.getByRole('heading', { name: '使用姓名和合成学号核验' }),
+  ).toBeVisible()
 }
 
 export async function selectStarTemperature(

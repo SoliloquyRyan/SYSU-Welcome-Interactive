@@ -28,7 +28,7 @@ const MAX_CAPTURED_OUTPUT = 32 * 1024
 export interface DemoParticipantCredentials {
   readonly inviteToken: string
   readonly displayName: string
-  readonly demoCode: string
+  readonly studentNumber: string
 }
 
 export interface DemoTestCredentials {
@@ -80,7 +80,7 @@ interface SeedManifestShape {
   participants?: Array<{
     inviteToken?: unknown
     displayName?: unknown
-    demoCode?: unknown
+    studentNumber?: unknown
   }>
   admin?: {
     username?: unknown
@@ -135,7 +135,7 @@ function appendCaptured(current: string, chunk: string): string {
 function redactOutput(value: string): string {
   return value
     .replace(
-      /(["']?(?:password|inviteToken|displayName|demoCode|username|authorization|cookie)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,}]+)/giu,
+      /(["']?(?:password|inviteToken|displayName|studentNumber|username|authorization|cookie)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,}]+)/giu,
       '$1[REDACTED]',
     )
     .replace(/([?&](?:invite|token|code)=)[^&\s"']+/giu, '$1[REDACTED]')
@@ -380,7 +380,7 @@ function readCredentials(manifestPath: string): DemoTestCredentials {
       (participant) =>
         typeof participant.inviteToken !== 'string' ||
         typeof participant.displayName !== 'string' ||
-        typeof participant.demoCode !== 'string',
+        typeof participant.studentNumber !== 'string',
     ) ||
     typeof admin?.username !== 'string' ||
     typeof admin.password !== 'string'
@@ -390,7 +390,7 @@ function readCredentials(manifestPath: string): DemoTestCredentials {
   const syntheticParticipants = participants.map((participant) => ({
     inviteToken: participant.inviteToken as string,
     displayName: participant.displayName as string,
-    demoCode: participant.demoCode as string,
+    studentNumber: participant.studentNumber as string,
   }))
   const [participant, secondParticipant, ...remainingParticipants] =
     syntheticParticipants

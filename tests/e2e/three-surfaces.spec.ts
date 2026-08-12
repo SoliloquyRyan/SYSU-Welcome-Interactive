@@ -99,7 +99,7 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
       [
         capsuleMessage,
         demo.credentials.participant.displayName,
-        demo.credentials.participant.demoCode,
+        demo.credentials.participant.studentNumber,
         demo.credentials.participant.inviteToken,
       ],
     )
@@ -333,7 +333,7 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
       [
         capsuleMessage,
         demo.credentials.participant.displayName,
-        demo.credentials.participant.demoCode,
+        demo.credentials.participant.studentNumber,
         demo.credentials.participant.inviteToken,
       ],
     )

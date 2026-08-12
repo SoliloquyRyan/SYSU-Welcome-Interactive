@@ -46,17 +46,15 @@ describe('G2 authentication failure rate limits', () => {
         'idempotency-key': idempotencyKey('rate-activate', sequence),
         'x-forwarded-for': `unknown-proxy-value, ${sourceIp}`,
       },
-      payload: {
-        token: failure === 'token' ? 'z'.repeat(43) : participant.inviteToken,
-        displayName:
-          failure === 'name' ? '不存在的合成姓名' : participant.displayName,
-        demoCode:
-          failure === 'code'
-            ? participant.demoCode === '000000'
-              ? '999999'
-              : '000000'
-            : participant.demoCode,
-      },
+      payload: failure === 'token'
+        ? { method: 'INVITATION_TOKEN', token: 'z'.repeat(43) }
+        : {
+            method: 'STUDENT_ID',
+            displayName:
+              failure === 'name' ? '不存在的合成姓名' : participant.displayName,
+            studentNumber:
+              failure === 'code' ? '99999999' : participant.studentNumber,
+          },
     })
   }
 
@@ -124,9 +122,8 @@ describe('G2 authentication failure rate limits', () => {
         'x-forwarded-for': successSource,
       },
       payload: {
+        method: 'INVITATION_TOKEN',
         token: participant.inviteToken,
-        displayName: participant.displayName,
-        demoCode: participant.demoCode,
       },
     })
     expect(success.statusCode).toBe(200)
@@ -225,9 +222,8 @@ describe('G2 authentication failure rate limits', () => {
           'x-forwarded-for': `203.0.113.${sequence}`,
         },
         payload: {
+          method: 'INVITATION_TOKEN',
           token: 'z'.repeat(43),
-          displayName: participant.displayName,
-          demoCode: participant.demoCode,
         },
       })
       expect(response.statusCode).toBe(sequence <= 5 ? 401 : 429)

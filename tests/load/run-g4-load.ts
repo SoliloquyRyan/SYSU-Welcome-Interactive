@@ -944,7 +944,7 @@ function reportPrivacyAudit(report: unknown, fixture: LoadFixture | null): boole
   ])
   for (const participant of fixture.manifest.participants) {
     forbidden.add(participant.displayName)
-    forbidden.add(participant.demoCode)
+    forbidden.add(participant.studentNumber)
     forbidden.add(participant.inviteToken)
     forbidden.add(
       `合成寄语 ${String(participant.seedIndex).padStart(3, '0')}`,
@@ -1063,9 +1063,8 @@ async function run(): Promise<void> {
             {
               idempotencyKey: key,
               body: {
+                method: 'INVITATION_TOKEN',
                 token: credential.inviteToken,
-                displayName: credential.displayName,
-                demoCode: credential.demoCode,
               },
             },
           )
@@ -1726,9 +1725,8 @@ async function run(): Promise<void> {
       {
         idempotencyKey: idempotencyKey('post-reset-activate', 0),
         body: {
+          method: 'INVITATION_TOKEN',
           token: fixedCredential.inviteToken,
-          displayName: fixedCredential.displayName,
-          demoCode: fixedCredential.demoCode,
         },
       },
     )

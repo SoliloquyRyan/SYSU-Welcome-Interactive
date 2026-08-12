@@ -32,7 +32,7 @@ function errorMessage(error) {
 function redactOutput(value) {
   return value
     .replace(
-      /(["']?(?:password|password_digest|inviteToken|invitationToken|demoCode|authorization|cookie)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,}]+)/gi,
+      /(["']?(?:password|password_digest|inviteToken|invitationToken|studentNumber|student_number|authorization|cookie)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,}]+)/gi,
       '$1[REDACTED]',
     )
     .replace(
@@ -567,7 +567,7 @@ async function main() {
   console.log(`WELCOME_QR=${qrPath}`)
   console.log(`DEMO_ADMIN=${adminUsername}（密码见 DEMO_CREDENTIALS）`)
   console.log(`DEMO_CREDENTIALS=${manifestPath}（本地忽略文件，内容未回显）`)
-  console.log('扫码二维码可进入带合成令牌的入口；终端不会显示令牌、Demo 码或后台密码。')
+  console.log('扫码二维码可用个性令牌直接进入；终端不会显示令牌、合成学号或后台密码。')
   console.log('按 Ctrl+C 停止全部服务。')
 
   if (process.env.DEMO_SMOKE_EXIT_AFTER_READY === '1') {

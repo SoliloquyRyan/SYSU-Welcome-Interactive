@@ -98,9 +98,8 @@ describe('G2 strict business contracts', () => {
     {
       schema: ActivateParticipantRequestSchema,
       value: {
+        method: 'INVITATION_TOKEN',
         token: 'a'.repeat(43),
-        displayName: '合成访客',
-        demoCode: '123456',
       },
     },
     {
@@ -143,18 +142,28 @@ describe('G2 strict business contracts', () => {
   it('enforces credential and content boundary values', () => {
     expect(() =>
       ActivateParticipantRequestSchema.parse({
+        method: 'INVITATION_TOKEN',
         token: 'short',
-        displayName: '合成访客',
-        demoCode: '123456',
       }),
     ).toThrow()
     expect(() =>
       ActivateParticipantRequestSchema.parse({
-        token: 'a'.repeat(43),
+        method: 'STUDENT_ID',
         displayName: '合成访客',
-        demoCode: '12345A',
+        studentNumber: '2026ABCD',
       }),
     ).toThrow()
+    expect(
+      ActivateParticipantRequestSchema.parse({
+        method: 'STUDENT_ID',
+        displayName: '合成访客',
+        studentNumber: '202600000001',
+      }),
+    ).toEqual({
+      method: 'STUDENT_ID',
+      displayName: '合成访客',
+      studentNumber: '202600000001',
+    })
     expect(() =>
       CapsuleMessageRequestSchema.parse({
         ...VERSION,
@@ -247,7 +256,7 @@ describe('G2 strict business contracts', () => {
     for (const field of [
       'displayName',
       'capsuleMessage',
-      'demoCode',
+      'studentNumber',
       'inviteToken',
       'cookie',
       'password',

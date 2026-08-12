@@ -3,6 +3,7 @@ import type { BrowserContext } from '@playwright/test'
 import {
   activateParticipant,
   expectMinimumControlSize,
+  openFallbackActivation,
   openInvitation,
   selectStarTemperature,
 } from './support/demo-actions.js'
@@ -14,7 +15,20 @@ test('cleans the invitation token and restores one participant across mobile dev
 }) => {
   let firstContext: BrowserContext | null = null
   let secondContext: BrowserContext | null = null
+  let tokenProbeContext: BrowserContext | null = null
   try {
+    tokenProbeContext = await browser.newContext({
+      baseURL: demo.baseURL,
+      viewport: { width: 393, height: 873 },
+      hasTouch: true,
+      isMobile: true,
+    })
+    const tokenProbePage = await tokenProbeContext.newPage()
+    await openInvitation(tokenProbePage, demo, demo.credentials.participants[1])
+    expect(new URL(tokenProbePage.url()).searchParams.has('token')).toBe(false)
+    await tokenProbeContext.close()
+    tokenProbeContext = null
+
     firstContext = await browser.newContext({
       baseURL: demo.baseURL,
       viewport: { width: 393, height: 873 },
@@ -23,18 +37,18 @@ test('cleans the invitation token and restores one participant across mobile dev
       reducedMotion: 'reduce',
     })
     const firstPage = await firstContext.newPage()
-    await openInvitation(firstPage, demo)
+    await openFallbackActivation(firstPage, demo)
 
     const nameInput = firstPage.getByLabel('虚构姓名')
-    const codeInput = firstPage.getByLabel('六位 Demo 码')
+    const codeInput = firstPage.getByLabel('合成学号')
     const submitButton = firstPage.getByRole('button', { name: '进入现场' })
     await expectMinimumControlSize(
       firstPage.locator(
-        '#display-name, #demo-code, button[type="submit"]',
+        '#display-name, #student-number, button[type="submit"]',
       ),
     )
     await nameInput.fill(demo.credentials.participant.displayName)
-    await codeInput.fill(demo.credentials.participant.demoCode)
+    await codeInput.fill(demo.credentials.participant.studentNumber)
     await nameInput.focus()
     await firstPage.keyboard.press('Tab')
     await expect(codeInput).toBeFocused()
@@ -121,6 +135,7 @@ test('cleans the invitation token and restores one participant across mobile dev
     await expect(secondPage.locator('.archive-card')).toContainText('7,350 K')
     expect(new URL(secondPage.url()).searchParams.has('token')).toBe(false)
   } finally {
+    await tokenProbeContext?.close()
     await secondContext?.close()
     await firstContext?.close()
   }
@@ -142,9 +157,6 @@ test('moves the selected star into the capsule without page scrolling', async ({
     })
     const page = await context.newPage()
     await openInvitation(page, demo)
-    await page.getByLabel('虚构姓名').fill(demo.credentials.participant.displayName)
-    await page.getByLabel('六位 Demo 码').fill(demo.credentials.participant.demoCode)
-    await page.getByRole('button', { name: '进入现场' }).click()
     await expect(
       page.getByRole('heading', { name: /欢迎.*进入智工星河/ }),
     ).toBeVisible()
