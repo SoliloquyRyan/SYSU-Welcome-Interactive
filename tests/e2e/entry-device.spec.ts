@@ -3,9 +3,15 @@ import type { BrowserContext } from '@playwright/test'
 import {
   activateParticipant,
   expectMinimumControlSize,
+  expectNoViewportOverflow,
+  expectStage,
+  grantAllRoles,
+  jumpToStage,
+  loginAdmin,
   openFallbackActivation,
   openInvitation,
   selectStarTemperature,
+  startRehearsal,
 } from './support/demo-actions.js'
 import { expect, test } from './support/test.js'
 
@@ -224,5 +230,138 @@ test('moves the selected star into the capsule without page scrolling', async ({
     throw new Error(`Static failure checkpoint: ${checkpoint}`)
   } finally {
     await context?.close()
+  }
+})
+
+test('keeps the live composer and gift sheet reachable above a short mobile viewport', async ({
+  browser,
+  demo,
+}) => {
+  let participantContext: BrowserContext | null = null
+  let adminContext: BrowserContext | null = null
+  let checkpoint = 'setup'
+  try {
+    participantContext = await browser.newContext({
+      baseURL: demo.baseURL,
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+    })
+    adminContext = await browser.newContext({
+      baseURL: demo.baseURL,
+      viewport: { width: 1440, height: 1000 },
+    })
+    const participantPage = await participantContext.newPage()
+    const adminPage = await adminContext.newPage()
+    await activateParticipant(participantPage, demo)
+    await loginAdmin(adminPage, demo)
+    await grantAllRoles(adminPage)
+    await startRehearsal(adminPage)
+    await jumpToStage(adminPage, 4)
+    await expectStage(participantPage, '节目应援')
+
+    checkpoint = 'short-viewport-focus'
+    await participantPage.setViewportSize({ width: 390, height: 420 })
+    const composer = participantPage.getByLabel('弹幕内容')
+    await composer.focus()
+    await expect(participantPage.locator('.portal')).toHaveClass(
+      /portal--composer-focused/u,
+    )
+    await expectNoViewportOverflow(participantPage)
+    await expectMinimumControlSize(
+      participantPage.locator('.live-dock input, .live-dock button, .check-row'),
+    )
+    const portraitLayout = await participantPage.evaluate(() => {
+      const dock = document.querySelector('.live-dock')?.getBoundingClientRect()
+      return {
+        dockVisible: Boolean(
+          dock && dock.top >= 0 && dock.bottom <= window.innerHeight,
+        ),
+        activeInput: document.activeElement?.id === 'barrage-text',
+      }
+    })
+    expect(portraitLayout).toEqual({ dockVisible: true, activeInput: true })
+
+    checkpoint = 'gift-sheet-focus'
+    const giftTrigger = participantPage.getByRole('button', { name: '礼物' })
+    await giftTrigger.click()
+    checkpoint = 'gift-sheet-visible'
+    const giftDialog = participantPage.getByRole('dialog', {
+      name: '选择一束星光',
+    })
+    await expect(giftDialog).toBeVisible()
+    checkpoint = 'gift-sheet-initial-focus'
+    await expect(
+      participantPage.getByRole('button', { name: '关闭礼物面板' }).last(),
+    ).toBeFocused()
+    await participantPage.keyboard.press('Shift+Tab')
+    await expect(giftDialog.getByRole('button').last()).toBeFocused()
+    await participantPage.keyboard.press('Tab')
+    await expect(
+      participantPage.getByRole('button', { name: '关闭礼物面板' }).last(),
+    ).toBeFocused()
+    checkpoint = 'gift-sheet-control-size'
+    await expectMinimumControlSize(giftDialog.getByRole('button'))
+    checkpoint = 'gift-sheet-bounds'
+    await expect
+      .poll(() =>
+        giftDialog.evaluate((element) => {
+          const box = element.getBoundingClientRect()
+          return box.top >= 0 && box.bottom <= window.innerHeight
+        }),
+      )
+      .toBe(true)
+    checkpoint = 'gift-sheet-escape'
+    await participantPage.keyboard.press('Escape')
+    await expect(giftDialog).toHaveCount(0)
+    checkpoint = 'gift-sheet-return-focus'
+    await expect(giftTrigger).toBeFocused()
+
+    checkpoint = 'small-phone-viewport'
+    await participantPage.setViewportSize({ width: 375, height: 667 })
+    await composer.focus()
+    await expectNoViewportOverflow(participantPage)
+    await expectMinimumControlSize(
+      participantPage.locator('.live-dock input, .live-dock button'),
+    )
+
+    checkpoint = 'enlarged-text-viewport'
+    await participantPage.setViewportSize({ width: 390, height: 420 })
+    await participantPage.evaluate(() => {
+      document.documentElement.style.fontSize = '20px'
+    })
+    await composer.focus()
+    await expectNoViewportOverflow(participantPage)
+    const enlargedDockVisible = await participantPage
+      .locator('.live-dock')
+      .evaluate((element) => {
+        const box = element.getBoundingClientRect()
+        return box.top >= 0 && box.bottom <= window.innerHeight
+      })
+    expect(enlargedDockVisible).toBe(true)
+
+    checkpoint = 'landscape-viewport'
+    await participantPage.evaluate(() => {
+      document.documentElement.style.fontSize = ''
+    })
+    await participantPage.setViewportSize({ width: 667, height: 375 })
+    await composer.focus()
+    await expectNoViewportOverflow(participantPage)
+    const landscapeDockVisible = await participantPage
+      .locator('.live-dock')
+      .evaluate((element) => {
+        const box = element.getBoundingClientRect()
+        return box.top >= 0 && box.bottom <= window.innerHeight
+      })
+    expect(landscapeDockVisible).toBe(true)
+  } catch {
+    test.info().annotations.push({
+      type: 'failure-checkpoint',
+      description: checkpoint,
+    })
+    throw new Error(`Static failure checkpoint: ${checkpoint}`)
+  } finally {
+    await participantContext?.close()
+    await adminContext?.close()
   }
 })

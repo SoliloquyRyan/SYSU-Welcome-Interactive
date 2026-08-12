@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BaseButton from '../../components/ui/BaseButton.vue'
 import BaseCard from '../../components/ui/BaseCard.vue'
 import StatusPill from '../../components/ui/StatusPill.vue'
@@ -46,6 +46,9 @@ const capsuleNoticeAccepted = ref(false)
 const barrageText = ref('')
 const publicNoticeAccepted = ref(false)
 const giftSheetOpen = ref(false)
+const barrageComposerFocused = ref(false)
+const giftTrigger = ref(null)
+const giftSheetCloseButton = ref(null)
 const busy = ref('')
 const formError = ref('')
 const successMessage = ref('')
@@ -109,6 +112,8 @@ function clearParticipantSession() {
   capsuleNoticeAccepted.value = false
   arrivalTransition.value = false
   arrivalWelcomeOpen.value = false
+  barrageComposerFocused.value = false
+  giftSheetOpen.value = false
   starTemperatureKelvin.value = STAR_TEMPERATURE_DEFAULT
   starTemperatureKey.value = null
   entryState.value = 'missing'
@@ -210,7 +215,52 @@ const connectionLabel = computed(() => {
 
 watch([stage, activeTab], ([nextStage, nextTab]) => {
   if (nextStage !== 4 || nextTab !== 'scene') giftSheetOpen.value = false
+  if (nextTab !== 'scene') barrageComposerFocused.value = false
 })
+
+watch(giftSheetOpen, async (isOpen) => {
+  if (!isOpen) return
+  await nextTick()
+  giftSheetCloseButton.value?.focus()
+})
+
+function focusBarrageComposer() {
+  barrageComposerFocused.value = true
+  syncVisualViewport()
+}
+
+function blurBarrageComposer() {
+  barrageComposerFocused.value = false
+}
+
+function toggleGiftSheet() {
+  giftSheetOpen.value = !giftSheetOpen.value
+}
+
+async function closeGiftSheet({ restoreFocus = true } = {}) {
+  giftSheetOpen.value = false
+  if (!restoreFocus) return
+  await nextTick()
+  giftTrigger.value?.focus()
+}
+
+function trapGiftSheetFocus(event) {
+  const focusable = [
+    ...event.currentTarget.querySelectorAll(
+      '#gift-sheet button:not(:disabled), #gift-sheet [href], #gift-sheet input:not(:disabled)',
+    ),
+  ]
+  const first = focusable[0]
+  const last = focusable.at(-1)
+  if (!first || !last) return
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
 
 function resetActivationKey() {
   activationKey.value = null
@@ -460,7 +510,7 @@ async function sendGift(programId, gift) {
     )
     await refreshSnapshot()
     giftKeys.delete(actionId)
-    giftSheetOpen.value = false
+    await closeGiftSheet()
     successMessage.value = `已送出“${gift.name}”，动力值以最新余额为准。`
   } catch (error) {
     if (isDefinitiveFailure(error)) giftKeys.delete(actionId)
@@ -554,6 +604,7 @@ onMounted(() => {
       'portal--temperature': needsStarTemperature,
       'portal--transition': arrivalTransition,
       'portal--arrival-welcome': arrivalWelcomeOpen,
+      'portal--composer-focused': barrageComposerFocused,
     }"
     :style="portalViewportStyle"
     aria-labelledby="welcome-title"
@@ -903,14 +954,17 @@ onMounted(() => {
                 :placeholder="barragePlaceholder"
                 :disabled="!liveInteractionOpen || runtime.barragePaused"
                 @input="barrageKey = null"
+                @focus="focusBarrageComposer"
+                @blur="blurBarrageComposer"
               />
               <button
+                ref="giftTrigger"
                 type="button"
                 class="gift-trigger"
                 :disabled="!liveInteractionOpen || !currentProgram || runtime.barragePaused"
                 :aria-expanded="giftSheetOpen"
                 aria-controls="gift-sheet"
-                @click="giftSheetOpen = !giftSheetOpen"
+                @click="toggleGiftSheet"
               >
                 礼物
               </button>
@@ -924,12 +978,21 @@ onMounted(() => {
             </div>
           </form>
 
-          <div v-if="giftSheetOpen && currentProgram" class="gift-sheet-layer">
-            <button type="button" class="gift-sheet-scrim" aria-label="关闭礼物面板" @click="giftSheetOpen = false"></button>
-            <section id="gift-sheet" class="gift-sheet" role="dialog" aria-modal="true" aria-labelledby="gift-sheet-title">
+          <div
+            v-if="giftSheetOpen && currentProgram"
+            class="gift-sheet-layer"
+            @keydown.esc.stop.prevent="closeGiftSheet()"
+            @keydown.tab="trapGiftSheetFocus"
+          >
+            <button type="button" tabindex="-1" class="gift-sheet-scrim" aria-label="关闭礼物面板" @click="closeGiftSheet()"></button>
+            <section id="gift-sheet" class="gift-sheet" role="dialog" aria-modal="true" aria-labelledby="gift-sheet-title" aria-describedby="gift-sheet-description">
               <div class="gift-sheet__heading">
-                <div><p class="task-kicker">SIGNAL GIFT</p><h3 id="gift-sheet-title">选择一束星光</h3></div>
-                <button type="button" aria-label="关闭礼物面板" @click="giftSheetOpen = false">关闭</button>
+                <div>
+                  <p class="task-kicker">SIGNAL GIFT</p>
+                  <h3 id="gift-sheet-title">选择一束星光</h3>
+                  <p id="gift-sheet-description">送出后将扣除相应动力值。</p>
+                </div>
+                <button ref="giftSheetCloseButton" type="button" aria-label="关闭礼物面板" @click="closeGiftSheet()">关闭</button>
               </div>
               <div class="gift-grid">
                 <BaseButton
@@ -1062,6 +1125,19 @@ onMounted(() => {
 .portal h2,
 .portal h3 {
   margin: 0;
+}
+
+.portal button {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.portal button:active:not(:disabled) {
+  opacity: 0.76;
+}
+
+.portal button:disabled {
+  cursor: not-allowed;
 }
 
 .portal .eyebrow,
@@ -2102,10 +2178,10 @@ onMounted(() => {
 }
 
 .task-surface--capsule .capsule-consent {
-  min-height: 32px;
+  min-height: 44px;
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
-  align-items: start;
+  align-items: center;
   gap: 7px;
   color: var(--welcome-secondary);
   font-size: 0.64rem;
@@ -2151,10 +2227,10 @@ onMounted(() => {
 }
 
 .check-row {
-  min-height: 28px;
+  min-height: 44px;
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
-  align-items: start;
+  align-items: center;
   gap: 7px;
   color: var(--welcome-secondary);
   font-size: 0.62rem;
@@ -2177,11 +2253,18 @@ onMounted(() => {
   padding: 4px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 50px auto;
-  gap: 5px;
+  gap: 8px;
   border: 1px solid var(--welcome-line-strong);
   border-radius: 14px;
   background: #050d19;
   box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.22);
+}
+
+.live-dock:focus-within {
+  border-color: rgba(184, 212, 255, 0.72);
+  box-shadow:
+    0 0 0 3px rgba(111, 159, 232, 0.16),
+    0 -12px 32px rgba(0, 0, 0, 0.22);
 }
 
 .live-dock input {
@@ -2212,6 +2295,7 @@ onMounted(() => {
   font: inherit;
   font-size: 0.74rem;
   font-weight: 650;
+  transition: opacity 140ms ease;
 }
 
 .gift-trigger:disabled {
@@ -2220,11 +2304,12 @@ onMounted(() => {
 }
 
 .gift-sheet-layer {
-  position: absolute;
+  position: fixed;
   z-index: 60;
   inset: 0;
   display: grid;
   align-items: end;
+  justify-items: center;
 }
 
 .gift-sheet-scrim {
@@ -2237,11 +2322,15 @@ onMounted(() => {
 .gift-sheet {
   position: relative;
   z-index: 1;
+  width: min(100%, 430px);
+  max-height: calc(var(--mobile-visual-height, 100dvh) - max(12px, env(safe-area-inset-top)));
   padding: 16px 14px max(16px, env(safe-area-inset-bottom));
   border: 1px solid var(--welcome-line-strong);
   border-radius: 18px 18px 0 0;
   background: #07111f;
   box-shadow: 0 -24px 70px rgba(0, 0, 0, 0.52);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   animation: welcome-sheet-in 220ms ease-out both;
 }
 
@@ -2254,11 +2343,17 @@ onMounted(() => {
 }
 
 .gift-sheet__heading button {
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 48px;
+  min-height: 48px;
   border: 0;
   color: var(--welcome-secondary);
   background: transparent;
+}
+
+.gift-sheet__heading p:last-child {
+  margin: 4px 0 0;
+  color: var(--welcome-tertiary);
+  font-size: 0.7rem;
 }
 
 .gift-grid {
@@ -2519,13 +2614,57 @@ onMounted(() => {
 }
 
 .portal--active.portal--compact .task-surface--capsule .capsule-consent {
-  min-height: 28px;
+  min-height: 44px;
   font-size: 0.58rem;
   line-height: 1.25;
 }
 
+.gift-grid :deep(.base-button) {
+  min-height: 48px;
+}
+
 .portal--active.portal--compact .task-surface--capsule textarea {
   min-height: 48px;
+}
+
+.portal--active.portal--compact.portal--composer-focused {
+  grid-template-rows: auto 44px 30px auto minmax(0, 1fr);
+}
+
+.portal--active.portal--compact.portal--composer-focused .compact-stages {
+  height: 30px;
+}
+
+.portal--active.portal--compact.portal--composer-focused .compact-stages::before {
+  top: 12px;
+}
+
+.portal--active.portal--compact.portal--composer-focused .compact-stages li::before {
+  margin-top: 9px;
+}
+
+.portal--active.portal--compact.portal--composer-focused .compact-stages li.current::before {
+  margin-top: 7px;
+}
+
+.portal--active.portal--compact.portal--composer-focused .compact-stages li span,
+.portal--active.portal--compact.portal--composer-focused .compact-stages li em,
+.portal--active.portal--compact.portal--composer-focused .section-heading,
+.portal--active.portal--compact.portal--composer-focused .task-surface,
+.portal--active.portal--compact.portal--composer-focused .scene-canvas {
+  display: none;
+}
+
+.portal--active.portal--compact.portal--composer-focused .scene-panel:has(.live-area) {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.portal--active.portal--compact.portal--composer-focused .live-area {
+  width: 100%;
+  margin-top: auto;
 }
 
 @media (min-width: 700px) {
