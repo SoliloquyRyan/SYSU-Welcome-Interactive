@@ -6,6 +6,7 @@ import {
   ProtocolVersionSchema,
   ResetEpochSchema,
 } from './primitives.js'
+import { ScreenCapsuleSchema } from './snapshot.js'
 
 export const RealtimeStreamSchema = z.enum([
   'public',
@@ -172,6 +173,14 @@ export const G2RealtimeEventEnvelopeSchema = z.discriminatedUnion('type', [
       .object({
         paused: z.boolean(),
         stageRevision: z.number().int().nonnegative(),
+      })
+      .strict(),
+  ),
+  screenEvent(
+    'capsule.display.changed',
+    z
+      .object({
+        displayedCapsules: z.array(ScreenCapsuleSchema).max(6),
       })
       .strict(),
   ),

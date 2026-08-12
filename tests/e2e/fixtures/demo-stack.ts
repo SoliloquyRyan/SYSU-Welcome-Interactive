@@ -29,6 +29,7 @@ export interface DemoParticipantCredentials {
   readonly inviteToken: string
   readonly displayName: string
   readonly studentNumber: string
+  readonly publicStarId: string
 }
 
 export interface DemoTestCredentials {
@@ -81,6 +82,7 @@ interface SeedManifestShape {
     inviteToken?: unknown
     displayName?: unknown
     studentNumber?: unknown
+    publicStarId?: unknown
   }>
   admin?: {
     username?: unknown
@@ -380,7 +382,8 @@ function readCredentials(manifestPath: string): DemoTestCredentials {
       (participant) =>
         typeof participant.inviteToken !== 'string' ||
         typeof participant.displayName !== 'string' ||
-        typeof participant.studentNumber !== 'string',
+        typeof participant.studentNumber !== 'string' ||
+        typeof participant.publicStarId !== 'string',
     ) ||
     typeof admin?.username !== 'string' ||
     typeof admin.password !== 'string'
@@ -391,6 +394,7 @@ function readCredentials(manifestPath: string): DemoTestCredentials {
     inviteToken: participant.inviteToken as string,
     displayName: participant.displayName as string,
     studentNumber: participant.studentNumber as string,
+    publicStarId: participant.publicStarId as string,
   }))
   const [participant, secondParticipant, ...remainingParticipants] =
     syntheticParticipants

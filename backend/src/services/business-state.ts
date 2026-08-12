@@ -5,6 +5,7 @@ import {
   type AdminSnapshot,
   type CommandVersion,
   type ParticipantSnapshot,
+  type ScreenCapsule,
 } from '@sysu-welcome/contracts'
 
 import type { AuthenticatedSession } from '../auth/session.js'
@@ -60,6 +61,23 @@ export function readRuntimeContext(database: SqliteDatabase): RuntimeContext {
     | undefined
   if (!row) throw new Error('Runtime business state is unavailable')
   return { ...row, barragePaused: row.barragePaused === 1 }
+}
+
+export function readDisplayedCapsules(database: SqliteDatabase): ScreenCapsule[] {
+  return database
+    .prepare(
+      `SELECT i.public_star_id AS publicStarId,
+              p.star_temperature_kelvin AS starTemperatureKelvin,
+              p.capsule_message AS text
+       FROM participant_states p
+       JOIN synthetic_identities i ON i.id = p.identity_id
+       WHERE p.capsule_candidate_status = 'DISPLAYED'
+         AND p.capsule_public_notice_at IS NOT NULL
+         AND p.capsule_message IS NOT NULL
+       ORDER BY p.capsule_message_submitted_at, i.seed_index
+       LIMIT 6`,
+    )
+    .all() as ScreenCapsule[]
 }
 
 export function assertCommandVersion(
@@ -448,6 +466,31 @@ export function readAdminSnapshot(
        FROM invitation_tokens ORDER BY id`,
     )
     .all()
+  const capsuleCandidates = database
+    .prepare(
+      `SELECT p.identity_id AS identityId,
+              i.public_star_id AS publicStarId,
+              p.star_temperature_kelvin AS starTemperatureKelvin,
+              p.capsule_message AS text,
+              p.capsule_candidate_status AS status,
+              p.capsule_message_submitted_at AS submittedAt
+       FROM participant_states p
+       JOIN synthetic_identities i ON i.id = p.identity_id
+       WHERE p.capsule_candidate_status IN (
+         'SUBMITTED', 'SELECTED', 'DISPLAYED', 'REMOVED'
+       )
+         AND p.capsule_public_notice_at IS NOT NULL
+         AND p.capsule_message IS NOT NULL
+         AND p.capsule_message_submitted_at IS NOT NULL
+       ORDER BY CASE p.capsule_candidate_status
+         WHEN 'DISPLAYED' THEN 1
+         WHEN 'SELECTED' THEN 2
+         WHEN 'SUBMITTED' THEN 3
+         ELSE 4
+       END, p.capsule_message_submitted_at DESC
+       LIMIT 300`,
+    )
+    .all()
   const recentOperations = (
     database
       .prepare(
@@ -484,6 +527,7 @@ export function readAdminSnapshot(
     metrics,
     programs: readPrograms(database, runtime.currentProgramId),
     gifts: readGifts(database),
+    capsuleCandidates,
     publishedBarrages,
     invitations,
     recentOperations,

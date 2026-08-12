@@ -141,6 +141,9 @@ export const adminApi = {
   clearBarrages(body, idempotencyKey) {
     return write('/api/admin/barrages/clear', 'POST', body, idempotencyKey)
   },
+  moderateCapsule(identityId, body, idempotencyKey) {
+    return write(`/api/admin/capsules/${encodeURIComponent(identityId)}/moderate`, 'POST', body, idempotencyKey)
+  },
   setInvitationStatus(id, body, idempotencyKey) {
     return write(`/api/admin/invitations/${encodeURIComponent(id)}/status`, 'POST', body, idempotencyKey)
   },

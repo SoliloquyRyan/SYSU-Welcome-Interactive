@@ -381,6 +381,39 @@ function clearBarrages() {
   )
 }
 
+function moderateCapsule(candidate, action) {
+  const labels = {
+    SELECT: { action: '选入候选池', result: '选入候选池' },
+    DISPLAY: { action: '将其展示到大屏', result: '展示到大屏' },
+    REMOVE: { action: '将其从候选池撤下', result: '从候选池撤下' },
+  }
+  const label = labels[action]
+  if (!label || !window.confirm(`确认${label.action}“${candidate.publicStarId}”的时光胶囊？`)) return
+  const body = {
+    ...commandVersion(snapshot.value),
+    action,
+    confirmed: true,
+  }
+  return execute(
+    `capsule:${action}:${candidate.identityId}`,
+    (key) => adminApi.moderateCapsule(candidate.identityId, body, key),
+    `时光胶囊已${label.result}。`,
+  )
+}
+
+function capsuleStatusLabel(status) {
+  return {
+    SUBMITTED: '待筛选',
+    SELECTED: '已选中',
+    DISPLAYED: '大屏展示中',
+    REMOVED: '已撤下',
+  }[status] ?? status
+}
+
+function capsuleStatusTone(status) {
+  return status === 'DISPLAYED' ? 'success' : status === 'SELECTED' ? 'warning' : 'neutral'
+}
+
 function changeInvitation(invitation) {
   const status = invitation.status === 'ACTIVE' ? 'REVOKED' : 'ACTIVE'
   if (!window.confirm(`确认将入口 ${invitation.tokenHint} 设置为 ${status}？`)) return
@@ -552,13 +585,60 @@ onMounted(boot)
               <BaseButton variant="danger" size="sm" :disabled="!canControl || !hasRole('DEMO_ADMIN')" @click="clearBarrages">紧急清屏</BaseButton>
             </div>
           </div>
-          <p v-if="snapshot.publishedBarrages.length === 0" class="empty-state">当前没有公开弹幕。时光胶囊候选需由后续人工筛选模块处理。</p>
+          <p v-if="snapshot.publishedBarrages.length === 0" class="empty-state">当前没有公开弹幕。</p>
           <ul v-else class="moderation-list">
             <li v-for="barrage in snapshot.publishedBarrages" :key="barrage.id">
               <div><strong>{{ barrage.text }}</strong><small>#{{ barrage.displaySeq }} · {{ barrage.publishedAt }}</small></div>
               <div class="module-actions">
                 <BaseButton size="sm" variant="secondary" :disabled="!canControl || !hasRole('REVIEWER')" @click="removeBarrage(barrage)">下屏</BaseButton>
                 <BaseButton size="sm" variant="danger" :disabled="!canControl || !hasRole('REVIEWER')" @click="blockSource(barrage)">屏蔽来源</BaseButton>
+              </div>
+            </li>
+          </ul>
+        </BaseCard>
+
+        <BaseCard as="section" class="span-two" padding="md" aria-labelledby="capsules-title">
+          <div class="module-heading split">
+            <div>
+              <p class="eyebrow">已确认可能公开 · 最多同时展示 6 条</p>
+              <h2 id="capsules-title">时光胶囊候选池</h2>
+            </div>
+            <StatusPill tone="neutral" size="sm">
+              {{ snapshot.capsuleCandidates.filter((item) => item.status === 'DISPLAYED').length }} / 6 上屏
+            </StatusPill>
+          </div>
+          <p v-if="snapshot.capsuleCandidates.length === 0" class="empty-state">当前没有已提交的时光胶囊候选。</p>
+          <ul v-else class="moderation-list capsule-list">
+            <li v-for="candidate in snapshot.capsuleCandidates" :key="candidate.identityId">
+              <div class="capsule-copy">
+                <div class="capsule-meta">
+                  <strong>{{ candidate.publicStarId }}</strong>
+                  <StatusPill :tone="capsuleStatusTone(candidate.status)" size="sm">{{ capsuleStatusLabel(candidate.status) }}</StatusPill>
+                </div>
+                <p>{{ candidate.text }}</p>
+                <small>{{ candidate.submittedAt }}</small>
+              </div>
+              <div class="module-actions">
+                <BaseButton
+                  v-if="candidate.status === 'SUBMITTED' || candidate.status === 'REMOVED'"
+                  size="sm"
+                  variant="secondary"
+                  :disabled="!canControl || !hasRole('REVIEWER')"
+                  @click="moderateCapsule(candidate, 'SELECT')"
+                >选中</BaseButton>
+                <BaseButton
+                  v-if="candidate.status === 'SELECTED'"
+                  size="sm"
+                  :disabled="!canControl || !hasRole('REVIEWER')"
+                  @click="moderateCapsule(candidate, 'DISPLAY')"
+                >上屏</BaseButton>
+                <BaseButton
+                  v-if="candidate.status === 'SELECTED' || candidate.status === 'DISPLAYED'"
+                  size="sm"
+                  variant="danger"
+                  :disabled="!canControl || !hasRole('REVIEWER')"
+                  @click="moderateCapsule(candidate, 'REMOVE')"
+                >撤下</BaseButton>
               </div>
             </li>
           </ul>
@@ -705,6 +785,25 @@ select:focus-visible {
 .inline-message.warning { color: var(--color-warning); }
 .inline-message.danger { color: var(--color-danger); }
 .inline-message.success { color: var(--color-success); }
+
+.capsule-copy {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.capsule-copy p {
+  margin: 0;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.capsule-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
 
 .uncertain-command {
   display: flex;

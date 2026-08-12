@@ -119,6 +119,9 @@ function applyEvent(event) {
         stageRevision: payload.stageRevision,
       }
       break
+    case 'capsule.display.changed':
+      snapshot.value.displayedCapsules = payload.displayedCapsules ?? []
+      break
     default:
       break
   }
@@ -154,6 +157,7 @@ const cooperationPercent = computed(() => {
 })
 const visibleBarrages = computed(() => snapshot.value?.publishedBarrages?.slice(-14) ?? [])
 const visibleStars = computed(() => snapshot.value?.starNodes?.slice(0, 300) ?? [])
+const displayedCapsules = computed(() => snapshot.value?.displayedCapsules ?? [])
 const selectedStar = computed(() =>
   visibleStars.value.find((star) => star.id === selectedStarId.value) ?? null,
 )
@@ -283,8 +287,15 @@ onBeforeUnmount(() => {
         <section v-else-if="runtime.stage === 2" class="message-scene" aria-labelledby="message-title">
           <p class="scene-kicker">TIME CAPSULE CANDIDATES</p>
           <h2 id="message-title">把此刻留在星海</h2>
-          <p class="scene-copy">参与者提交的内容会进入人工筛选候选池；未被人工选中的正文不会进入大屏。</p>
-          <div class="scene-metrics">
+          <p v-if="displayedCapsules.length === 0" class="scene-copy">参与者提交的内容会进入人工筛选候选池；等待后台选中第一条星光寄语。</p>
+          <div v-else class="capsule-wall" aria-label="人工选中的时光胶囊">
+            <article v-for="capsule in displayedCapsules" :key="capsule.publicStarId" class="capsule-display-card">
+              <i aria-hidden="true" :style="starTemperatureStyle(capsule.starTemperatureKelvin)"></i>
+              <blockquote>{{ capsule.text }}</blockquote>
+              <footer>{{ capsule.publicStarId }}</footer>
+            </article>
+          </div>
+          <div v-if="displayedCapsules.length === 0" class="scene-metrics">
             <div><span>匿名参与者</span><strong>{{ aggregates.activatedCount }}</strong></div>
             <div><span>累计星光</span><strong>{{ aggregates.totalStarlight }}</strong></div>
           </div>
@@ -572,6 +583,47 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transform: translate(-50%, -50%);
   animation: star-assemble 2.9s var(--motion-ease-emphasized) var(--star-delay) both;
+}
+
+.capsule-wall {
+  width: 100%;
+  margin-top: var(--space-5);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.capsule-display-card {
+  min-height: 180px;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--space-3);
+  border: 1px solid rgba(247, 243, 234, 0.2);
+  border-radius: var(--radius-lg);
+  background: rgba(23, 25, 29, 0.9);
+}
+
+.capsule-display-card i {
+  width: 12px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--star-temperature-color);
+  box-shadow: 0 0 18px var(--star-temperature-color);
+}
+
+.capsule-display-card blockquote {
+  margin: 0;
+  color: var(--color-on-dark);
+  font-size: clamp(1.25rem, 2vw, 2rem);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.capsule-display-card footer {
+  color: rgba(247, 243, 234, 0.68);
+  font-family: var(--font-family-mono);
+  letter-spacing: 0.12em;
 }
 
 .formation-star::before {

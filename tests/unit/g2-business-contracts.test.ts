@@ -5,6 +5,7 @@ import {
   AdminLoginRequestSchema,
   AdminSnapshotSchema,
   BarrageRequestSchema,
+  CapsuleModerationRequestSchema,
   DemoResetRequestSchema,
   CapsuleMessageRequestSchema,
   G2RealtimeEventEnvelopeSchema,
@@ -87,6 +88,7 @@ function adminSnapshot() {
     },
     programs: [],
     gifts: [],
+    capsuleCandidates: [],
     publishedBarrages: [],
     invitations: [],
     recentOperations: [],
@@ -95,6 +97,10 @@ function adminSnapshot() {
 
 describe('G2 strict business contracts', () => {
   it.each([
+    {
+      schema: CapsuleModerationRequestSchema,
+      value: { ...VERSION, action: 'DISPLAY', confirmed: true },
+    },
     {
       schema: ActivateParticipantRequestSchema,
       value: {
@@ -249,6 +255,7 @@ describe('G2 strict business contracts', () => {
         },
       },
       starNodes: [],
+      displayedCapsules: [],
       publishedBarrages: [],
     }
     expect(ScreenSnapshotSchema.parse(screen)).toEqual(screen)
@@ -289,6 +296,32 @@ describe('G2 strict business contracts', () => {
       G2RealtimeEventEnvelopeSchema.parse({
         ...event,
         type: 'unfrozen.event',
+      }),
+    ).toThrow()
+
+    const capsuleEvent = {
+      ...event,
+      eventId: 'event-capsule-001',
+      type: 'capsule.display.changed',
+      payload: {
+        displayedCapsules: [
+          {
+            publicStarId: 'L-0001',
+            starTemperatureKelvin: 5800,
+            text: '愿下一次相遇时，我们都带着更亮的星光。',
+          },
+        ],
+      },
+    }
+    expect(G2RealtimeEventEnvelopeSchema.parse(capsuleEvent)).toEqual(capsuleEvent)
+    expect(() =>
+      G2RealtimeEventEnvelopeSchema.parse({
+        ...capsuleEvent,
+        payload: {
+          displayedCapsules: [
+            { ...capsuleEvent.payload.displayedCapsules[0], displayName: '不得公开' },
+          ],
+        },
       }),
     ).toThrow()
   })

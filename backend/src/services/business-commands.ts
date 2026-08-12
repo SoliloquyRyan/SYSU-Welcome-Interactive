@@ -42,6 +42,7 @@ import {
   readAggregateEventPayload,
   readAggregateState,
   readParticipantSnapshot,
+  readDisplayedCapsules,
   readRuntimeContext,
   requireAdminRole,
   requireCapsuleMessageStage,
@@ -1271,6 +1272,111 @@ export function removeBarrage(
                 }),
               ]
             : [],
+      }
+    },
+  )
+}
+
+export function moderateCapsuleCandidate(
+  database: SqliteDatabase,
+  session: AuthenticatedSession,
+  identityId: string,
+  request: Version & {
+    action: 'SELECT' | 'DISPLAY' | 'REMOVE'
+    confirmed: true
+  },
+  key: string,
+  requestId: string,
+  now: Date = new Date(),
+) {
+  requireAdminRole(session, 'REVIEWER')
+  return adminCommand(
+    database,
+    session,
+    `admin:capsule-${request.action.toLowerCase()}:${identityId}`,
+    key,
+    request,
+    requestId,
+    now,
+    ({ now: commandNow, runtime }) => {
+      const candidate = database
+        .prepare(
+          `SELECT capsule_candidate_status AS status
+           FROM participant_states
+           WHERE identity_id = ?
+             AND capsule_message IS NOT NULL
+             AND capsule_message_submitted_at IS NOT NULL
+             AND capsule_public_notice_at IS NOT NULL`,
+        )
+        .get(identityId) as
+        | { status: 'SUBMITTED' | 'SELECTED' | 'DISPLAYED' | 'REMOVED' }
+        | undefined
+      if (!candidate) {
+        throw new ApiError(
+          'VALIDATION_FAILED',
+          '时光胶囊候选不存在或尚未确认公开范围。',
+          404,
+          runtime,
+        )
+      }
+
+      const targetStatus = {
+        SELECT: 'SELECTED',
+        DISPLAY: 'DISPLAYED',
+        REMOVE: 'REMOVED',
+      }[request.action] as 'SELECTED' | 'DISPLAYED' | 'REMOVED'
+      const allowed = {
+        SELECT: ['SUBMITTED', 'REMOVED', 'SELECTED'],
+        DISPLAY: ['SELECTED', 'DISPLAYED'],
+        REMOVE: ['SELECTED', 'DISPLAYED', 'REMOVED'],
+      }[request.action]
+      if (!allowed.includes(candidate.status)) {
+        throw new ApiError(
+          'STAGE_LOCKED',
+          '候选当前状态不能执行该操作，请刷新后台后重试。',
+          409,
+          runtime,
+        )
+      }
+      if (candidate.status === targetStatus) return {}
+
+      if (request.action === 'DISPLAY') {
+        const displayedCount = (
+          database
+            .prepare(
+              `SELECT COUNT(*) AS count FROM participant_states
+               WHERE capsule_candidate_status = 'DISPLAYED'
+                 AND identity_id != ?`,
+            )
+            .get(identityId) as { count: number }
+        ).count
+        if (displayedCount >= 6) {
+          throw new ApiError(
+            'VALIDATION_FAILED',
+            '大屏最多同时展示 6 条时光胶囊，请先撤下一条。',
+            409,
+            runtime,
+          )
+        }
+      }
+
+      const timestamp = commandNow.toISOString()
+      database
+        .prepare(
+          `UPDATE participant_states
+           SET capsule_candidate_status = ?, updated_at = ?
+           WHERE identity_id = ?`,
+        )
+        .run(targetStatus, timestamp, identityId)
+      return {
+        events: [
+          appendDomainEvent(database, {
+            stream: 'screen',
+            type: 'capsule.display.changed',
+            committedAt: timestamp,
+            payload: { displayedCapsules: readDisplayedCapsules(database) },
+          }),
+        ],
       }
     },
   )

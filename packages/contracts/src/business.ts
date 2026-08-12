@@ -11,18 +11,19 @@ import {
 } from './primitives.js'
 import { RuntimeSnapshotSchema } from './runtime.js'
 import {
+  CapsuleDisplayTextSchema,
   PublishedBarrageSchema,
   ScreenProgramSchema,
 } from './snapshot.js'
 
-const CapsuleMessageTextSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(160)
-  .refine((value) => Array.from(value).length <= 80, {
-    message: '时光胶囊最多 80 个可见字符',
-  })
+export const CapsuleCandidateStatusSchema = z.enum([
+  'NOT_SUBMITTED',
+  'LEGACY_PRIVATE',
+  'SUBMITTED',
+  'SELECTED',
+  'DISPLAYED',
+  'REMOVED',
+])
 
 const BarrageTextSchema = z
   .string()
@@ -76,17 +77,10 @@ export const ParticipantPrivateStateSchema = z
     powerBalance: z.number().int().nonnegative(),
     starlight: z.number().int().min(0).max(100),
     activatedAt: IsoDateTimeSchema,
-    capsuleMessage: CapsuleMessageTextSchema.nullable(),
+    capsuleMessage: CapsuleDisplayTextSchema.nullable(),
     capsuleMessageSubmitted: z.boolean(),
     capsulePublicNoticeAccepted: z.boolean(),
-    capsuleCandidateStatus: z.enum([
-      'NOT_SUBMITTED',
-      'LEGACY_PRIVATE',
-      'SUBMITTED',
-      'SELECTED',
-      'DISPLAYED',
-      'REMOVED',
-    ]),
+    capsuleCandidateStatus: CapsuleCandidateStatusSchema,
     starStarted: z.boolean(),
     firstGiftCompleted: z.boolean(),
     firstBarrageCompleted: z.boolean(),
@@ -146,7 +140,7 @@ export const ActivateParticipantRequestSchema = z.discriminatedUnion('method', [
 ])
 
 export const CapsuleMessageRequestSchema = CommandVersionSchema.extend({
-  text: CapsuleMessageTextSchema,
+  text: CapsuleDisplayTextSchema,
   publicDisplayNoticeAccepted: z.literal(true),
 }).strict()
 
@@ -207,6 +201,11 @@ export const BarrageModerationRequestSchema = CommandVersionSchema.extend({
   confirmed: z.boolean().default(false),
 }).strict()
 
+export const CapsuleModerationRequestSchema = CommandVersionSchema.extend({
+  action: z.enum(['SELECT', 'DISPLAY', 'REMOVE']),
+  confirmed: z.literal(true),
+}).strict()
+
 export const BarragePauseRequestSchema = CommandVersionSchema.extend({
   paused: z.boolean(),
 }).strict()
@@ -230,6 +229,20 @@ export const AdminInvitationSchema = z
     identityId: z.string().min(1).max(64),
     tokenHint: z.string().min(1).max(16),
     status: z.enum(['ACTIVE', 'REVOKED']),
+  })
+  .strict()
+
+export const AdminCapsuleCandidateSchema = z
+  .object({
+    identityId: z.string().min(1).max(64),
+    publicStarId: z.string().min(1).max(40),
+    starTemperatureKelvin: StarTemperatureKelvinSchema.nullable(),
+    text: CapsuleDisplayTextSchema,
+    status: CapsuleCandidateStatusSchema.exclude([
+      'NOT_SUBMITTED',
+      'LEGACY_PRIVATE',
+    ]),
+    submittedAt: IsoDateTimeSchema,
   })
   .strict()
 
@@ -270,6 +283,7 @@ export const AdminSnapshotSchema = z
     metrics: AdminMetricsSchema,
     programs: z.array(ParticipantProgramSchema),
     gifts: z.array(GiftOptionSchema),
+    capsuleCandidates: z.array(AdminCapsuleCandidateSchema),
     publishedBarrages: z.array(AdminBarrageSchema),
     invitations: z.array(AdminInvitationSchema),
     recentOperations: z.array(AdminOperationSchema),

@@ -97,19 +97,41 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     await expectNoForbiddenDomText(
       [adminPage, screenPage],
       [
-        capsuleMessage,
         demo.credentials.participant.displayName,
         demo.credentials.participant.studentNumber,
         demo.credentials.participant.inviteToken,
       ],
     )
+    await expect(adminPage.locator('.capsule-list')).toContainText(capsuleMessage)
+    await expectNoForbiddenDomText([screenPage], [capsuleMessage])
     await startRehearsal(adminPage)
 
     checkpoint = 'stage-2'
     await jumpToStage(adminPage, 2)
     await expectStage(participantPage, '时光胶囊')
     await expectStage(screenPage, '时光胶囊')
-    await expectNoForbiddenDomText([adminPage, screenPage], [capsuleMessage])
+    const capsuleRow = adminPage.locator('.capsule-list li').filter({ hasText: capsuleMessage })
+    await acceptNextDialog(adminPage)
+    await capsuleRow.getByRole('button', { name: '选中' }).click()
+    await expect(capsuleRow).toContainText('已选中')
+    await acceptNextDialog(adminPage)
+    await capsuleRow.getByRole('button', { name: '上屏' }).click()
+    await expect(screenPage.locator('.capsule-display-card')).toContainText(capsuleMessage)
+    await expect(screenPage.locator('.capsule-display-card')).toContainText(
+      demo.credentials.participant.publicStarId,
+    )
+    await expectNoForbiddenDomText(
+      [screenPage],
+      [
+        demo.credentials.participant.displayName,
+        demo.credentials.participant.studentNumber,
+        demo.credentials.participant.inviteToken,
+      ],
+    )
+    await acceptNextDialog(adminPage)
+    await capsuleRow.getByRole('button', { name: '撤下' }).click()
+    await expect(screenPage.locator('.capsule-display-card')).toHaveCount(0)
+    await expectNoForbiddenDomText([screenPage], [capsuleMessage])
 
     checkpoint = 'stage-3'
     await jumpToStage(adminPage, 3)
@@ -212,7 +234,9 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     await expect(screenPage.locator('.barrage-board')).not.toContainText(
       resumedBarrage,
     )
-    await expect(adminPage.locator('.moderation-list')).toHaveCount(0)
+    await expect(
+      adminPage.locator('section[aria-labelledby="barrages-title"] .moderation-list'),
+    ).toHaveCount(0)
 
     // The content limiter uses a real ten-second rolling window. Waiting for
     // its public contract keeps the following source-block evidence distinct.
@@ -331,12 +355,12 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     await expectNoForbiddenDomText(
       [adminPage, screenPage],
       [
-        capsuleMessage,
         demo.credentials.participant.displayName,
         demo.credentials.participant.studentNumber,
         demo.credentials.participant.inviteToken,
       ],
     )
+    await expectNoForbiddenDomText([screenPage], [capsuleMessage])
     await expectNoViewportOverflow(screenPage)
   } catch {
     test.info().annotations.push({

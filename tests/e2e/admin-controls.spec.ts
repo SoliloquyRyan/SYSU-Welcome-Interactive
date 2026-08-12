@@ -170,6 +170,7 @@ test('enforces the admin boundary and the LIVE forward-only control lifecycle', 
     ).toBeVisible()
 
     await loginAdmin(adminPage, demo)
+    await expect(adminPage.locator('.capsule-list')).toContainText(capsuleMessage)
     await expectAdminCookie(adminContext, demo.baseURL)
     await adminPage.getByLabel('运行模式').selectOption('LIVE')
     for (const buttonName of [
@@ -321,7 +322,6 @@ test('enforces the admin boundary and the LIVE forward-only control lifecycle', 
       },
       {
         forbiddenValues: [
-          capsuleMessage,
           demo.credentials.admin.password,
           demo.credentials.participant.displayName,
           demo.credentials.participant.studentNumber,

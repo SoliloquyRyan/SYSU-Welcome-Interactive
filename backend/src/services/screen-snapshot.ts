@@ -1,7 +1,7 @@
 import { ScreenSnapshotSchema, type ScreenSnapshot } from '@sysu-welcome/contracts'
 
 import type { SqliteDatabase } from '../db/open-database.js'
-import { readAggregateState } from './business-state.js'
+import { readAggregateState, readDisplayedCapsules } from './business-state.js'
 
 interface StateRow {
   resetEpoch: number
@@ -113,6 +113,7 @@ export function readScreenSnapshot(
       starTemperatureKelvin: node.starTemperatureKelvin,
       started: node.started === 1,
     })),
+    displayedCapsules: readDisplayedCapsules(database),
     publishedBarrages: publishedBarrages.reverse(),
   })
 }

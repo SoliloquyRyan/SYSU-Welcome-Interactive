@@ -77,6 +77,7 @@ describe('shared protocol contracts', () => {
         },
       },
       starNodes: [],
+      displayedCapsules: [],
       publishedBarrages: [
         {
           id: 'barrage-001',

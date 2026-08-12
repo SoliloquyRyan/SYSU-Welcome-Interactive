@@ -47,7 +47,7 @@ G2 保留 G1 的公共接口，并实现以下精确路径。除登录、登出�
 
 - `GET /api/health`：进程存活。
 - `GET /api/ready`：数据库、迁移、固定种子和实时层可用。
-- `GET /api/screen/snapshot`：当前阶段、固定节目、匿名聚合、仍公开的弹幕和显示批次。
+- `GET /api/screen/snapshot`：当前阶段、固定节目、匿名聚合、仍公开的弹幕，以及最多 6 条人工选中的时光胶囊公开投影。
 - `GET /ws?resetEpoch=<n>&afterEventSeq=<n>`：只读事件连接；首次可不传高水位，重连应带最近权威快照的 epoch 和序号。
 
 ### 3.2 参与者
@@ -57,15 +57,15 @@ G2 保留 G1 的公共接口，并实现以下精确路径。除登录、登出�
 | `POST /api/participant/activate` | `INVITATION_TOKEN` 方式只提交个性令牌；`STUDENT_ID` 方式提交虚构姓名与合成学号 |
 | `GET /api/participant/snapshot` | 读取本人权威状态、当前运行状态、固定节目、礼物和档案 |
 | `POST /api/participant/logout` | 撤销当前参与者会话 |
-| `PUT /api/participant/future-message` | D-022 兼容路径，G5 将由时光胶囊提交接口替换 |
+| `PUT /api/participant/capsule-message` | 确认公开范围后提交或更新时光胶囊，进入人工候选池 |
 | `POST /api/participant/star/start` | 在第 3 阶段启动一次个人星星 |
 | `POST /api/participant/gifts` | 在第 4 阶段向当前开放节目赠送一档虚拟礼物 |
 | `POST /api/participant/barrages` | 在第 4 阶段确认公开告知后提交弹幕 |
 | `POST /api/participant/cooperative-light` | 在第 5 阶段完成一次协同点亮 |
 
-本节记录 D-022 当前实现：旧未来寄语是私密档案数据，不具有人工审核或公开状态。D-023 已废弃该产品语义，但必须等 G5 原子迁移完成后才能删除兼容接口和字段。弹幕继续按本地规则进入 `PUBLISHED` 或 `REJECTED_BY_RULE`，只有已经发布的弹幕可由后台改为 `REMOVED`。
+时光胶囊提交必须携带公开范围确认；正文进入人工候选池，不会由规则或 AI 自动上屏。弹幕继续按本地规则进入 `PUBLISHED` 或 `REJECTED_BY_RULE`，只有已经发布的弹幕可由后台改为 `REMOVED`。
 
-参与者快照同时承担个人档案读取；只有第 6 阶段或 `COMPLETED` 才将 `archiveAvailable` 标为真。当前 D-022 在 `READY / Stage 1` 允许入口激活和旧未来寄语；G5 将改为星色锁定和时光胶囊。`RUNNING` 时星星、礼物/弹幕、协同点亮分别只在第 3、4、5 阶段可写。`PAUSED` 拒绝所有参与者业务写入。`COMPLETED` 允许已经激活的身份重新核验并读取档案，但未激活邀请不得再创建参与者事实。
+参与者快照同时承担个人档案读取；只有第 6 阶段或 `COMPLETED` 才将 `archiveAvailable` 标为真。`READY / Stage 1` 允许入口激活、星色锁定和时光胶囊提交；`RUNNING` 时星星、礼物/弹幕、协同点亮分别只在第 3、4、5 阶段可写。`PAUSED` 拒绝所有参与者业务写入。`COMPLETED` 允许已经激活的身份重新核验并读取档案，但未激活邀请不得再创建参与者事实。
 
 ### 3.3 后台
 
@@ -79,6 +79,7 @@ G2 保留 G1 的公共接口，并实现以下精确路径。除登录、登出�
 | `POST /api/admin/sources/:sourceId/block` | 屏蔽匿名来源并移除其可见内容；`REVIEWER|ALL` |
 | `POST /api/admin/barrages/pause` | 暂停或恢复新弹幕；`REVIEWER|ALL` |
 | `POST /api/admin/barrages/clear` | 紧急清屏；`DEMO_ADMIN|ALL` |
+| `POST /api/admin/capsules/:identityId/moderate` | `SELECT`、`DISPLAY` 或 `REMOVE` 一个时光胶囊候选；`REVIEWER|ALL` |
 | `POST /api/admin/invitations/:id/status` | 启用或作废一个合成邀请；`DEMO_ADMIN|ALL` |
 | `POST /api/admin/reset` | 完整确定性重置；`DEMO_ADMIN|ALL` |
 
@@ -127,6 +128,7 @@ payload
 - `barrage.pause.changed`
 - `source.blocked`
 - `cooperation.updated`
+- `capsule.display.changed`
 - `demo.reset`
 - `resync.required`
 
@@ -180,14 +182,14 @@ G2 提供根级 `pnpm db:reset` 和受角色保护的后台完整重置。后台
 
 错误响应只返回可操作的公开信息、稳定错误码和请求 ID，不返回堆栈、SQL、内部路径或凭据。
 
-## 8. G5 原子迁移边界
+## 8. G5 原子迁移结果
 
-D-023 已确认产品语义，但尚未冻结精确请求 Schema 和路径。实现前必须一次性完成并验证以下替换，不能只删数据库列或只改前端文案：
+D-023 已确认产品语义，G5-03～G5-05 已原子完成并验证以下替换；后续不得只改数据库列或只改前端文案：
 
 1. `demoCode` / `demo_code_digest` 替换为 `studentNumber` / `student_number_digest`；个性令牌主入口不再要求重复填写姓名和学号，备用入口才提交姓名与合成学号。
 2. `publicStarId` 保留，生成规则改为姓氏拼音首字母加学号后四位，并继续执行唯一约束。
 3. `visualSeed` 保留用于非颜色外观；新增权威 Kelvin 色温和锁定时间，确认后不同值重试必须明确拒绝。
-4. `futureMessage*` 及 `/future-message` 兼容路径由时光胶囊字段和接口替换；请求必须携带公开范围确认，服务端保存人工候选状态。
-5. 后台新增候选读取、人工选择、撤下和紧急清除；大屏只获得人工选中的星号、星色和正文，不获得完整学号或身份映射。
+4. `futureMessage*` 及 `/future-message` 兼容路径已由时光胶囊字段和 `/capsule-message` 接口替换；请求必须携带公开范围确认，服务端保存人工候选状态。
+5. 后台已新增候选读取、人工选择、上屏和撤下；大屏只获得最多 6 条人工选中的星号、星色和正文，不获得完整学号或身份映射。
 6. 迁移必须处理既有 D-022 SQLite 数据和被忽略的本地 manifest；任何不完整迁移都应使 readiness 失败，而不是静默混用旧新字段。
-7. 精确 Schema、迁移版本、错误码和兼容期在 README 的 G5-03～G5-05 中冻结后，才能从本文件删除 D-022 兼容说明。
+7. G5-03～G5-05 的精确 Schema、迁移版本、错误码和兼容行为以当前共享契约及 README 状态为准。

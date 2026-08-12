@@ -6,6 +6,7 @@ import {
   ApiErrorResponseSchema,
   BarrageModerationRequestSchema,
   BarragePauseRequestSchema,
+  CapsuleModerationRequestSchema,
   BarrageRequestSchema,
   DemoResetRequestSchema,
   CapsuleMessageRequestSchema,
@@ -62,6 +63,7 @@ import {
   completeCooperativeLight,
   controlRuntime,
   loginAdmin,
+  moderateCapsuleCandidate,
   lockStarTemperature,
   publishBarrage,
   removeBarrage,
@@ -434,6 +436,23 @@ export async function buildApp(
       database,
       session,
       id,
+      body,
+      idempotencyKey(request),
+      request.id,
+      now(),
+    )
+    realtime.broadcast(result.events)
+    return reply.header('cache-control', 'no-store').send(result.body)
+  })
+
+  app.post('/api/admin/capsules/:identityId/moderate', async (request, reply) => {
+    const session = requireSession(request, 'ADMIN')
+    const { identityId } = request.params as { identityId: string }
+    const body = CapsuleModerationRequestSchema.parse(request.body)
+    const result = moderateCapsuleCandidate(
+      database,
+      session,
+      identityId,
       body,
       idempotencyKey(request),
       request.id,

@@ -116,7 +116,7 @@ describe('G2 deterministic barrage moderation and complete reset', () => {
   let harness: G2Harness
 
   beforeEach(async () => {
-    harness = await createG2Harness()
+    harness = await createG2Harness({ participantCount: 7 })
   })
 
   afterEach(async () => {
@@ -214,6 +214,212 @@ describe('G2 deterministic barrage moderation and complete reset', () => {
       starlight: 30,
       publishedBarrageCount: 3,
     })
+  })
+
+  it('selects, displays and removes only consented capsule fields from the public screen', async () => {
+    const participantSession = await harness.activate()
+    const participant = harness.manifest.participants[0]
+    const adminSession = await adminWithRoles(harness)
+    let admin = await startAndJump(
+      harness,
+      adminSession.cookie,
+      adminSession.snapshot,
+      2,
+      21,
+    )
+    const capsuleText = '愿下一次相遇时，我们都带着更亮的星光。'
+    const submitted = await harness.unsafeRequest(
+      {
+        method: 'PUT',
+        url: '/api/participant/capsule-message',
+        headers: { 'idempotency-key': idempotencyKey('capsule-submit') },
+        payload: {
+          ...commandVersion(admin),
+          text: capsuleText,
+          publicDisplayNoticeAccepted: true,
+        },
+      },
+      participantSession.cookie,
+    )
+    expect(submitted.statusCode).toBe(200)
+
+    admin = AdminSnapshotSchema.parse(
+      (
+        await harness.request({
+          method: 'GET',
+          url: '/api/admin/snapshot',
+          headers: { cookie: adminSession.cookie },
+        })
+      ).json(),
+    )
+    expect(admin.capsuleCandidates).toEqual([
+      expect.objectContaining({
+        identityId: participant?.id,
+        publicStarId: participant?.publicStarId,
+        text: capsuleText,
+        status: 'SUBMITTED',
+      }),
+    ])
+
+    const moderate = async (
+      action: 'SELECT' | 'DISPLAY' | 'REMOVE',
+      sequence: number,
+    ) => {
+      admin = await adminWrite(
+        harness,
+        adminSession.cookie,
+        admin,
+        'POST',
+        `/api/admin/capsules/${participant?.id}/moderate`,
+        { action, confirmed: true },
+        idempotencyKey('capsule-moderate', sequence),
+      )
+    }
+
+    await moderate('SELECT', 1)
+    expect(admin.capsuleCandidates[0]?.status).toBe('SELECTED')
+    expect(
+      ScreenSnapshotSchema.parse(
+        (
+          await harness.request({ method: 'GET', url: '/api/screen/snapshot' })
+        ).json(),
+      ).displayedCapsules,
+    ).toEqual([])
+
+    await moderate('DISPLAY', 2)
+    const publicScreen = ScreenSnapshotSchema.parse(
+      (
+        await harness.request({ method: 'GET', url: '/api/screen/snapshot' })
+      ).json(),
+    )
+    expect(publicScreen.displayedCapsules).toEqual([
+      {
+        publicStarId: participant?.publicStarId,
+        starTemperatureKelvin: null,
+        text: capsuleText,
+      },
+    ])
+    const serializedPublic = JSON.stringify(publicScreen)
+    expect(serializedPublic).not.toContain(participant?.displayName)
+    expect(serializedPublic).not.toContain(participant?.studentNumber)
+    expect(serializedPublic).not.toContain(participant?.id)
+
+    await moderate('REMOVE', 3)
+    expect(admin.capsuleCandidates[0]?.status).toBe('REMOVED')
+    expect(
+      ScreenSnapshotSchema.parse(
+        (
+          await harness.request({ method: 'GET', url: '/api/screen/snapshot' })
+        ).json(),
+      ).displayedCapsules,
+    ).toEqual([])
+  })
+
+  it('limits the public capsule projection to six manually displayed entries', async () => {
+    const participantSessions = await Promise.all(
+      Array.from({ length: 7 }, (_, index) =>
+        harness.activate(index, {
+          idempotencyKey: idempotencyKey('capsule-cap-activate', index + 1),
+        }),
+      ),
+    )
+    const adminSession = await adminWithRoles(harness)
+    let admin = await startAndJump(
+      harness,
+      adminSession.cookie,
+      adminSession.snapshot,
+      2,
+      22,
+    )
+
+    for (const [index, participantSession] of participantSessions.entries()) {
+      const response = await harness.unsafeRequest(
+        {
+          method: 'PUT',
+          url: '/api/participant/capsule-message',
+          headers: {
+            'idempotency-key': idempotencyKey('capsule-cap-submit', index + 1),
+          },
+          payload: {
+            ...commandVersion(admin),
+            text: `公开候选 ${index + 1}`,
+            publicDisplayNoticeAccepted: true,
+          },
+        },
+        participantSession.cookie,
+      )
+      expect(response.statusCode).toBe(200)
+    }
+
+    admin = AdminSnapshotSchema.parse(
+      (
+        await harness.request({
+          method: 'GET',
+          url: '/api/admin/snapshot',
+          headers: { cookie: adminSession.cookie },
+        })
+      ).json(),
+    )
+
+    for (const [index, candidate] of admin.capsuleCandidates.slice(0, 6).entries()) {
+      admin = await adminWrite(
+        harness,
+        adminSession.cookie,
+        admin,
+        'POST',
+        `/api/admin/capsules/${candidate.identityId}/moderate`,
+        { action: 'SELECT', confirmed: true },
+        idempotencyKey('capsule-cap-select', index + 1),
+      )
+      admin = await adminWrite(
+        harness,
+        adminSession.cookie,
+        admin,
+        'POST',
+        `/api/admin/capsules/${candidate.identityId}/moderate`,
+        { action: 'DISPLAY', confirmed: true },
+        idempotencyKey('capsule-cap-display', index + 1),
+      )
+    }
+
+    const seventh = admin.capsuleCandidates.find(
+      (candidate) => candidate.status === 'SUBMITTED',
+    )
+    expect(seventh).toBeDefined()
+    admin = await adminWrite(
+      harness,
+      adminSession.cookie,
+      admin,
+      'POST',
+      `/api/admin/capsules/${seventh?.identityId}/moderate`,
+      { action: 'SELECT', confirmed: true },
+      idempotencyKey('capsule-cap-select', 7),
+    )
+    const rejected = await harness.unsafeRequest(
+      {
+        method: 'POST',
+        url: `/api/admin/capsules/${seventh?.identityId}/moderate`,
+        headers: { 'idempotency-key': idempotencyKey('capsule-cap-display', 7) },
+        payload: {
+          ...commandVersion(admin),
+          action: 'DISPLAY',
+          confirmed: true,
+        },
+      },
+      adminSession.cookie,
+    )
+    expect(rejected.statusCode).toBe(409)
+    expect(responseErrorCode(rejected)).toBe('VALIDATION_FAILED')
+
+    const screen = ScreenSnapshotSchema.parse(
+      (
+        await harness.request({ method: 'GET', url: '/api/screen/snapshot' })
+      ).json(),
+    )
+    expect(screen.displayedCapsules).toHaveLength(6)
+    expect(screen.displayedCapsules.map((item) => item.publicStarId)).not.toContain(
+      seventh?.publicStarId,
+    )
   })
 
   it('removes, blocks, pauses and clears only public barrages', async () => {
