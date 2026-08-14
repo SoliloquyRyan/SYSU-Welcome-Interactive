@@ -1,6 +1,7 @@
 export * from './errors.js'
 export * from './business.js'
 export * from './primitives.js'
+export * from './protocol-v2.js'
 export * from './realtime.js'
 export * from './runtime.js'
 export * from './snapshot.js'

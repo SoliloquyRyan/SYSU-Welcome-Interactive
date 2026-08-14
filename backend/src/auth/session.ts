@@ -6,6 +6,7 @@ import {
 } from '@sysu-welcome/contracts'
 
 import type { SqliteDatabase } from '../db/open-database.js'
+import { executeV1WriteTransaction } from '../db/v2-foundation.js'
 
 export const PARTICIPANT_COOKIE_NAME = 'sysu_welcome_participant'
 export const ADMIN_COOKIE_NAME = 'sysu_welcome_admin'
@@ -116,36 +117,38 @@ export function createSession(
       ? AdminRoleSchema.array().parse([...(input.roles ?? [])])
       : []
 
-  database
-    .prepare(
-      `INSERT INTO sessions (
-         id, session_type, subject_id, secret_digest, roles_json,
-         reset_epoch, short_id, created_at, expires_at, revoked_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-    )
-    .run(
-      id,
-      input.type,
-      input.subjectId,
-      digestSessionSecret(secret),
-      JSON.stringify(roles),
-      input.resetEpoch,
-      shortId,
-      now.toISOString(),
-      expiresAt.toISOString(),
-    )
+  return executeV1WriteTransaction(database, () => {
+    database
+      .prepare(
+        `INSERT INTO sessions (
+           id, session_type, subject_id, secret_digest, roles_json,
+           reset_epoch, short_id, created_at, expires_at, revoked_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      )
+      .run(
+        id,
+        input.type,
+        input.subjectId,
+        digestSessionSecret(secret),
+        JSON.stringify(roles),
+        input.resetEpoch,
+        shortId,
+        now.toISOString(),
+        expiresAt.toISOString(),
+      )
 
-  return {
-    id,
-    type: input.type,
-    subjectId: input.subjectId,
-    roles,
-    resetEpoch: input.resetEpoch,
-    shortId,
-    createdAt: now.toISOString(),
-    expiresAt: expiresAt.toISOString(),
-    secret,
-  }
+    return {
+      id,
+      type: input.type,
+      subjectId: input.subjectId,
+      roles,
+      resetEpoch: input.resetEpoch,
+      shortId,
+      createdAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      secret,
+    }
+  })
 }
 
 export function authenticateSession(
@@ -205,11 +208,13 @@ export function revokeSession(
   sessionId: string,
   now: Date = new Date(),
 ): void {
-  database
-    .prepare(
-      `UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?`,
-    )
-    .run(now.toISOString(), sessionId)
+  executeV1WriteTransaction(database, () => {
+    database
+      .prepare(
+        `UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?`,
+      )
+      .run(now.toISOString(), sessionId)
+  })
 }
 
 export function replaceAdminSessionRoles(
@@ -218,12 +223,14 @@ export function replaceAdminSessionRoles(
   roles: readonly AdminRole[],
 ): AdminRole[] {
   const normalized = AdminRoleSchema.array().parse([...new Set(roles)])
-  database
-    .prepare(
-      `UPDATE sessions
-       SET roles_json = ?
-       WHERE id = ? AND session_type = 'ADMIN' AND revoked_at IS NULL`,
-    )
-    .run(JSON.stringify(normalized), sessionId)
-  return normalized
+  return executeV1WriteTransaction(database, () => {
+    database
+      .prepare(
+        `UPDATE sessions
+         SET roles_json = ?
+         WHERE id = ? AND session_type = 'ADMIN' AND revoked_at IS NULL`,
+      )
+      .run(JSON.stringify(normalized), sessionId)
+    return normalized
+  })
 }

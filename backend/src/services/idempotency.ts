@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import type { SqliteDatabase } from '../db/open-database.js'
 import { ApiError } from '../http/api-error.js'
 import type { StoredRealtimeEvent } from '../realtime/events.js'
+import { assertV1RuntimeCompatible } from '../db/v2-foundation.js'
 
 export interface IdempotentCommandResult<T> {
   body: T
@@ -106,6 +107,7 @@ export function executeIdempotentCommand<T>(
 
   database.exec('BEGIN IMMEDIATE')
   try {
+    assertV1RuntimeCompatible(database)
     const state = database
       .prepare('SELECT reset_epoch AS resetEpoch FROM app_state WHERE id = 1')
       .get() as { resetEpoch: number }

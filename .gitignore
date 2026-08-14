@@ -35,6 +35,8 @@ tests/reports/
 test-results/
 playwright-report/
 blob-report/
+output/playwright/
+.playwright-cli/
 *.db
 *.sqlite
 *.sqlite3

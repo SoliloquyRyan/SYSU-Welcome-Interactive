@@ -66,6 +66,9 @@ importers:
 
   frontend:
     dependencies:
+      gsap:
+        specifier: 3.13.0
+        version: 3.13.0
       vue:
         specifier: ^3.5.40
         version: 3.5.41(typescript@7.0.2)
@@ -848,6 +851,9 @@ packages:
   get-caller-file@2.0.5:
     resolution: {integrity: sha512-DyFP3BM/3YHTQOCUL/w0OZHR0lpKeGrxotcHWcqNEdnltqFwXVfhEBQ94eIo34AfQpo0rGki4cyIiftY06h2Fg==}
     engines: {node: 6.* || 8.* || >= 10.*}
+
+  gsap@3.13.0:
+    resolution: {integrity: sha512-QL7MJ2WMjm1PHWsoFrAQH/J8wUeqZvMtHO58qdekHpCfhvhSL4gSiz6vJf5EeMP0LOn3ZCprL2ki/gjED8ghVw==}
 
   hookable@5.5.3:
     resolution: {integrity: sha512-Yc+BQe8SvoXH1643Qez1zqLRmbA5rCL+sSmk6TVos0LWVfNIB7PGncdlId77WzLGSIB5KaWgTaNTs2lNVEI6VQ==}
@@ -2061,6 +2067,8 @@ snapshots:
     optional: true
 
   get-caller-file@2.0.5: {}
+
+  gsap@3.13.0: {}
 
   hookable@5.5.3: {}
 

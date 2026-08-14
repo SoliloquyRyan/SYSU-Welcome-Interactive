@@ -262,8 +262,23 @@ function validateManifestInvariants(
   }
 
   manifest.participants.forEach((participant, index) => {
-    if (participant.seedIndex !== index + 1) {
+    const seedIndex = index + 1
+    if (participant.seedIndex !== seedIndex) {
       throw new Error('Seed participant indexes must be contiguous')
+    }
+    const suffix = seedIndex.toString().padStart(3, '0')
+    const expectedIdentity = syntheticIdentityFields(seedIndex)
+    if (
+      participant.id !== `synthetic-${suffix}` ||
+      participant.displayName !== expectedIdentity.displayName ||
+      participant.studentNumber !== expectedIdentity.studentNumber ||
+      participant.publicStarId !== expectedIdentity.publicStarId ||
+      participant.visualSeed !==
+        sha256(`orbital-signal:synthetic-${suffix}`).slice(0, 32)
+    ) {
+      throw new Error(
+        'Seed participant directory is not the fixed synthetic identity catalog',
+      )
     }
   })
   assertUnique(manifest.participants.map(({ id }) => id), 'participant IDs')
@@ -561,6 +576,27 @@ export function seedDemoDatabase(
   const appliedAt = (options.now ?? (() => new Date()))().toISOString()
   database.exec('BEGIN IMMEDIATE')
   try {
+    if (databaseTableExists(database, 'protocol_runtime')) {
+      const protocol = database
+        .prepare(
+          `SELECT active_protocol_version AS activeProtocolVersion,
+                  activation_state AS activationState
+           FROM protocol_runtime
+           WHERE id = 1`,
+        )
+        .get() as
+        | { activeProtocolVersion: string; activationState: string }
+        | undefined
+      if (
+        !protocol ||
+        protocol.activeProtocolVersion !== '1' ||
+        protocol.activationState !== 'V1_ACTIVE'
+      ) {
+        throw new Error(
+          'The v1 seed path refuses a database whose active protocol is not v1',
+        )
+      }
+    }
     const existing = database
       .prepare(
         `SELECT seed_version AS seedVersion,

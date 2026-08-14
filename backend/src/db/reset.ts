@@ -4,6 +4,7 @@ import {
   type SeedOptions,
 } from './seed.js'
 import { appendDomainEvent, type StoredRealtimeEvent } from '../realtime/events.js'
+import { assertV1RuntimeCompatible } from './v2-foundation.js'
 
 export interface ResetResult {
   previousResetEpoch: number
@@ -25,6 +26,7 @@ export function resetDemoDatabase(
 
   database.exec('BEGIN IMMEDIATE')
   try {
+    assertV1RuntimeCompatible(database)
     const previous = database
       .prepare('SELECT reset_epoch AS resetEpoch FROM app_state WHERE id = 1')
       .get() as { resetEpoch: number }

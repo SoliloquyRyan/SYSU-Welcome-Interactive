@@ -134,6 +134,7 @@ const realtimeRefresh = createRefreshCoalescer(refreshSnapshot, {
 
 const realtime = useRealtime({
   stream: 'screen',
+  protocolPolicy: 'v1-preview',
   resync: refreshSnapshot,
   onEvent: (event) => {
     applyEvent(event)
@@ -167,9 +168,16 @@ const finaleIntensity = computed(() => {
   return Math.min(1, Math.max(0.42, averageStarlight / 100))
 })
 const connectionTone = computed(() =>
-  realtime.state.value === 'online' ? 'success' : realtime.state.value === 'offline' ? 'danger' : 'warning',
+  realtime.state.value === 'online'
+    ? 'success'
+    : ['offline', 'protocol_error'].includes(realtime.state.value)
+      ? 'danger'
+      : 'warning',
 )
 const connectionLabel = computed(() => {
+  if (realtime.state.value === 'protocol_error') {
+    return realtime.lastError.value || '协议版本不兼容'
+  }
   const labels = {
     online: '实时',
     offline: '离线',
@@ -253,7 +261,10 @@ onBeforeUnmount(() => {
     </BaseCard>
 
     <template v-else>
-      <div v-if="realtime.state.value !== 'online'" class="safe-banner" role="status">
+      <div v-if="realtime.state.value === 'protocol_error'" class="safe-banner" role="alert">
+        {{ realtime.lastError.value || '协议版本不兼容，实时连接已停止。' }}
+      </div>
+      <div v-else-if="realtime.state.value !== 'online'" class="safe-banner" role="status">
         实时连接中断，保留 {{ snapshot.generatedAt }} 的最后可信快照
         <span v-if="staleSince">· {{ staleSince }} 起正在重连</span>
       </div>

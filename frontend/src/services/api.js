@@ -1,3 +1,14 @@
+import {
+  PROTOCOL_POLICY,
+  ProtocolCompatibilityError,
+  assertProtocolEnvelope,
+  assertV2CapabilityDiscovery,
+  assertV2HandshakeResponse,
+  createV2HandshakeRequest,
+  protocolErrorMessage,
+  upgradeRequired,
+} from './protocol-compatibility'
+
 export class ApiError extends Error {
   constructor(message, options = {}) {
     super(message)
@@ -6,6 +17,9 @@ export class ApiError extends Error {
     this.status = options.status ?? 0
     this.requestId = options.requestId ?? null
     this.details = options.details ?? null
+    this.retryable = options.retryable ?? false
+    this.resetEpoch = options.resetEpoch ?? null
+    this.recovery = options.recovery ?? null
   }
 }
 
@@ -23,12 +37,13 @@ export function commandVersion(snapshot) {
   }
 }
 
-async function parseResponse(response) {
+async function parseResponse(response, signal) {
   const contentType = response.headers.get('content-type') ?? ''
   if (!contentType.includes('application/json')) return null
   try {
     return await response.json()
-  } catch {
+  } catch (error) {
+    if (signal?.aborted) throw error
     return null
   }
 }
@@ -40,39 +55,48 @@ export async function apiRequest(path, options = {}) {
     headers.set('Idempotency-Key', options.idempotencyKey)
   }
 
-  const timeoutController = options.signal ? null : new AbortController()
-  const timeoutId = timeoutController
-    ? globalThis.setTimeout(() => timeoutController.abort(), 15_000)
-    : null
-  let response
+  const requestController = new AbortController()
+  let timedOut = false
+  const abortFromCaller = () => requestController.abort(options.signal?.reason)
+  if (options.signal?.aborted) abortFromCaller()
+  else options.signal?.addEventListener('abort', abortFromCaller, { once: true })
+  const timeoutId = globalThis.setTimeout(() => {
+    timedOut = true
+    requestController.abort()
+  }, 15_000)
   try {
-    response = await fetch(path, {
+    const response = await fetch(path, {
       method: options.method ?? 'GET',
       credentials: 'include',
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      signal: options.signal ?? timeoutController.signal,
+      signal: requestController.signal,
     })
+    const payload = await parseResponse(response, requestController.signal)
+    if (!response.ok) {
+      const apiError = payload?.error
+      throw new ApiError(apiError?.message ?? '操作未完成，请稍后重试。', {
+        code: apiError?.code,
+        status: response.status,
+        requestId: apiError?.requestId,
+        details: apiError?.details,
+        retryable: apiError?.retryable,
+        resetEpoch: payload?.resetEpoch,
+        recovery: payload?.recovery,
+      })
+    }
+    return payload
   } catch (error) {
-    if (error?.name === 'AbortError') {
+    if (error instanceof ApiError) throw error
+    if (requestController.signal.aborted) {
+      if (options.signal?.aborted && !timedOut) throw error
       throw new ApiError('请求等待超时；结果可能尚未确认，请使用原操作重试。')
     }
     throw new ApiError('无法连接本地 Demo 服务，请检查网络后重试。')
   } finally {
-    if (timeoutId !== null) globalThis.clearTimeout(timeoutId)
+    globalThis.clearTimeout(timeoutId)
+    options.signal?.removeEventListener('abort', abortFromCaller)
   }
-
-  const payload = await parseResponse(response)
-  if (!response.ok) {
-    const apiError = payload?.error
-    throw new ApiError(apiError?.message ?? '操作未完成，请稍后重试。', {
-      code: apiError?.code,
-      status: response.status,
-      requestId: apiError?.requestId,
-      details: apiError?.details,
-    })
-  }
-  return payload
 }
 
 function write(path, method, body, idempotencyKey) {
@@ -83,85 +107,241 @@ function write(path, method, body, idempotencyKey) {
   })
 }
 
+async function v1SnapshotResponse(responsePromise, context) {
+  return assertProtocolEnvelope(await responsePromise, {
+    policy: PROTOCOL_POLICY.V1_PREVIEW,
+    context,
+  })
+}
+
 export const participantApi = {
   activate(body, idempotencyKey) {
-    return write('/api/participant/activate', 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write('/api/participant/activate', 'POST', body, idempotencyKey),
+      'participant activation snapshot',
+    )
   },
   snapshot() {
-    return apiRequest('/api/participant/snapshot')
+    return v1SnapshotResponse(
+      apiRequest('/api/participant/snapshot'),
+      'participant snapshot',
+    )
   },
   logout(idempotencyKey) {
     return write('/api/participant/logout', 'POST', {}, idempotencyKey)
   },
   submitCapsuleMessage(body, idempotencyKey) {
-    return write('/api/participant/capsule-message', 'PUT', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write('/api/participant/capsule-message', 'PUT', body, idempotencyKey),
+      'participant capsule message snapshot',
+    )
   },
   lockStarTemperature(body, idempotencyKey) {
-    return write('/api/participant/star-temperature', 'PUT', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write('/api/participant/star-temperature', 'PUT', body, idempotencyKey),
+      'participant star temperature snapshot',
+    )
   },
   startStar(body, idempotencyKey) {
-    return write('/api/participant/star/start', 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write('/api/participant/star/start', 'POST', body, idempotencyKey),
+      'participant star start snapshot',
+    )
   },
   sendGift(body, idempotencyKey) {
-    return write('/api/participant/gifts', 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write('/api/participant/gifts', 'POST', body, idempotencyKey),
+      'participant gift snapshot',
+    )
   },
   sendBarrage(body, idempotencyKey) {
-    return write('/api/participant/barrages', 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write('/api/participant/barrages', 'POST', body, idempotencyKey),
+      'participant barrage snapshot',
+    )
   },
   light(body, idempotencyKey) {
-    return write('/api/participant/cooperative-light', 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write('/api/participant/cooperative-light', 'POST', body, idempotencyKey),
+      'participant cooperative light snapshot',
+    )
   },
 }
 
 export const adminApi = {
   login(body) {
-    return apiRequest('/api/admin/login', { method: 'POST', body })
+    return v1SnapshotResponse(
+      apiRequest('/api/admin/login', { method: 'POST', body }),
+      'admin login snapshot',
+    )
   },
   logout(idempotencyKey) {
     return write('/api/admin/logout', 'POST', {}, idempotencyKey)
   },
   snapshot() {
-    return apiRequest('/api/admin/snapshot')
+    return v1SnapshotResponse(
+      apiRequest('/api/admin/snapshot'),
+      'admin snapshot',
+    )
   },
   setRoles(body, idempotencyKey) {
-    return write('/api/admin/roles', 'PUT', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write('/api/admin/roles', 'PUT', body, idempotencyKey),
+      'admin roles snapshot',
+    )
   },
   runtime(body, idempotencyKey) {
-    return write('/api/admin/runtime', 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write('/api/admin/runtime', 'POST', body, idempotencyKey),
+      'admin runtime snapshot',
+    )
   },
   removeBarrage(id, body, idempotencyKey) {
-    return write(`/api/admin/barrages/${encodeURIComponent(id)}/remove`, 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write(`/api/admin/barrages/${encodeURIComponent(id)}/remove`, 'POST', body, idempotencyKey),
+      'admin barrage removal snapshot',
+    )
   },
   blockSource(sourceId, body, idempotencyKey) {
-    return write(`/api/admin/sources/${encodeURIComponent(sourceId)}/block`, 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write(`/api/admin/sources/${encodeURIComponent(sourceId)}/block`, 'POST', body, idempotencyKey),
+      'admin source block snapshot',
+    )
   },
   pauseBarrages(body, idempotencyKey) {
-    return write('/api/admin/barrages/pause', 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write('/api/admin/barrages/pause', 'POST', body, idempotencyKey),
+      'admin barrage pause snapshot',
+    )
   },
   clearBarrages(body, idempotencyKey) {
-    return write('/api/admin/barrages/clear', 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write('/api/admin/barrages/clear', 'POST', body, idempotencyKey),
+      'admin barrage clear snapshot',
+    )
   },
   moderateCapsule(identityId, body, idempotencyKey) {
-    return write(`/api/admin/capsules/${encodeURIComponent(identityId)}/moderate`, 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write(`/api/admin/capsules/${encodeURIComponent(identityId)}/moderate`, 'POST', body, idempotencyKey),
+      'admin capsule moderation snapshot',
+    )
   },
   setInvitationStatus(id, body, idempotencyKey) {
-    return write(`/api/admin/invitations/${encodeURIComponent(id)}/status`, 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write(`/api/admin/invitations/${encodeURIComponent(id)}/status`, 'POST', body, idempotencyKey),
+      'admin invitation status snapshot',
+    )
   },
   reset(body, idempotencyKey) {
-    return write('/api/admin/reset', 'POST', body, idempotencyKey)
+    return v1SnapshotResponse(
+      write('/api/admin/reset', 'POST', body, idempotencyKey),
+      'admin reset snapshot',
+    )
+  },
+}
+
+async function v2Response(responsePromise, context) {
+  return assertProtocolEnvelope(await responsePromise, {
+    policy: PROTOCOL_POLICY.V2_REQUIRED,
+    context,
+  })
+}
+
+export const v2AdminApi = {
+  login(body) {
+    return v2Response(apiRequest('/api/v2/admin/login', { method: 'POST', body }), 'v2 admin login')
+  },
+  logout() {
+    return v2Response(apiRequest('/api/v2/admin/logout', { method: 'POST', body: {} }), 'v2 admin logout')
+  },
+  snapshot() {
+    return v2Response(apiRequest('/api/v2/admin/snapshot'), 'v2 admin snapshot')
+  },
+  command(body) {
+    return v2Response(apiRequest('/api/v2/admin/commands', { method: 'POST', body }), 'v2 admin command')
+  },
+}
+
+export const v2ScreenApi = {
+  snapshot() {
+    return v2Response(apiRequest('/api/v2/screen/snapshot'), 'v2 screen snapshot')
+  },
+}
+
+export const v2ParticipantApi = {
+  activate(body) {
+    return v2Response(
+      apiRequest('/api/v2/participant/activate', { method: 'POST', body }),
+      'v2 participant activation',
+    )
+  },
+  snapshot(options = {}) {
+    return v2Response(apiRequest('/api/v2/participant/snapshot', options), 'v2 participant snapshot')
+  },
+  command(body) {
+    return v2Response(
+      apiRequest('/api/v2/participant/commands', { method: 'POST', body }),
+      'v2 participant command',
+    )
+  },
+  logout() {
+    return v2Response(
+      apiRequest('/api/v2/participant/logout', { method: 'POST', body: {} }),
+      'v2 participant logout',
+    )
   },
 }
 
 export const screenApi = {
   ready() {
-    return apiRequest('/api/ready')
+    return v1SnapshotResponse(
+      apiRequest('/api/ready'),
+      'screen readiness snapshot',
+    )
   },
   snapshot() {
-    return apiRequest('/api/screen/snapshot')
+    return v1SnapshotResponse(
+      apiRequest('/api/screen/snapshot'),
+      'screen snapshot',
+    )
+  },
+}
+
+export const protocolCapabilityApi = {
+  async discover() {
+    try {
+      return assertV2CapabilityDiscovery(
+        await apiRequest('/api/protocol-capabilities'),
+      )
+    } catch (error) {
+      if (error instanceof ProtocolCompatibilityError) throw error
+      if (error instanceof ApiError && error.status === 404) {
+        throw upgradeRequired('protocol capability discovery')
+      }
+      throw error
+    }
+  },
+  async handshake(input) {
+    const body = createV2HandshakeRequest(input)
+    try {
+      return assertV2HandshakeResponse(
+        await apiRequest('/api/v2/handshake', { method: 'POST', body }),
+        { expectedSurface: body.clientSurface },
+      )
+    } catch (error) {
+      if (error instanceof ProtocolCompatibilityError) throw error
+      if (error instanceof ApiError && error.status === 404) {
+        throw upgradeRequired('v2 handshake')
+      }
+      throw error
+    }
   },
 }
 
 export function publicErrorMessage(error) {
+  if (error instanceof ProtocolCompatibilityError) {
+    return protocolErrorMessage(error)
+  }
   if (!(error instanceof ApiError)) return '操作未完成，请稍后重试。'
   const messages = {
     AUTH_REQUIRED: '当前会话已失效，请重新进入。',
@@ -172,11 +352,21 @@ export function publicErrorMessage(error) {
     STALE_STAGE: '现场阶段已经更新，正在同步最新状态。',
     RESET_EPOCH_CHANGED: 'Demo 已重置，请重新进入。',
     RUNTIME_PAUSED: '现场互动已暂停。',
+    RUNTIME_COMPLETED: '本场活动已经结束。',
+    STALE_RESET_EPOCH: 'Demo 已重置，请重新进入。',
+    STAR_CAPACITY_REACHED: '公共星系名额已满。',
+    ONBOARDING_STATE_INVALID: '当前入场步骤已经变化，正在同步。',
+    SCENE_ACTION_INVALID: '当前现场环节不接受这项操作。',
+    REVISION_CONFLICT: '状态已经更新，请同步后再试。',
+    RESOURCE_NOT_FOUND: '相关节目或内容已不存在。',
+    RESYNC_REQUIRED: '实时记录需要重新同步。',
     STAGE_LOCKED: '该任务当前尚未开放。',
     STAR_TEMPERATURE_LOCKED: '本场活动的恒星色温已经确认。',
     INSUFFICIENT_BALANCE: '动力值余额不足。',
     CONTENT_REJECTED: error.message,
     SOURCE_BLOCKED: '当前入口已暂停发送公开弹幕。',
+    UPGRADE_REQUIRED: '当前页面需要升级后才能连接此服务。',
+    PROTOCOL_VERSION_MISMATCH: '页面与服务端协议版本不一致。',
     SERVICE_UNAVAILABLE: '本地 Demo 服务暂时不可用。',
   }
   const message = messages[error.code] ?? error.message

@@ -160,6 +160,7 @@ const realtimeRefresh = createRefreshCoalescer(refreshSnapshot, {
 
 const realtime = useRealtime({
   stream: 'participant',
+  protocolPolicy: 'v1-preview',
   enabled: isActive,
   resync: refreshSnapshot,
   onEvent: (event) => {
@@ -199,9 +200,16 @@ const barragePlaceholder = computed(() => {
   return '说点什么…'
 })
 const connectionTone = computed(() =>
-  realtime.state.value === 'online' ? 'success' : realtime.state.value === 'offline' ? 'danger' : 'warning',
+  realtime.state.value === 'online'
+    ? 'success'
+    : ['offline', 'protocol_error'].includes(realtime.state.value)
+      ? 'danger'
+      : 'warning',
 )
 const connectionLabel = computed(() => {
+  if (realtime.state.value === 'protocol_error') {
+    return realtime.lastError.value || '协议版本不兼容'
+  }
   const labels = {
     online: '实时同步',
     offline: '设备离线',
@@ -827,7 +835,10 @@ onMounted(() => {
       </div>
 
       <div class="portal-feedback">
-        <p v-if="runtime.status === 'PAUSED' || !realtime.canWrite.value" class="inline-message warning" role="status">
+        <p v-if="realtime.state.value === 'protocol_error'" class="inline-message danger" role="alert">
+          {{ realtime.lastError.value || '协议版本不兼容，当前操作已停止。' }}
+        </p>
+        <p v-else-if="runtime.status === 'PAUSED' || !realtime.canWrite.value" class="inline-message warning" role="status">
           {{ runtime.status === 'PAUSED' ? '现场互动已暂停；当前内容仍可查看。' : '正在恢复实时同步，暂时不能提交操作。' }}
         </p>
         <p v-if="formError" class="inline-message danger" role="alert">{{ formError }}</p>

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import { promises as fsPromises } from 'node:fs'
+import http from 'node:http'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -50,6 +51,12 @@ export interface DemoTestCredentials {
 export interface DemoTestStack {
   /** The only browser-facing origin. API and WebSocket traffic use its Vite proxy. */
   readonly baseURL: string
+  /** Direct loopback backend origin for protocol-load tests; never externally exposed. */
+  readonly backendOrigin: string
+  /** Browser origin accepted by the backend for HTTP/WebSocket origin checks. */
+  readonly requestOrigin: string
+  /** OS-temporary SQLite database used by this isolated stack. */
+  readonly databasePath: string
   /** OS-temporary manifest; never points at backend/.data. */
   readonly manifestPath: string
   /** Synthetic credentials held in memory only. Tests must not log this object. */
@@ -63,6 +70,12 @@ export interface DemoTestStack {
 export interface StartDemoTestStackOptions {
   /** Defaults to four isolated identities; production remains fixed at 300. */
   participantCount?: number
+  /** Defaults to the legacy runtime. V2 always uses an isolated 300-person synthetic cutover. */
+  protocolVersion?: '1' | '2'
+  /** Preview-only escape hatch for Windows environments that isolate child-process loopback. */
+  inProcess?: boolean
+  /** Browser-facing IPv4 bind/origin. Defaults to loopback; field previews may use one explicit LAN address. */
+  browserHost?: string
   backendPort?: number
   frontendPort?: number
   startupTimeoutMs?: number
@@ -236,7 +249,11 @@ async function stopProcess(process: ManagedProcess): Promise<void> {
   await waitForExit(child, 1_000)
 }
 
-async function assertPortAvailable(port: number, label: string): Promise<void> {
+async function assertPortAvailable(
+  port: number,
+  label: string,
+  host = TEST_HOST,
+): Promise<void> {
   if (!isPort(port)) throw new Error(`${label} port must be an integer from 1 to 65535`)
   await new Promise<void>((resolve, reject) => {
     const server = net.createServer()
@@ -244,18 +261,18 @@ async function assertPortAvailable(port: number, label: string): Promise<void> {
     server.once('error', (error) => {
       reject(new Error(`${label} port ${port} is unavailable`, { cause: error }))
     })
-    server.listen({ host: TEST_HOST, port, exclusive: true }, () => {
+    server.listen({ host, port, exclusive: true }, () => {
       server.close((error) => (error ? reject(error) : resolve()))
     })
   })
 }
 
-async function reserveEphemeralPort(): Promise<number> {
+async function reserveEphemeralPort(host = TEST_HOST): Promise<number> {
   return await new Promise<number>((resolve, reject) => {
     const server = net.createServer()
     server.unref()
     server.once('error', reject)
-    server.listen({ host: TEST_HOST, port: 0, exclusive: true }, () => {
+    server.listen({ host, port: 0, exclusive: true }, () => {
       const address = server.address()
       if (!address || typeof address === 'string') {
         server.close()
@@ -271,12 +288,13 @@ async function reserveEphemeralPort(): Promise<number> {
 async function selectPort(
   requested: number | undefined,
   label: string,
+  host = TEST_HOST,
 ): Promise<number> {
   if (requested !== undefined) {
-    await assertPortAvailable(requested, label)
+    await assertPortAvailable(requested, label, host)
     return requested
   }
-  return reserveEphemeralPort()
+  return reserveEphemeralPort(host)
 }
 
 async function waitForPortRelease(
@@ -302,6 +320,7 @@ async function waitForReady(input: {
   url: string
   process: ManagedProcess
   timeoutMs: number
+  isReady?: (body: Record<string, unknown>) => boolean
 }): Promise<void> {
   const deadline = Date.now() + input.timeoutMs
   let lastError: unknown
@@ -313,14 +332,24 @@ async function waitForReady(input: {
       throw processFailure(input.process, 'exited before becoming ready')
     }
     try {
-      const response = await fetch(input.url, {
-        cache: 'no-store',
-        signal: AbortSignal.timeout(1_000),
+      const body = await new Promise<Record<string, unknown>>((resolve, reject) => {
+        const request = http.get(input.url, { timeout: 1_000 }, (response) => {
+          let payload = ''
+          response.setEncoding('utf8')
+          response.on('data', (chunk: string) => { payload += chunk })
+          response.on('end', () => {
+            if ((response.statusCode ?? 500) >= 400) {
+              reject(new Error(`readiness returned ${response.statusCode}`))
+              return
+            }
+            try { resolve(JSON.parse(payload) as Record<string, unknown>) }
+            catch (error) { reject(error) }
+          })
+        })
+        request.once('timeout', () => request.destroy(new Error('readiness timed out')))
+        request.once('error', reject)
       })
-      if (response.ok) {
-        const body = (await response.json()) as { status?: unknown }
-        if (body.status === 'ready') return
-      }
+      if ((input.isReady ?? ((candidate) => candidate.status === 'ready'))(body)) return
     } catch (error) {
       lastError = error
     }
@@ -366,6 +395,34 @@ async function initializeDatabase(
   }
   if (setup.child.exitCode !== 0) {
     throw processFailure(setup, `failed with exit code ${setup.child.exitCode}`)
+  }
+}
+
+async function switchDatabaseToV2(
+  environment: NodeJS.ProcessEnv,
+  backupPath: string,
+  timeoutMs: number,
+): Promise<void> {
+  const cutover = startProcess({
+    label: 'isolated protocol v2 cutover',
+    args: [
+      TSX_CLI,
+      path.join(REPOSITORY_ROOT, 'backend', 'src', 'cli', 'v2-switch.ts'),
+      '--backup',
+      backupPath,
+      '--confirm',
+      'SYNTHETIC_DEMO_DATA_IS_DISPOSABLE',
+    ],
+    cwd: REPOSITORY_ROOT,
+    environment,
+  })
+  const exited = await waitForExit(cutover.child, timeoutMs)
+  if (!exited) {
+    await stopProcess(cutover)
+    throw processFailure(cutover, `timed out after ${timeoutMs}ms`)
+  }
+  if (cutover.child.exitCode !== 0) {
+    throw processFailure(cutover, `failed with exit code ${cutover.child.exitCode}`)
   }
 }
 
@@ -433,18 +490,18 @@ process.on('message', (message) => {
 })
 process.once('SIGINT', () => void shutdown())
 process.once('SIGTERM', () => void shutdown())
-await app.listen({ host: config.host, port: config.port })
-process.send?.({ type: 'listening' })
+const address = await app.listen({ host: config.host, port: config.port })
+process.send?.({ type: 'listening:' + address })
 `
 
 const VITE_RUNNER = `
 import { createServer } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-const host = '127.0.0.1'
+const host = process.env.DEMO_E2E_FRONTEND_HOST
 const port = Number(process.env.DEMO_E2E_FRONTEND_PORT)
 const backend = process.env.DEMO_E2E_BACKEND_ORIGIN
-if (!Number.isInteger(port) || !backend) throw new Error('Invalid E2E Vite configuration')
+if (!host || !Number.isInteger(port) || !backend) throw new Error('Invalid E2E Vite configuration')
 const server = await createServer({
   root: process.cwd(),
   configFile: false,
@@ -537,7 +594,12 @@ export async function startDemoTestStack(
   if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs < 1_000) {
     throw new Error('startupTimeoutMs must be at least 1000ms')
   }
-  const participantCount = options.participantCount ?? 4
+  const protocolVersion = options.protocolVersion ?? '1'
+  const browserHost = options.browserHost ?? TEST_HOST
+  if (net.isIP(browserHost) !== 4 || browserHost === '0.0.0.0') {
+    throw new Error('browserHost must be one explicit IPv4 address, not a wildcard bind')
+  }
+  const participantCount = options.participantCount ?? (protocolVersion === '2' ? 300 : 4)
   if (
     !Number.isInteger(participantCount) ||
     participantCount < 2 ||
@@ -545,23 +607,27 @@ export async function startDemoTestStack(
   ) {
     throw new Error('participantCount must be an integer from 2 to 1000')
   }
+  if (protocolVersion === '2' && participantCount !== 300) {
+    throw new Error('Protocol v2 E2E stacks require exactly 300 synthetic identities')
+  }
 
-  const backendPort = await selectPort(options.backendPort, 'backend')
-  const frontendPort = await selectPort(options.frontendPort, 'frontend')
+  const backendPort = await selectPort(options.backendPort, 'backend', TEST_HOST)
+  const frontendPort = await selectPort(options.frontendPort, 'frontend', browserHost)
   if (backendPort === frontendPort) {
     throw new Error('Backend and frontend ports must be different')
   }
   // Recheck both after selection. Strict listeners remain authoritative if a
   // different process wins the unavoidable bind race after this point.
-  await assertPortAvailable(backendPort, 'backend')
-  await assertPortAvailable(frontendPort, 'frontend')
+  await assertPortAvailable(backendPort, 'backend', TEST_HOST)
+  await assertPortAvailable(frontendPort, 'frontend', browserHost)
 
   const temporaryRoot = await fsPromises.mkdtemp(
     path.join(os.tmpdir(), 'sysu-welcome-e2e-'),
   )
   const databasePath = path.join(temporaryRoot, 'demo.sqlite')
   const manifestPath = path.join(temporaryRoot, 'demo-seed-manifest.json')
-  const baseURL = `http://${TEST_HOST}:${frontendPort}`
+  const cutoverBackupPath = path.join(temporaryRoot, 'demo-v1-before-v2.sqlite')
+  const baseURL = `http://${browserHost}:${frontendPort}`
   const backendOrigin = `http://${TEST_HOST}:${backendPort}`
   const environment: NodeJS.ProcessEnv = {
     ...safeInheritedEnvironment(),
@@ -574,7 +640,100 @@ export async function startDemoTestStack(
     DEMO_LOG_LEVEL: 'silent',
     DEMO_SEED_PARTICIPANT_COUNT: String(participantCount),
     DEMO_E2E_FRONTEND_PORT: String(frontendPort),
+    DEMO_E2E_FRONTEND_HOST: browserHost,
     DEMO_E2E_BACKEND_ORIGIN: backendOrigin,
+  }
+
+  if (options.inProcess) {
+    let app: { close(): Promise<void>; listen(options: { host: string; port: number }): Promise<string> } | null = null
+    let viteServer: { close(): Promise<void>; listen(): Promise<unknown> } | null = null
+    let stopped = false
+    try {
+      await initializeDatabase(environment, startupTimeoutMs)
+      const credentials = readCredentials(manifestPath)
+      const viteUrl = pathToFileURL(path.join(FRONTEND_ROOT, 'node_modules', 'vite', 'dist', 'node', 'index.js')).href
+      const vuePluginUrl = pathToFileURL(path.join(FRONTEND_ROOT, 'node_modules', '@vitejs', 'plugin-vue', 'dist', 'index.mjs')).href
+      const [{ buildApp }, { loadConfig }, { createServer }, { default: vue }] =
+        await Promise.all([
+          import(BACKEND_APP_URL),
+          import(BACKEND_CONFIG_URL),
+          import(viteUrl),
+          import(vuePluginUrl),
+        ])
+      const config = loadConfig(environment)
+      const startInProcessBackend = async () => {
+        const next = await buildApp({ config })
+        await next.listen({ host: config.host, port: config.port })
+        return next
+      }
+
+      app = await startInProcessBackend()
+      if (protocolVersion === '2') {
+        await app!.close()
+        app = null
+        await switchDatabaseToV2(environment, cutoverBackupPath, startupTimeoutMs)
+        app = await startInProcessBackend()
+      }
+
+      viteServer = await createServer({
+        root: FRONTEND_ROOT,
+        configFile: false,
+        clearScreen: false,
+        logLevel: 'silent',
+        appType: 'spa',
+        plugins: [vue()],
+        server: {
+          host: browserHost,
+          port: frontendPort,
+          strictPort: true,
+          proxy: {
+            '/api': { target: backendOrigin, changeOrigin: false, xfwd: true },
+            '/ws': { target: backendOrigin.replace(/^http:/u, 'ws:'), changeOrigin: false, xfwd: true, ws: true },
+          },
+          fs: {
+            deny: [
+              '.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.data/**',
+              '**/*.db', '**/*.sqlite', '**/*.sqlite3',
+            ],
+          },
+        },
+      })
+      await viteServer!.listen()
+
+      const closeAll = async () => {
+        if (stopped) return
+        stopped = true
+        await Promise.allSettled([
+          viteServer?.close() ?? Promise.resolve(),
+          app?.close() ?? Promise.resolve(),
+        ])
+        viteServer = null
+        app = null
+        await removeTemporaryRoot(temporaryRoot)
+      }
+
+      return {
+        baseURL,
+        backendOrigin,
+        requestOrigin: baseURL,
+        databasePath,
+        manifestPath,
+        credentials,
+        async restartBackend() {
+          if (stopped) throw new Error('Cannot restart a stopped E2E test stack')
+          await app?.close()
+          app = await startInProcessBackend()
+        },
+        stop: closeAll,
+      }
+    } catch (error) {
+      await Promise.allSettled([
+        viteServer?.close() ?? Promise.resolve(),
+        app?.close() ?? Promise.resolve(),
+      ])
+      await removeTemporaryRoot(temporaryRoot)
+      throw error
+    }
   }
 
   let backend: ManagedProcess | null = null
@@ -593,12 +752,29 @@ export async function startDemoTestStack(
       timeoutMs: startupTimeoutMs,
     })
 
+    if (protocolVersion === '2') {
+      await stopProcess(backend)
+      await waitForPortRelease(backendPort, 'backend', startupTimeoutMs)
+      backend = null
+      await switchDatabaseToV2(environment, cutoverBackupPath, startupTimeoutMs)
+      backend = startBackend(environment)
+      await waitForReady({
+        url: `${backendOrigin}/api/protocol-capabilities`,
+        process: backend,
+        timeoutMs: startupTimeoutMs,
+        isReady: (body) => body.activationState === 'V2_ACTIVE',
+      })
+    }
+
     vite = startVite(environment)
-    await waitForReady({
-      url: `${baseURL}/api/ready`,
-      process: vite,
-      timeoutMs: startupTimeoutMs,
-    })
+    await waitForReady(protocolVersion === '2'
+      ? {
+          url: `${baseURL}/api/protocol-capabilities`,
+          process: vite,
+          timeoutMs: startupTimeoutMs,
+          isReady: (body) => body.activationState === 'V2_ACTIVE',
+        }
+      : { url: `${baseURL}/api/ready`, process: vite, timeoutMs: startupTimeoutMs })
   } catch (error) {
     if (vite) await stopProcess(vite)
     if (backend) await stopProcess(backend)
@@ -620,6 +796,9 @@ export async function startDemoTestStack(
 
   return {
     baseURL,
+    backendOrigin,
+    requestOrigin: baseURL,
+    databasePath,
     manifestPath,
     credentials,
     async restartBackend() {
@@ -629,16 +808,22 @@ export async function startDemoTestStack(
       await waitForPortRelease(backendPort, 'backend', startupTimeoutMs)
       backend = startBackend(environment)
       try {
-        await waitForReady({
-          url: `${backendOrigin}/api/ready`,
-          process: backend,
-          timeoutMs: startupTimeoutMs,
-        })
-        await waitForReady({
-          url: `${baseURL}/api/ready`,
-          process: vite!,
-          timeoutMs: startupTimeoutMs,
-        })
+        await waitForReady(protocolVersion === '2'
+          ? {
+              url: `${backendOrigin}/api/protocol-capabilities`,
+              process: backend,
+              timeoutMs: startupTimeoutMs,
+              isReady: (body) => body.activationState === 'V2_ACTIVE',
+            }
+          : { url: `${backendOrigin}/api/ready`, process: backend, timeoutMs: startupTimeoutMs })
+        await waitForReady(protocolVersion === '2'
+          ? {
+              url: `${baseURL}/api/protocol-capabilities`,
+              process: vite!,
+              timeoutMs: startupTimeoutMs,
+              isReady: (body) => body.activationState === 'V2_ACTIVE',
+            }
+          : { url: `${baseURL}/api/ready`, process: vite!, timeoutMs: startupTimeoutMs })
       } catch (error) {
         await stop()
         throw error

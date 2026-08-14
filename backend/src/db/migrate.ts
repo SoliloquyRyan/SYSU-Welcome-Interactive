@@ -79,6 +79,29 @@ function ensureMigrationTable(database: SqliteDatabase): void {
   `)
 }
 
+function assertLegacyMigrationRuntime(database: SqliteDatabase): void {
+  if (!databaseTableExists(database, 'protocol_runtime')) return
+  const runtime = database
+    .prepare(
+      `SELECT active_protocol_version AS activeProtocolVersion,
+              activation_state AS activationState
+       FROM protocol_runtime
+       WHERE id = 1`,
+    )
+    .get() as
+    | { activeProtocolVersion: string; activationState: string }
+    | undefined
+  if (
+    !runtime ||
+    runtime.activeProtocolVersion !== '1' ||
+    runtime.activationState !== 'V1_ACTIVE'
+  ) {
+    throw new Error(
+      'The legacy migration entrypoint refuses a database whose active protocol is not v1',
+    )
+  }
+}
+
 function readAppliedMigrations(database: SqliteDatabase): AppliedMigration[] {
   return database
     .prepare(
@@ -124,6 +147,7 @@ export function migrateDatabase(
   now: () => Date = () => new Date(),
 ): MigrationResult {
   const available = discoverMigrations(migrationsPath)
+  assertLegacyMigrationRuntime(database)
   ensureMigrationTable(database)
   const applied = readAppliedMigrations(database)
   const issues = validateAppliedMigrations(applied, available)
@@ -142,6 +166,7 @@ export function migrateDatabase(
 
     database.exec('BEGIN IMMEDIATE')
     try {
+      assertLegacyMigrationRuntime(database)
       database.exec(migration.sql)
       database
         .prepare(

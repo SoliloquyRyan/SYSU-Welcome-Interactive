@@ -1,8 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import AdminPage from '../pages/admin/AdminPage.vue'
-import ScreenPage from '../pages/screen/ScreenPage.vue'
-import WelcomePage from '../pages/student/WelcomePage.vue'
+import ScreenRoutePage from '../pages/screen/ScreenRoutePage.vue'
+import WelcomeRoutePage from '../pages/student/WelcomeRoutePage.vue'
 import { captureInvitationTokenFromUrl } from '../services/invitation-entry'
 
 // Clean the invitation credential before createWebHistory snapshots the initial
@@ -19,13 +19,13 @@ const router = createRouter({
     {
       path: '/welcome',
       name: 'welcome',
-      component: WelcomePage,
+      component: WelcomeRoutePage,
       meta: { title: '星际信标' },
     },
     {
       path: '/screen',
       name: 'screen',
-      component: ScreenPage,
+      component: ScreenRoutePage,
       meta: { title: '现场大屏' },
     },
     {

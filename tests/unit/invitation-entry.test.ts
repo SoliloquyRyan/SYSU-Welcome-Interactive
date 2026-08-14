@@ -44,6 +44,70 @@ describe('invitation entry token capture', () => {
     )
   })
 
+  it('accepts the trailing-slash welcome route', () => {
+    const history = historyMock()
+    const location = locationFor(
+      `https://demo.local/welcome/?token=${VALID_TOKEN}&lang=zh#entry`,
+    )
+
+    const captured = captureInvitationTokenFromUrl({ location, history })
+
+    expect(captured).toBe(VALID_TOKEN)
+    expect(history.replaceState).toHaveBeenCalledWith(
+      history.state,
+      '',
+      '/welcome/?lang=zh#entry',
+    )
+  })
+
+  it('uses the configured base path without matching another welcome suffix', () => {
+    const matchingHistory = historyMock()
+    const captured = captureInvitationTokenFromUrl({
+      location: locationFor(
+        `https://demo.local/sysu/event/welcome?token=${VALID_TOKEN}&lang=zh`,
+      ),
+      history: matchingHistory,
+      basePath: '/sysu/event/',
+    })
+
+    expect(captured).toBe(VALID_TOKEN)
+    expect(matchingHistory.replaceState).toHaveBeenCalledWith(
+      matchingHistory.state,
+      '',
+      '/sysu/event/welcome?lang=zh',
+    )
+
+    const unrelatedHistory = historyMock()
+    expect(
+      captureInvitationTokenFromUrl({
+        location: locationFor(
+          `https://demo.local/another/welcome?token=${'B'.repeat(43)}`,
+        ),
+        history: unrelatedHistory,
+        basePath: '/sysu/event/',
+      }),
+    ).toBeNull()
+    expect(unrelatedHistory.replaceState).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    '/welcome-preview',
+    '/welcome/extra',
+    '/not-welcome',
+  ])('does not match a different root path: %s', (pathname) => {
+    const history = historyMock()
+
+    const captured = captureInvitationTokenFromUrl({
+      location: locationFor(
+        `https://demo.local${pathname}?token=${VALID_TOKEN}`,
+      ),
+      history,
+    })
+
+    expect(captured).toBeNull()
+    expect(history.replaceState).not.toHaveBeenCalled()
+  })
+
   it('returns a captured token once and clears it from memory', () => {
     const history = historyMock()
     const location = locationFor(

@@ -44,7 +44,7 @@ if errorlevel 1 goto failed
 
 :start_preview
 echo.
-echo [Starting] Opening the 390x844 mobile animation preview...
+echo [Starting] Opening the 390x844 mobile preview and flow checker...
 echo Close the preview browser to clean temporary data and exit.
 echo.
 call "%PNPM_BIN%" preview:mobile
@@ -55,5 +55,6 @@ exit /b 0
 echo.
 echo [Failed] Keep the error messages above and ask the project owner or Codex to inspect them.
 echo.
+if "%DEMO_PREVIEW_SMOKE%"=="1" exit /b 1
 pause
 exit /b 1

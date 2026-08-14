@@ -18,6 +18,10 @@ import {
 import type { AppConfig } from '../config.js'
 import type { SqliteDatabase } from '../db/open-database.js'
 import {
+  assertV1RuntimeCompatible,
+  executeV1WriteTransaction,
+} from '../db/v2-foundation.js'
+import {
   type DemoCredentialContext,
   invitationTokenDigest,
   restoreDemoSeedCatalogInTransaction,
@@ -149,12 +153,14 @@ function recordActivationAttempt(
   requestId: string,
   now: Date,
 ): void {
-  database
-    .prepare(
-      `INSERT INTO activation_attempts (outcome, request_id, created_at)
-       VALUES (?, ?, ?)`,
-    )
-    .run(outcome, requestId, now.toISOString())
+  executeV1WriteTransaction(database, () => {
+    database
+      .prepare(
+        `INSERT INTO activation_attempts (outcome, request_id, created_at)
+         VALUES (?, ?, ?)`,
+      )
+      .run(outcome, requestId, now.toISOString())
+  })
 }
 
 function genericActivationFailure(): ApiError {
@@ -1619,6 +1625,7 @@ export function resetDemoFromAdmin(
 
   database.exec('BEGIN IMMEDIATE')
   try {
+    assertV1RuntimeCompatible(database)
     const runtime = readRuntimeContext(database)
     const prior = database
       .prepare(

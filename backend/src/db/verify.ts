@@ -2,6 +2,7 @@ import type { AppConfig } from '../config.js'
 import { verifyMigrations } from './migrate.js'
 import type { SqliteDatabase } from './open-database.js'
 import { verifyDemoSeed } from './seed.js'
+import { assertV1RuntimeCompatible } from './v2-foundation.js'
 
 export interface FoundationVerification {
   ready: boolean
@@ -17,6 +18,11 @@ export function verifyFoundation(
   config: AppConfig,
 ): FoundationVerification {
   const issues: string[] = []
+  try {
+    assertV1RuntimeCompatible(database)
+  } catch (error) {
+    issues.push(error instanceof Error ? error.message : 'Protocol runtime is incompatible')
+  }
   const migrations = verifyMigrations(database, config.migrationsPath)
   if (!migrations.ready) issues.push(...migrations.issues)
 

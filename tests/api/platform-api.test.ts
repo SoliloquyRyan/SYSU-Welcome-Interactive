@@ -147,7 +147,17 @@ describe('G1 system HTTP and WebSocket boundary', () => {
     }
   }
 
+  function prepareMigrationsOnly(): void {
+    const database = openDatabase(config.databasePath)
+    try {
+      migrateDatabase(database, config.migrationsPath, () => NOW)
+    } finally {
+      database.close()
+    }
+  }
+
   it('keeps health alive but fails readiness and snapshot closed before setup', async () => {
+    prepareMigrationsOnly()
     app = await buildApp({ config, logger: false, now: () => NOW })
 
     const health = await app.inject({ method: 'GET', url: '/api/health' })
@@ -165,7 +175,7 @@ describe('G1 system HTTP and WebSocket boundary', () => {
     expect(ready.statusCode).toBe(503)
     expect(ReadyResponseSchema.parse(ready.json())).toMatchObject({
       status: 'not_ready',
-      checks: { migrations: 'not_ready', seed: 'not_ready' },
+      checks: { migrations: 'ready', seed: 'not_ready' },
     })
     expect(snapshot.statusCode).toBe(503)
     expect(ReadyResponseSchema.parse(snapshot.json()).status).toBe('not_ready')
@@ -231,6 +241,7 @@ describe('G1 system HTTP and WebSocket boundary', () => {
   })
 
   it('rejects untrusted hosts, origins and unknown API routes with public errors', async () => {
+    prepareMigrationsOnly()
     app = await buildApp({ config, logger: false, now: () => NOW })
 
     const badHost = await app.inject({

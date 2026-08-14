@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import BaseButton from '../../components/ui/BaseButton.vue'
 import BaseCard from '../../components/ui/BaseCard.vue'
 import StatusPill from '../../components/ui/StatusPill.vue'
+import V2AdminConsole from './V2AdminConsole.vue'
 import { useRealtime } from '../../composables/useRealtime'
 import {
   adminApi,
@@ -10,7 +11,9 @@ import {
   commandVersion,
   createIdempotencyKey,
   publicErrorMessage,
+  protocolCapabilityApi,
 } from '../../services/api'
+import { isV2RuntimeActive } from '../../services/protocol-compatibility'
 import {
   createRefreshCoalescer,
   shouldCommitSnapshot,
@@ -22,6 +25,7 @@ const roles = [
   { id: 'DEMO_ADMIN', label: 'Demo 管理' },
   { id: 'ALL', label: '全部能力' },
 ]
+const protocolSurface = ref('checking')
 const stageNames = ['身份激活', '时光胶囊', '星星集结', '节目应援', '协同点亮', '星际档案']
 
 const authState = ref('checking')
@@ -101,6 +105,7 @@ const realtimeRefresh = createRefreshCoalescer(refreshSnapshot, {
 
 const realtime = useRealtime({
   stream: 'screen',
+  protocolPolicy: 'v1-preview',
   enabled: isAuthenticated,
   resync: refreshSnapshot,
   onEvent: () => realtimeRefresh.schedule(),
@@ -112,9 +117,16 @@ onBeforeUnmount(() => {
 })
 
 const connectionTone = computed(() =>
-  realtime.state.value === 'online' ? 'success' : realtime.state.value === 'offline' ? 'danger' : 'warning',
+  realtime.state.value === 'online'
+    ? 'success'
+    : ['offline', 'protocol_error'].includes(realtime.state.value)
+      ? 'danger'
+      : 'warning',
 )
 const connectionLabel = computed(() => {
+  if (realtime.state.value === 'protocol_error') {
+    return realtime.lastError.value || '协议版本不兼容'
+  }
   const labels = {
     online: '实时同步',
     offline: '离线',
@@ -436,11 +448,20 @@ function resetDemo() {
   )
 }
 
-onMounted(boot)
+onMounted(async () => {
+  try {
+    const capability = await protocolCapabilityApi.discover()
+    protocolSurface.value = isV2RuntimeActive(capability) ? 'v2' : 'v1'
+  } catch {
+    protocolSurface.value = 'v1'
+  }
+  if (protocolSurface.value === 'v1') await boot()
+})
 </script>
 
 <template>
-  <section class="admin-stage console" aria-labelledby="admin-title">
+  <V2AdminConsole v-if="protocolSurface === 'v2'" />
+  <section v-else-if="protocolSurface === 'v1'" class="admin-stage console" aria-labelledby="admin-title">
     <div class="console-heading">
       <div>
         <p class="eyebrow">内部页面 · 共用 Demo 账号</p>
@@ -480,6 +501,9 @@ onMounted(boot)
         <BaseButton variant="ghost" size="sm" :loading="busy === 'logout'" @click="logout">退出</BaseButton>
       </div>
 
+      <p v-if="realtime.state.value === 'protocol_error'" class="inline-message danger" role="alert">
+        {{ realtime.lastError.value || '协议版本不兼容，所有控制已停止。' }}
+      </p>
       <div v-if="uncertainCommand" class="inline-message warning uncertain-command" role="alert">
         <span>上一次控制的结果尚未确认。其他控制保持锁定，安全重试会复用原请求与原幂等键。</span>
         <BaseButton
@@ -490,7 +514,7 @@ onMounted(boot)
           @click="retryUncertainCommand"
         >安全重试原操作</BaseButton>
       </div>
-      <p v-else-if="!realtime.canWrite.value" class="inline-message warning" role="status">
+      <p v-else-if="!realtime.canWrite.value && realtime.state.value !== 'protocol_error'" class="inline-message warning" role="status">
         实时状态尚未同步，所有控制已锁定；当前快照仍可查看。
       </p>
       <p v-if="errorMessage" class="inline-message danger" role="alert">{{ errorMessage }}</p>
@@ -689,6 +713,9 @@ onMounted(boot)
         </BaseCard>
       </div>
     </template>
+  </section>
+  <section v-else class="admin-stage console" aria-live="polite">
+    <BaseCard padding="lg"><p>正在确认后台协议版本…</p></BaseCard>
   </section>
 </template>
 

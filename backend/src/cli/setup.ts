@@ -3,12 +3,14 @@ import { migrateDatabase } from '../db/migrate.js'
 import { openDatabase } from '../db/open-database.js'
 import { seedDemoDatabase } from '../db/seed.js'
 import { verifyFoundation } from '../db/verify.js'
+import { assertV1RuntimeCompatible } from '../db/v2-foundation.js'
 import { closeDatabase, reportCliFailure } from './shared.js'
 
 const config = loadConfig()
 const database = openDatabase(config.databasePath)
 try {
   const migrations = migrateDatabase(database, config.migrationsPath)
+  assertV1RuntimeCompatible(database)
   const seed = seedDemoDatabase(database, {
     manifestPath: config.seedManifestPath,
     participantCount: config.seedParticipantCount,

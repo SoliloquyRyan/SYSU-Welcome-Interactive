@@ -1,5 +1,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createConnectGate } from '../services/connect-gate'
+import {
+  PROTOCOL_POLICY,
+  ProtocolCompatibilityError,
+  createProtocolGate,
+  protocolErrorMessage,
+} from '../services/protocol-compatibility'
 
 const RETRY_DELAYS = [500, 1000, 2000, 4000, 8000, 10000]
 
@@ -14,6 +20,10 @@ export function isEventVisibleToRealtimeAccess(accessStream, eventStream) {
   return VISIBLE_EVENT_STREAMS[accessStream]?.has(eventStream) ?? false
 }
 
+export function realtimeStateAfterNetworkChange(nextState, protocolBlocked) {
+  return protocolBlocked ? 'protocol_error' : nextState
+}
+
 function websocketUrl(stream, resetEpoch, afterEventSeq) {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const url = new URL(`${protocol}//${window.location.host}/ws`)
@@ -23,19 +33,27 @@ function websocketUrl(stream, resetEpoch, afterEventSeq) {
   return url.toString()
 }
 
-export function useRealtime({ stream, resync, onEvent, enabled = true }) {
+export function useRealtime({
+  stream,
+  resync,
+  onEvent,
+  enabled = true,
+  protocolPolicy,
+}) {
   const state = ref('idle')
   const synced = ref(false)
   const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
   const lastError = ref('')
   const lastEventSeq = ref(0)
   const resetEpoch = ref(null)
+  const protocolError = ref(null)
 
   let socket = null
   let stopped = false
   let retryIndex = 0
   let retryTimer = null
   const connectGate = createConnectGate()
+  const protocolGate = createProtocolGate(protocolPolicy)
   let eventQueue = Promise.resolve()
 
   const isEnabled = () =>
@@ -46,6 +64,7 @@ export function useRealtime({ stream, resync, onEvent, enabled = true }) {
   )
 
   function acceptSnapshot(snapshot) {
+    protocolGate.accept(snapshot, `${stream} snapshot`)
     const runtime = snapshot?.runtime ?? snapshot
     resetEpoch.value = runtime?.resetEpoch ?? resetEpoch.value ?? 1
     lastEventSeq.value = Number(snapshot?.eventSeq ?? 0)
@@ -60,7 +79,13 @@ export function useRealtime({ stream, resync, onEvent, enabled = true }) {
   }
 
   function scheduleReconnect() {
-    if (stopped || !online.value || retryTimer || !isEnabled()) return
+    if (
+      stopped
+      || protocolGate.blocked
+      || !online.value
+      || retryTimer
+      || !isEnabled()
+    ) return
     synced.value = false
     state.value = 'reconnecting'
     const base = RETRY_DELAYS[Math.min(retryIndex, RETRY_DELAYS.length - 1)]
@@ -73,7 +98,7 @@ export function useRealtime({ stream, resync, onEvent, enabled = true }) {
   }
 
   async function restart(reason) {
-    if (stopped || !isEnabled()) return
+    if (stopped || protocolGate.blocked || !isEnabled()) return
     synced.value = false
     detachSocket('resync')
     await connect(reason)
@@ -86,11 +111,20 @@ export function useRealtime({ stream, resync, onEvent, enabled = true }) {
     try {
       event = JSON.parse(message.data)
     } catch {
-      await restart('INVALID_EVENT')
+      try {
+        protocolGate.accept(null, `${stream} realtime event`)
+      } catch (error) {
+        blockProtocol(error)
+      }
       return
     }
 
-    if (!event || event.protocolVersion !== '1') return
+    try {
+      protocolGate.accept(event, `${stream} realtime event`)
+    } catch (error) {
+      blockProtocol(error)
+      return
+    }
     if (event.type === 'resync.required') {
       await restart(event.payload?.reason ?? 'SERVER_REQUEST')
       return
@@ -124,7 +158,7 @@ export function useRealtime({ stream, resync, onEvent, enabled = true }) {
   }
 
   async function connect(reason = 'INITIAL') {
-    if (stopped || !online.value || !isEnabled()) return
+    if (stopped || protocolGate.blocked || !online.value || !isEnabled()) return
     if (socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(socket.readyState)) return
     if (!connectGate.enter()) return
 
@@ -165,6 +199,10 @@ export function useRealtime({ stream, resync, onEvent, enabled = true }) {
         lastError.value = '实时连接中断'
       })
     } catch (error) {
+      if (error instanceof ProtocolCompatibilityError) {
+        blockProtocol(error)
+        return
+      }
       lastError.value = error?.message ?? '状态同步失败'
       scheduleReconnect()
     } finally {
@@ -174,15 +212,35 @@ export function useRealtime({ stream, resync, onEvent, enabled = true }) {
     }
   }
 
+  function blockProtocol(error) {
+    const compatibilityError =
+      error instanceof ProtocolCompatibilityError ? error : protocolGate.failure
+    protocolError.value = compatibilityError
+    lastError.value = protocolErrorMessage(compatibilityError)
+    synced.value = false
+    state.value = 'protocol_error'
+    connectGate.cancelPending()
+    window.clearTimeout(retryTimer)
+    retryTimer = null
+    detachSocket('protocol mismatch')
+  }
+
   function handleOffline() {
     online.value = false
     synced.value = false
-    state.value = 'offline'
+    state.value = realtimeStateAfterNetworkChange(
+      'offline',
+      protocolGate.blocked,
+    )
     detachSocket('offline')
   }
 
   function handleOnline() {
     online.value = true
+    if (protocolGate.blocked) {
+      state.value = 'protocol_error'
+      return
+    }
     retryIndex = 0
     void connect('ONLINE')
   }
@@ -211,7 +269,10 @@ export function useRealtime({ stream, resync, onEvent, enabled = true }) {
         window.clearTimeout(retryTimer)
         retryTimer = null
         synced.value = false
-        state.value = 'idle'
+        state.value = realtimeStateAfterNetworkChange(
+          'idle',
+          protocolGate.blocked,
+        )
         detachSocket('stream disabled')
       }
     },
@@ -234,6 +295,9 @@ export function useRealtime({ stream, resync, onEvent, enabled = true }) {
     lastError,
     lastEventSeq,
     resetEpoch,
+    protocolError,
     resync: restart,
   }
 }
+
+export { PROTOCOL_POLICY }
