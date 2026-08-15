@@ -2,7 +2,7 @@
 
 感谢参与 SYSU Welcome Interactive。请先通过 Issue 明确需求、负责人、优先级、所属模块和验收标准，再开始实现。
 
-协议 v2 的当前权威是 [`docs/DECISIONS.md`](./docs/DECISIONS.md) 的 D-025 与 [`docs/PROTOCOL_V2.md`](./docs/PROTOCOL_V2.md)。实施必须按 [README](./README.md) 的 V2-00～V2-10 顺序，在项目负责人明确授权的下一张 V2 卡片范围内进行；不得越过当前卡片预做后续契约、迁移、三端页面或上线动作。
+协议 v2 的当前权威是 [`docs/DECISIONS.md`](./docs/DECISIONS.md) 与 [`docs/PROTOCOL_V2.md`](./docs/PROTOCOL_V2.md)；项目现状、文档地图与"下一步做什么"见 [`docs/README.md`](./docs/README.md)。V2-00～V2-09 与 D-030～D-032 已实现，剩余工作是 `backend/.data` 的 v1→v2 切换（[`docs/RUNBOOK.md`](./docs/RUNBOOK.md) §7）与 V2-10 现场人工验收；新工作以最新决策为准，先写 DECISIONS 再改代码，不再按 V2 卡片逐张授权。
 
 ## 开发环境
 
@@ -16,7 +16,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-提交前从仓库根目录验证共享契约、后端、自动化测试与前端构建：
+提交前从仓库根目录验证共享契约、后端、自动化测试与前端构建（快速门；收口用 `pnpm verify:v2-09`，完整命令清单见 [`docs/README.md`](./docs/README.md)）：
 
 ```bash
 pnpm verify:g2
@@ -42,7 +42,7 @@ pnpm verify:g4
 
 `pnpm test:load` 使用 300 个固定合成参与者和独立临时数据库。生成的运行报告只允许保留脱敏汇总，并继续由 Git 忽略；不得提交凭据、姓名、完整学号、时光胶囊正文、完整弹幕正文、数据库或逐请求载荷。G4 的本机 loopback 结果不得扩张为分布式局域网、场馆、30 分钟 soak 或正式上线结论。
 
-D-021 的提交前工作树验收见 [`docs/ACCEPTANCE_G0_G4.md`](./docs/ACCEPTANCE_G0_G4.md)：根级 `pnpm verify:g4` 退出码为 0，Vitest 20 个文件/119 条、共享契约/后端/前端构建，以及 9 场景 × 3 浏览器项目的 Playwright 27/27 均通过。该历史结果不绑定任何提交。G0～G4 冻结候选提交形成后，必须在该提交的干净工作树重跑适用门禁，并由 D-022 记录被验收提交的完整 SHA、命令结果与复验前后工作树状态；D-022 落地前只能称为冻结候选，不能称为可复现冻结版本。任何代码改动仍须重新执行适用门禁，不能长期借用 D-021 结果。
+D-021 的提交前工作树验收见 [`docs/archive/acceptance-g0-g4.md`](./docs/archive/acceptance-g0-g4.md)：根级 `pnpm verify:g4` 退出码为 0，Vitest 20 个文件/119 条、共享契约/后端/前端构建，以及 9 场景 × 3 浏览器项目的 Playwright 27/27 均通过。该历史结果不绑定任何提交。G0～G4 冻结候选提交形成后，必须在该提交的干净工作树重跑适用门禁，并由 D-022 记录被验收提交的完整 SHA、命令结果与复验前后工作树状态；D-022 落地前只能称为冻结候选，不能称为可复现冻结版本。任何代码改动仍须重新执行适用门禁，不能长期借用 D-021 结果。
 
 如果依赖发生变化，请更新对应 workspace 的 `package.json` 与根 `pnpm-lock.yaml`。不要提交 `node_modules/`、`dist/`、`backend/.data/`、测试报告、本地环境文件或编辑器临时文件。
 

@@ -1,10 +1,6 @@
 # 协议 v2：身份激活、星系与现场运行契约
 
-> 决策状态：D-025、D-026、D-027、D-028、D-029 已确认，本文是协议 v2 的唯一权威说明。
->
-> 实施状态：V2-00～V2-09 已完成。协议、数据库、入场、三场景运行时、快照/实时层、v2 后台/大屏/手机页面，以及三浏览器自动回归与 300 人协议负载已经实现并通过；V2-10 的 30 分钟 Chrome 渲染 soak 已通过。D-027 约 2.8 秒首次寻星、可见性门与 normal-motion 自动浏览器断言已落地并通过，但项目负责人真机观察否决了首版视觉连续性；D-028 已完成当前连续镜头实现与自动连续性子门。vivo X300 仍须用新鲜邀请对 D-028 当前版本重新完成人工视觉签核。实际 `.data` 未执行一次性切换，当前日常运行时仍是 v1；OBS 实际合成与三端局域网人工验收也仍待签核。
->
-> 版本边界：当前 v1 六阶段实现及 D-022 验收证据只作历史基线，不能证明 v2 已实现或已验收。
+> 状态：协议 v2 唯一权威（决策 D-025～D-036）。手机动效以 D-030 视觉金标为现行（约 5.4s/1.0s/4.2s 参考时长），D-027/D-028/D-029 的历史时长与自动证据仅保留原范围。§1 是实现历程速览（只读）；现行契约从 §2 开始。实际 `backend/.data` 已于 2026-08-15 切换 v2（D-034），V2-10 现场人工验收已关闭（D-036）。
 
 ## 1. 权威与基本原则
 
@@ -15,83 +11,28 @@
 
 5. 本项目仍遵守 D-002、D-005、D-009、D-013～D-017 及 D-023 的不冲突边界：NFC 为主入口，二维码/短链接携带同一随机令牌；Demo 人工协助可用合成姓名和合成学号定位同一身份，但必须恢复同一参与者状态，不得新建第二账号。系统只用合成身份；胶囊不由 AI 自动公开；不接真实名单、公网、实体写卡或抽奖核销。
 
-### 1.1 V2-01 已实现的协议握手层
+### 1.1 实现历程速览（只读参考）
 
-- `GET /api/protocol-capabilities` 是版本中立的能力发现入口。当前返回 `contractVersion='2'`、`activeRuntimeVersion='1'`、`activationState='CONTRACTS_READY'`，并明确声明 `v2BusinessWrites=false`、`v2Snapshots=false`、`v2RealtimeEvents=false`；同时公布 `/api/v2/handshake` 与 `/ws/v2`。
-- `POST /api/v2/handshake` 只接受严格对象 `{ protocolVersion:'2', clientSurface:'WELCOME'|'SCREEN'|'ADMIN', clientBuild }`。成功仅确认契约就绪，不确认 v2 业务已激活；缺少/错误版本以 `PROTOCOL_VERSION_MISMATCH` 拒绝，畸形或混入 v1 字段以 `VALIDATION_FAILED` 拒绝。
-- `/ws/v2` 当前只处理首帧 `HELLO`。合法首帧依次收到 `HELLO_ACK`、`NOT_ACTIVE(reason='V2_RUNTIME_NOT_ACTIVE')`，随后服务端以 1013/`V2_RUNTIME_NOT_ACTIVE` 关闭；非法、缺失、非 JSON 或二进制首帧返回显式 `ERROR`，再以 1008 关闭。该连接不进入现有实时 hub，也不发送任何 v2 业务事实。
-- 当前 v1 API、`/ws` 和三端页面仍以显式 `protocolVersion='1'` 边界运行；收到 missing、畸形或不兼容版本会停止假在线与自动重连并显示协议错误。页面不会在启动时自动切换或调用 v2 业务。
-- V2-05 才负责激活 v2 快照、分流实时事件、游标恢复和 ACTIVE WebSocket 订阅；V2-01 的控制面 HELLO/ACK 不能作为 V2-05 完成证据。
+| 里程碑 | 完成内容 | 状态 |
+|---|---|---|
+| V2-00～V2-01 | 共享契约、`0008` 基础迁移、`GET /api/protocol-capabilities` 能力发现、`POST /api/v2/handshake`、`/ws/v2` HELLO/ACK 控制面 | 已实现 |
+| V2-02 | 一次性 v1→v2 切换 CLI（`v2-switch.ts`）、维护级 `v2-reset.ts`、`v2-verify.ts`；服务同代 listen/关闭回执门 | 已实现 |
+| V2-03 | 参与者入场域：原子 slot 预留、激活、锁色、胶囊提交/跳过/补填、只读恢复 | 已实现 |
+| V2-04 | 运行时域：三场景控制、`PREVIEW_FINALE`、LIVE 原子 `COMPLETED`、场景操作与奖励门 | 已实现 |
+| V2-05 | 快照与实时层：三类权威快照、`/ws/v2` ACTIVE 分流、游标/缺口/epoch 恢复、v2 命令入口 | 已实现 |
+| V2-06 | 匿名后台运营层：v2 控制台、受限胶囊候选、插入子场景、就绪警告 override、后台 `RESET_DEMO` | 已实现 |
+| V2-07 | 大屏与公共互动：单 Canvas 300 星、OBS 透明节目层、匿名弹幕/礼物、视觉优先级、终章 | 已实现 |
+| V2-08 | 手机入场与三场景：双时钟、双流订阅、单操作坞、D-027 可见性门；2026-08-14 可靠性加固 | 已实现 |
+| V2-09 | 三浏览器三端闭环 36/36、300 人协议负载（p95 < 2s、不变量 0） | 通过 |
+| V2-10 | 30 分钟渲染 soak `passed`；`preview:v2:field` 现场预览入口就绪 | 自动门通过；OBS/局域网/vivo 人工 `PENDING` |
+| D-027～D-029 | 首次寻星 2.8s 可见性门与连续性自动子门、个人旅程连续镜头（2.8s/1.2s/3.2s） | 自动 `PASS`，已被 D-030 覆盖 |
+| D-030～D-032 | 视觉金标（motion-previsual 共用渲染器，参考 5.4s/1.0s/4.2s）、稳定流动星系、学院入口、字体回退、逐字标题、微角操作坞、本人档案边界 | 自动子门 `PASS`；真机待签核 |
 
-### 1.2 V2-03 已实现的参与者入场域
+> 说明：v1 六阶段实现及 D-022 验收证据只作历史基线。仓库实际 `.data` 已于 2026-08-15 完成一次性切换并进入 `V2_ACTIVE`（D-034），日常 `pnpm dev` 即 v2 三端；回退按 §10.2 恢复 v1 备份。
 
-- `backend/src/services/v2-participant-onboarding.ts` 已实现激活、锁色、`UPSERT_CAPSULE` 与 `SKIP_CAPSULE` 的服务端事务；它只接受 `V2_ACTIVE` 数据库，不读取或双写 v1 参与者事实。
-- 首次激活原子预留固定 formation slot、建立 `NEEDS_COLOR`、初始化 100 动力并写入唯一 `ACTIVATED +20` 账本；重复核验只建立新会话，`PAUSED/COMPLETED` 的既有身份会话为只读。
-- 锁色事务原子建立公共恒星并写入完整 `star.node.upserted`；提交或持久跳过才进入 `ADMITTED`。跳过奖励 0，READY/RUNNING 后补填只写一次 `CAPSULE_SUBMITTED +20`，且不改变首次 `admittedAt/admittedScene/admittedRunRevision`。
-- 命令按 `resetEpoch`、`participantRevision` 和幂等键复核；参与者私有流、公共/后台匿名聚合流和账本在同一数据库事务中收敛。V2-03 不启用当前 v1 页面上的 v2 HTTP/实时业务入口，避免在 V2-04/V2-05 未完成时形成半激活运行时。
+### 1.2 实现历程说明
 
-### 1.3 V2-04 已实现的运行时域
-
-- `backend/src/services/v2-runtime-commands.ts` 已实现三场景控制、revision/幂等/角色门、就绪警告与明确 override 审计；LIVE 只能顺序推进并从 `COOPERATIVE_LIGHT` 一次原子进入 `COMPLETED`。
-- 参与者场景操作已接入隔离命令服务：启动恒星、节目送礼/弹幕和协同点亮按当前场景与准入时点复核，错过场景不补领；礼物逐次扣动力，四类首次奖励均由唯一账本事实约束。
-- `PREVIEW_FINALE` 只建立排练 presentation，不写 `COMPLETED`；LIVE 完成会在同一事务捕获活动胶囊只读副本、清除 presentation、写终态/事件/控制收据，并以数据库提交先后作为参与者写入硬截止。
-- V2-04 仍是未接现有页面的隔离业务域；V2-05 才负责正式快照/实时传输与 HTTP/WS 激活。
-
-### 1.4 V2-05 已实现的快照与实时层
-
-- `GET /api/v2/screen/snapshot` 返回公共恒星、公开聚合、当前节目、presentation 与终局回顾；`GET /api/v2/participant/snapshot` 只接受当前 epoch 的有效参与者会话并返回本人事实与公共投影；`GET /api/v2/admin/snapshot` 只接受有效后台会话并返回匿名漏斗、角色和控制收据。多表读取使用同一一致读视图，所有响应经过共享 v2 schema 校验。
-- `V2_ACTIVE` 时 `/ws/v2` 在 `HELLO_ACK` 后要求限时 `SUBSCRIBE`。`SCREEN` 只可订阅 `public`，`WELCOME` 只可订阅 `public` 与本人 `participant:<id>`，`ADMIN` 必须先通过后台会话鉴权才可订阅 `public/admin`；服务端只投递客户端明确请求的流。
-- 初次或重连先取得权威快照及各流游标，再以缓冲—历史补齐—去重—live 的顺序接续事件。每个流独立检查 `streamSeq`；未来游标或历史不足只对受影响流返回 `RESYNC_REQUIRED`，`resetEpoch` 变化则关闭全部既有订阅并要求重新认证及重取全部授权快照。
-- 新提交事件从 SQLite outbox 增量投递，不扫描全部历史；`star.node.upserted` 继续携带完整稳定恒星投影，客户端按 epoch、公开星号和 `starRevision` 幂等合并。v2 API 与 WebSocket 失败使用 v2 错误信封，v1 业务入口在 `V2_ACTIVE` 下明确关闭。
-- `V2_ACTIVE` 同时开放 `POST /api/v2/participant/activate`、`POST /api/v2/participant/commands` 与 `POST /api/v2/admin/commands`，分别接入 V2-03/04 已冻结的命令 schema 和事务服务；能力发现中的 `v2BusinessWrites=true` 因而对应真实可调用入口。V2-06～V2-08 的三端页面现已在严格 ACTIVE 分支调用这些路由，v1 数据库仍只挂载旧页面。
-- 本节记录的是 V2-05 当时的传输边界；后续 V2-06～V2-08 已完成三端接入。仓库实际 `.data` 未切换，因此当前证据来自隔离临时 v2 数据库，不能扩张为现场部署验收。
-
-### 1.5 V2-06 已实现的匿名后台运营层
-
-- `/admin` 启动先读取版本中立能力发现：`V2_ACTIVE` 使用新控制台，v1 数据库继续使用原控制台，不做业务状态翻译或双写。v2 后台使用共用合成账号建立 `ALL` 能力的本 epoch 会话；退出会撤销服务端会话并清 Cookie。
-- `V2AdminSnapshot` 增加只对 `REVIEWER|ALL` 返回的受限胶囊候选。控制台仅显示匿名漏斗、公开星号、胶囊正文与审核状态，不返回或渲染姓名、完整学号、令牌或参与者会话标识。
-- `SELECT_CAPSULE → SHOW_CAPSULE_INSERT → CLEAR_PRESENTATION/REMOVE_CAPSULE` 按第 3.3 节唯一迁移表执行；命令在事务内复核 role、epoch、participant/run/presentation revision 和幂等键，更新私有/公共/后台流后再由页面重取权威快照。插播不改变全场场景，也不自动轮播。
-- 推进/完成的匿名就绪警告不会硬卡现场，但必须在同一次动作中明确 override；权限、断线/未知结果、旧 revision、错误 tuple 和终态写入边界仍不可覆盖。`COMPLETED` 后禁止选中或上屏新内容，只允许带原因撤下并同步从终局 recap 做安全减法。
-- 后台合成重置调用第 10.1 节服务端硬门，不由前端自行清库；成功后建立新 epoch、轮换管理会话并要求实时订阅重新认证。仓库实际 `.data` 未执行该命令。
-
-### 1.6 V2-07 已实现的大屏与公共互动层
-
-- `/screen` 启动先执行版本中立能力发现：只有严格 `V2_ACTIVE` 才挂载新大屏并订阅 `public` 流；v1 数据库继续挂载旧大屏，不翻译、双写或同时打开两套 WebSocket。
-- 大屏最多把 300 颗权威公共恒星绘制到单个 Canvas；稳定 `formationSlot` 决定位置，星色和 `started` 决定表现。大屏 DOM、可访问树和交互层均不渲染参与者编号/星号，也不提供可点击单星入口。
-- `ASSEMBLY` 使用完整星系；`PROGRAM_SUPPORT` 将网页背景切为透明，只在画面边缘保留弱星点、匿名弹幕和礼物覆层，节目视频与音频完全由 OBS/导播负责；`COOPERATIVE_LIGHT` 恢复全屏星系并突出已点亮星点。
-- 合规弹幕经服务端公开内容与频率规则后写入匿名公共投影；后台可暂停、带原因撤下、屏蔽匿名来源和清屏。礼物公共事件只含节目、礼物种类和时间，不含发送者；页面把 1.5 秒内同类礼物合并，且同时最多表现一个主礼物和一个次礼物。
-- 胶囊插入是独占画面；插入期间实时互动仍按权威事务持久化，但大屏不缓存、排队或补播被遮挡的入场动画。结束/预览/插入/故障/场景/互动按第 5.2 节固定优先级投影。
-- 只有从非完成态实时观察到 LIVE `COMPLETED` 时播放约 5～6 秒终章收束；首次快照已经完成、刷新、重连及 reduced-motion 都直接显示同一稳定终态。REHEARSAL 始终显示“排练预览”标记。
-- V2-07 仅在 `/screen` 动态加载 GSAP core，且只驱动少量覆层的 `transform/opacity`；公共星系继续由 Canvas 绘制。未引入 GSAP 插件、逐星时间线、媒体控制或动画业务回调，V2-08 手机页面也没有加载 GSAP。
-
-### 1.7 V2-08 已实现的手机入场与场景层、D-027/D-028 已落地细则
-
-- `/welcome` 启动先做版本中立能力发现；严格 `V2_ACTIVE` 才挂载 v2 手机页，v1 数据库继续使用历史页面。令牌只交给激活接口，激活后立即从地址栏与当前历史项清除；有效 Cookie 恢复优先于重新激活。
-- 手机端以 ParticipantSnapshot 为个人权威、ScreenSnapshot 为公共星系基线，并分别续订 `participant:<id>` 与 `public` 流。重复事件幂等忽略，任一流缺口只重取受影响快照，epoch 变化或协议错误会停止写入并重新认证，不补播离线动效。
-- `NEEDS_COLOR → NEEDS_CAPSULE_DECISION → ADMITTED` 与全场场景完全分离。锁色响应及后续快照确认本人公共星点后才播放拉远；提交或持久跳过后进入当下场景，READY 则进入等待。PAUSED 保留页面内草稿但拒绝写入，COMPLETED 以只读终章覆盖未完成入场。
-- 主界面使用单 Canvas 绘制最多 300 颗权威恒星，只突出并标注本人星号；删除六阶段条、裸 `RUNNING` 和正常“实时同步”。一个克制的底部操作坞承载三页导航、入场决定和场景动作，短视口/软键盘使用可见视口自适应，礼物仍以可访问模态底部面板呈现。
-- D-027 已实现正常首次激活先等待页面处于稳定 `visible`，再以 Vue 与 CSS 播放约 2.8 秒中性寻星；正常首次不可跳过。D-028 在项目负责人真机否决首版视觉连续性后，将该镜头修订为同一持久恒星节点、`50% / 42vh` 统一视觉轴、约 2.8 秒四阶段全屏径向穿越与同心白核—中性晕—`5800K` 色温晕交接。选色文案和控件在镜头中已渲染但保持 `inert`，末帧只解除交互隔离，不替换节点或改变恒星几何/颜色。正常完成以主动画 `animationend` 为准；真正开播后若页面进入后台或被中断，立即收束到权威静态终态且返回不重播，恢复、刷新、失败、超时和 reduced-motion 同样直接静态。锁色权威确认后仍播放约 1.2 秒拉远。手机不加载 GSAP；Canvas 只负责星系，首次叙事镜头使用全屏低 DOM SVG 与低成本 `transform/opacity`，动画回调不写业务事实，实时连接也不得等待表现层。
-- D-029 替代本节上一条中“锁色后约 1.2 秒立即拉远”的表现顺序：锁色后同一持久星约 1.2 秒闪烁并上移到寄语画面；提交或持久化跳过胶囊、服务端已确认 `ADMITTED` 后，才以约 3.2 秒缩远到 Canvas 本人轨道并展开流动星系。低亮轨道微尘只作装饰、不计入真实人数；真实恒星仍只来自权威 `publicStars`。隐藏、中断、刷新、恢复和 reduced-motion 直接到对应静态权威状态。
-- 成功反馈约 3.5 秒自动收回，同时由原位权威状态保留结果；错误、离线、暂停和终态保持可见。退出始终确认，胶囊/弹幕草稿只驻留当前页面内存，并在退出、会话失效、reset、COMPLETED 或离开相应场景时按冻结规则清理。
-- `PROGRAM_SUPPORT` 的当前节目由后台 `SET_PROGRAM` 权威选择；命令同时校验 run/interaction revision，并以 `program.changed` 公开事件同步手机和大屏。迁移 `0012_protocol_v2_program_selection.sql` 只扩展合法公开事件名，不自动激活 v2。
-
-### 1.8 V2-09 已完成的自动化与负载层
-
-- `tests/e2e/v2-three-surfaces.spec.ts` 使用真实 Fastify、SQLite、WebSocket 与生产 Vue 页面，在 `chromium-ci`、系统 Chrome 和系统 Edge 中覆盖 v2 入场、三场景、节目、礼物/弹幕、暂停/恢复、服务重启、终章与公开隐私边界；全量浏览器回归 36/36 通过。
-- `tests/load/run-v2-load.ts` 只使用 OS 临时目录中的固定 300 人合成库，建立 301 条 WebSocket 连接与 601 个分流逻辑流，执行 300 人完整入场/三场景旅程、1200 次礼物、幂等重放/冲突、后端重启、v2 reset、旧会话/旧 epoch 拒绝和固定凭据重入。所有操作 p95 小于 2 秒，协议错误、重复帧、私密字段公开、重复奖励/幂等事实、负余额与旧 epoch 污染均为 0。
-- 并发公开事件通过服务端按 `streamId/streamSeq` 排序缓冲后投递；客户端仍按流去重和缺口重同步。合法 `STALE_RESET_EPOCH` 控制帧不算协议错误，但必须使全部旧连接失效并重新认证。
-- reduced-motion 大屏不再播放移动弹幕，但保留最新权威弹幕的静态列表，确保“减少动态”不会丢失节目互动信息。
-- 基线审计曾确认：既有 v2 三端 E2E 的参与者上下文使用 reduced-motion，桌面手机检查器 smoke 只等待选色终态，不能证明 D-027。该缺口现已由新鲜邀请、normal-motion、生产 Vue 页面与隔离 v2 smoke 的聚焦浏览器回归关闭；根级复跑观测正常首次 `2854ms`、隐藏→可见后 `2756ms`，隐藏期间不播放也不选色，开播后进入后台在 `<600ms` 内静态且不重播。历史 36/36、3/3 与其他既有通过数字保持原范围不变。
-- D-027 上述自动证据证明几何、时长、可见性、恢复与业务隔离，但没有证明末帧到选色首帧的视觉连续性；项目负责人真机否决首版时不得把其 `PASS` 表述为视觉通过。D-028 新自动证据观测正常首次 `2783ms`、隐藏→可见 `2717ms`、F6→F7 持久恒星中心/尺寸差 `0px`、CLS `0`，并完成六帧序列目检；全量 37 文件/341 条测试、两项 typecheck、前端 71 模块构建、三项目 v2 E2E 与现场预览 smoke 均通过。该自动连续性子门为 `PASS`，但 vivo X300 当前版本人工视觉签核仍为 `PENDING`。
-- V2-09 不读取或修改 `backend/.data/`，也不执行真实数据库切换；本机 loopback 300 人协议负载不等于 300 个浏览器渲染或 V2-10 的 30 分钟/真机/现场验收。
-
-### 1.9 V2-10 已完成的自动渲染门与待签现场门
-
-- `pnpm test:v2:soak` 在两个独立的 1920×1080 Chrome 进程中持续测量普通动态和 reduced-motion，使用隔离临时 `V2_ACTIVE` 合成库依次投影 0、24 与 300 颗真实公共恒星、节目透明层、协同点亮和权威终章；六段受测时间合计不得少于 30 分钟。
-- 自动门记录 Canvas 绘制频率、帧间隔、长任务、JS 堆、DOM 数量、溢出、浏览器诊断、隐私、后端重启与页面刷新恢复。PROGRAM_SUPPORT 必须停止持续 Canvas 绘制、保持中心完全透明且不包含媒体元素；reduced-motion 全程不得持续绘制。
-- 2026-08-13 正式报告状态为 `passed`，实际受测 1,800,056.8ms；动态星系约 27.73～28.60fps，最大堆约 34.1MB、DOM 峰值 59、最长任务 215ms，控制台/页面/外部请求/HTTP 异常均为 0，后端重启和终章刷新均恢复。报告与截图位于 Git 忽略目录，且脱敏自检通过。
-- `pnpm preview:v2:field` 为现场验收建立临时合成 v2 栈：只把统一前端入口绑定到显式可信私网 IPv4，后端继续监听回环，退出即删除临时数据库，不读取或切换 `backend/.data/`。
-- 自动门不证明 OBS 合成链、场馆网络或 vivo X300。只有项目负责人按 [`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md) 记录设备、浏览器、网络、OBS 和通过/失败事实后，V2-10 才能整体关闭。
+上表只作只读追溯。各里程碑的逐项验收证据（测试文件数、负载 p95、soak 指标等）见 [`TEST_PLAN.md`](./TEST_PLAN.md) 与 [`archive/`](./archive/README.md)；D-027/D-028/D-029 的 2.8s/1.2s/3.2s 时长与自动数字已由 D-030 金标覆盖，不再作为设计目标。现行契约从 §2 开始。
 
 ## 2. 两只时钟
 
@@ -266,11 +207,16 @@
 
 `ParticipantSnapshot` 必须在公共信封之外返回以下私有、服务端权威字段：
 
+- 当前合成身份的 `displayName`，以及在首次激活预留 formation slot 时确定的稳定 `personalStarCode`；
 - `participantRevision`、`onboardingState=NEEDS_COLOR|NEEDS_CAPSULE_DECISION|ADMITTED`、`activatedAt`、锁色 Kelvin/`colorLockedAt`、`ownPublicStarId` 与本人 `formationSlot`（如已锁色）；
 - `capsuleDecision=NONE|SKIPPED|SUBMITTED`，以及本人可编辑的胶囊正文、候选范围确认时间、`submittedAt`/`skippedAt` 和 `capsuleModerationStatus=null|SUBMITTED|SELECTED|DISPLAYED|REMOVED`；
 - `admittedAt`、准入时的 `admittedScene`/`admittedRunRevision`，以及 `started/startedAt`、首次送礼奖励、首次合规弹幕奖励和协同点亮等本人场景事实；
 - 当前动力、星光、`rewardRuleVersion` 与可审计的本人奖励摘要；
 - `allowedActions`：从 `LOCK_COLOR|UPSERT_CAPSULE|SKIP_CAPSULE|START_STAR|SEND_GIFT|POST_BARRAGE|COOPERATIVE_LIGHT` 中由服务端计算出的有序去重集合。
+
+`displayName` 与 `personalStarCode` 这两个字段只属于已认证参与者本人的私有投影，不得进入 `ScreenSnapshot`、`AdminSnapshot`、公共事件或聚合。`personalStarCode` 是预分配星号：在 `NEEDS_COLOR` 时可以已经存在，但此时 `ownPublicStarId`、锁色和成星事实仍为空，不得建立 `publicStars` 行、发布 `star.node.upserted` 或增加 `publicStarCount`。只有锁色事务成功才建立公共恒星，随后必须满足 `ownPublicStarId === personalStarCode`；同一值此后仅按第 4.1 节既有 `publicStarId` 规则进入公共恒星 payload，不能扩张为姓名或其他身份字段。
+
+`studentNumber` 只允许作为人工协助激活的请求输入，绝不能出现在激活响应、`ParticipantSnapshot`、命令响应、任何事件、公共恒星、`ScreenSnapshot` 或 `AdminSnapshot` 中，也不得回显完整学号。当前 `SYNTHETIC_DEMO` 的手机人工重新认证只是一层界面适配：收取合成姓名与恰好 8 位学号后缀，由客户端补固定前缀 `2026` 后调用既有人工协助激活接口；它必须命中并恢复同一合成身份与权威状态，不能创建第二个参与者。格式错误不得发送请求，姓名/后缀不匹配只返回不泄露目录细节的通用失败；该适配不构成真实学生名册、正式学号认证或新登录协议。
 
 `allowedActions` 的唯一推导规则固定为：
 
@@ -358,11 +304,11 @@
 ### 7.1 正常首次路径
 
 1. NFC/备用令牌由服务端核验成功，响应明确表示首次新建身份并返回 `NEEDS_COLOR` 后，客户端先等待页面处于稳定 `visible`；开始前暂不可见时不得在后台悄悄消耗镜头。
-2. 可见性门满足后，以 Vue、CSS 和低 DOM SVG 播放约 2.8 秒“穿过星云、聚焦并找到中性恒星”序列；四阶段依次为建立/加速、连续穿越、减速/捕获、锁定/交接。全屏径向速度线只使用 `transform`/`opacity`，手机端不得为此加载 GSAP。
-3. 寻星和选色静态态必须共用同一颗持久恒星节点，并固定在横向 `50%`、纵向 `42vh` 的统一视觉轴；镜头末帧与静态首帧的中心、尺寸和颜色不得跳变。恒星由同心白核、中性光晕和默认 `5800K` 色温光晕构成，色温层在交接末段连续显现。
+2. 可见性门满足后，以 Vue、CSS 和低 DOM SVG 播放约 5.4 秒“沉入、接近并捕获中性恒星”序列（D-030 视觉金标参考时长；正式页与认可预演共用同一生产渲染器，可组合经压缩验收的原创星云纹理与分层 Canvas）。全屏径向速度线只使用 `transform`/`opacity`，手机端不得为此加载 GSAP。
+3. 寻星、选色、寄语与入轨必须共用同一颗持久恒星节点与同一坐标系（D-030 金标）；镜头末帧与静态首帧的中心、尺寸和颜色不得跳变。恒星由同心白核、中性光晕和默认 `5800K` 色温光晕构成，色温层在交接末段连续显现。D-028 的 `50% / 42vh` 统一视觉轴只保留为历史方案细节。
 4. 选色文案与控件在镜头中提前渲染，但在交接完成前必须保持 `inert`、不可聚焦和不可操作；镜头结束只解除交互隔离，不得替换恒星节点或触发布局重排。正常完成监听主动画 `animationend`，定时器只作缺失事件时的有界兜底。
 5. 星色选择不设自动倒计时；参与者必须主动选色并提交，星色不得跳过。
-6. 服务端锁色成功且客户端已获得包含本人恒星的权威确认后，同一持久星播放约 1.2 秒色温闪烁并平滑上移到寄语画面；提交或持久化跳过胶囊并得到 `ADMITTED` 权威快照后，再以约 3.2 秒缩远到 Canvas 本人轨道并展开星系。
+6. 服务端锁色成功且客户端已获得包含本人恒星的权威确认后，同一持久星播放约 1.0 秒色温闪烁并平滑上移到寄语画面（用户输入不限时）；提交或持久化跳过胶囊并得到 `ADMITTED` 权威快照后，再以约 4.2 秒缩远到 Canvas 本人轨道并展开星系。以上为 D-030 金标参考时长；D-028/D-029 的 2.8s/1.2s/3.2s 仅保留为历史自动证据数字。
 7. 动画只解释已经确认的状态，不得在时间轴结束时替服务端推进状态或发放奖励；身份响应、权威快照、实时连接和允许动作不得等待表现层完成。
 
 正常首次路径不提供跳过按钮；这一点明确覆盖 D-024 的首帧可跳过与约 0.9 秒约束。为避免把动画变成阻塞器，下列路径不强制重播，直接进入对应静态权威状态：
@@ -429,7 +375,7 @@
 
 ## 10. 普通 Demo 重置与一次性切换
 
-V2-02 已新增 `0008_protocol_v2_foundation.sql`、`backend/src/db/v2-foundation.ts` 和维护 CLI。迁移只追加 `protocol_runtime` 与 v2 表/约束，保持 `active_protocol_version='1'`、`activation_state='V1_ACTIVE'`，不会在启动或迁移时清空数据或自动激活 v2。协议元数据明确区分 `V1_ACTIVE|V2_ACTIVE` 与 `UNVERIFIED|SYNTHETIC_DEMO|PROTECTED`；当前 v1 服务遇到已激活 v2 或任何 v2 运行事实会硬拒绝启动，防止混跑。V2-02 未增加 package 脚本别名；实际入口是 `pnpm exec tsx backend/src/cli/v2-switch.ts`、`pnpm exec tsx backend/src/cli/v2-reset.ts` 与 `pnpm exec tsx backend/src/cli/v2-verify.ts`。仓库实际 `.data` 未执行下述破坏性命令。
+V2-02 已新增 `0008_protocol_v2_foundation.sql`、`backend/src/db/v2-foundation.ts` 和维护 CLI。迁移只追加 `protocol_runtime` 与 v2 表/约束，保持 `active_protocol_version='1'`、`activation_state='V1_ACTIVE'`，不会在启动或迁移时清空数据或自动激活 v2。协议元数据明确区分 `V1_ACTIVE|V2_ACTIVE` 与 `UNVERIFIED|SYNTHETIC_DEMO|PROTECTED`；当前 v1 服务遇到已激活 v2 或任何 v2 运行事实会硬拒绝启动，防止混跑。V2-02 未增加 package 脚本别名；实际入口是 `pnpm exec tsx backend/src/cli/v2-switch.ts`、`pnpm exec tsx backend/src/cli/v2-reset.ts` 与 `pnpm exec tsx backend/src/cli/v2-verify.ts`。仓库实际 `.data` 已于 2026-08-15 完成切换（D-034，备份见该决策记录）。
 
 ### 10.1 v2 运行期 `RESET_DEMO`
 
@@ -492,7 +438,7 @@ v1→v2 只允许在确认数据库全部为可丢弃的合成/Demo 数据后执
 ### 11.5 手机端、动效与无障碍
 
 - 390×844、短视口与软键盘场景无关键操作遮挡；下半页只有一个主要操作坞，模糊不支持时仍清晰可读。
-- 正常首次路径在新身份权威激活后先等待页面稳定 `visible`，再按“约 2.8 秒四阶段全屏径向寻星 → 不限时选色 → 权威锁色后约 1.2 秒闪烁并进入寄语 → 胶囊决定权威完成后约 3.2 秒拉远入轨”执行；寻星、选色、寄语与入轨共用同一持久恒星，动画不触发或延迟业务推进与实时连接。
+- 正常首次路径在新身份权威激活后先等待页面稳定 `visible`，再按 D-030 金标“约 5.4 秒沉入/接近/捕获寻星 → 不限时选色 → 权威锁色后约 1.0 秒闪烁并进入寄语 → 胶囊决定权威完成后约 4.2 秒拉远入轨”执行；寻星、选色、寄语与入轨共用同一持久恒星，动画不触发或延迟业务推进与实时连接。D-028/D-029 的 2.8s/1.2s/3.2s 仅为历史自动证据数字。
 - 首次正常路径不出现跳过控件；开播后的真正后台中断立即收束且返回不重播，reduced-motion、返回、刷新、断线和失败路径直接落到可操作静态状态。
 - 成功提示约 3.5 秒收回，错误/离线/暂停/完成保持；退出每次确认，草稿按约定清空。
 - 键盘、焦点、触控目标、对比度、屏幕阅读器语义和 `prefers-reduced-motion` 通过自动与人工检查。
@@ -502,9 +448,9 @@ v1→v2 只允许在确认数据库全部为可丢弃的合成/Demo 数据后执
 - `/welcome`、`/screen`、`/admin` 使用同一服务端事实，在暂停、恢复、完成、清屏、重置和旧会话失效场景中一致。
 - 300 个固定合成参与者的运行/投影、礼物、弹幕、协同点亮和恒星 upsert 传播延迟 p95 均不超过 2 秒；业务失败、重复奖励、重复恒星、负动力和旧 epoch 污染为 0。
 - 同一 `resetEpoch` 只使用一个 `rewardRuleVersion`；每行账本保留实际增量和版本，运行中切换规则被拒绝，新规则只从新 epoch 生效且不改写历史。系统不存在未授权的后台数值扣减/补发入口。
-- D-027 的历史自动门必须以新鲜合成邀请、normal-motion 和生产 Vue 页面断言可见性门、首次约 2.8 秒镜头、无跳过、后台中断静态及刷新/恢复/reduced-motion 不重播；既有只走 reduced-motion 或只等待选色终态的证据不得代替，也不得把该门扩张为视觉连续性通过。
-- D-028 自动连续性门还必须采集多个镜头阶段，并断言同一恒星节点持续存在、末帧到选色静态首帧的中心/尺寸差不超过 1 CSS px、颜色相同、CLS 小于 `0.01`、交接前控件不可用而交接后立即可用；人工必须目检至少六帧的穿越方向、速度连续性、捕获和交接。
-- 自动化浏览器通过不等于真机通过；仍需在 vivo X300 默认浏览器用新鲜邀请对 D-028 当前版本完成首次视觉连续性、NFC/备用入口、软键盘、断线恢复、退出确认和终局只读的人工证据。
+- D-027/D-028 的历史自动门（新鲜合成邀请、normal-motion、生产 Vue 页面）只保留原范围：它证明可见性门、约 2.8 秒时长、无跳过、后台中断静态与恢复不重播（D-027），以及同一恒星节点与 F6→F7 中心/尺寸差 `0px`、CLS `0` 的连续性（D-028），但不得扩张为当前视觉通过；当前视觉以 D-030 金标为准。
+- D-030～D-032 当前视觉门要求：正式页与 `motion-previsual-personal-star` 预演共用同一生产渲染器；参考时长约 5.4s/1.0s/4.2s；同一恒星贯穿寻星/选色/寄语/入轨；逐字大标题与字体回退栈、微角操作坞、本人档案边界按 D-032；隐藏/中断/刷新/恢复/reduced-motion 直接呈现同一权威静态结构。人工必须按金标目检镜头连续性。
+- 自动化浏览器通过不等于真机通过；仍需在 vivo X300 默认浏览器用新鲜邀请对当前版本完成首次视觉签核、软键盘、断线恢复、退出确认和终局只读的人工证据（见 [`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md)）。
 
 ## 12. 明确不在 v2 当前范围
 

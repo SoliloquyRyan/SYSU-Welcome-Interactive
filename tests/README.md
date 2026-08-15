@@ -1,7 +1,6 @@
 # Demo v0 测试目录
 
-> 状态：D-022 已冻结 G0～G4 测试基线；D-023 的 G5 新流程尚无实现证据，不能沿用旧 PASS 作为新流程验收。
-> 权威验收标准见 [`docs/TEST_PLAN.md`](../docs/TEST_PLAN.md)，D-021 总验收记录见 [`docs/ACCEPTANCE_G0_G4.md`](../docs/ACCEPTANCE_G0_G4.md)。34 条 P0 的自动化证据与 vivo X300 人工核心旅程已经回填；G4 已形成独立 300 人机器可读报告，不能用 G2 或 G3 小规模结果替代。
+> 状态：v2 现行。G0～G4 是 v1 历史基线；当前权威验收标准见 [`docs/TEST_PLAN.md`](../docs/TEST_PLAN.md)，人工验收见 [`docs/V2_10_FIELD_ACCEPTANCE.md`](../docs/V2_10_FIELD_ACCEPTANCE.md)，v1 的 34 条 P0 证据矩阵与 D-021/D-022 总验收记录已归档至 [`docs/archive/v1-test-plan.md`](../docs/archive/v1-test-plan.md)、[`docs/archive/acceptance-g0-g4.md`](../docs/archive/acceptance-g0-g4.md) 与 [`docs/archive/acceptance-g0-g4-d022.md`](../docs/archive/acceptance-g0-g4-d022.md)。v2 专项入口：`pnpm test:v2:e2e`、`pnpm test:v2:load`、`pnpm test:v2:soak`。
 
 ## 1. Demo v0 最终必须证明的范围
 
@@ -157,7 +156,7 @@ pnpm verify:g3
 
 作为 D-019 的历史独立 G3 证据，2026-08-10 的 `pnpm verify:g3` 曾以退出码 0、278.9 秒、Vitest 16 个文件/102 条和 Playwright 6 场景 × 3 项目 = 18/18 通过。D-021 记录的 2026-08-10 提交前工作树根级 `pnpm verify:g4` 以退出码 0、观察总耗时约 463.2 秒重新执行扩展全门：Vitest 20 个文件/119 条、共享契约/后端/前端生产构建及 Playwright 9 场景 × 3 项目 = 27/27 全部通过，报告状态 `passed`、失败检查点 0、浏览器报告窗口 295388 ms。环境为 Windows 10.0.26100、Node.js 24.16.0、pnpm 11.16.0、Playwright 1.62.1，三个浏览器版本见上表。D-021 对应的 `tests/reports/g3-browser.json` 记录该次 27/27，是被 Git 忽略的本地脱敏证据，不是提交产物。CI 已配置，但尚未远端执行，D-021 自动化通过结论不引用 CI。
 
-G3 已按 `docs/TEST_PLAN.md` 的 34 条 P0 证据矩阵回填自动化结果，项目负责人也已将 vivo X300 指定人工项标为 `MANUAL-PASS`；D-021 验收未发现或复现未关闭 S0/S1，G3 在 D-021 的提交前工作树范围内收口。真机浏览器版本与实际 CSS 视口未单独记录，作为 D-021 证据限制保留。G4 的独立机器可读专项报告已经证明 300 人本机协议负载目标，但不扩张为 30 分钟 soak、分布式局域网、场馆或正式上线结论。
+G3 已按 v1 的 34 条 P0 证据矩阵（现归档于 [`docs/archive/v1-test-plan.md`](../docs/archive/v1-test-plan.md)）回填自动化结果，项目负责人也已将 vivo X300 指定人工项标为 `MANUAL-PASS`；D-021 验收未发现或复现未关闭 S0/S1，G3 在 D-021 的提交前工作树范围内收口。真机浏览器版本与实际 CSS 视口未单独记录，作为 D-021 证据限制保留。G4 的独立机器可读专项报告已经证明 300 人本机协议负载目标，但不扩张为 30 分钟 soak、分布式局域网、场馆或正式上线结论。
 
 ## 8. 正式版延期测试
 
