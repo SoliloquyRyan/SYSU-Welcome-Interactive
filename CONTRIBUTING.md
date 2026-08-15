@@ -72,6 +72,7 @@ P0 表示阻断交付或现场核心流程，需优先同步项目负责人；P1
 - `feature/<简短名称>`
 - `fix/<简短名称>`
 - `docs/<简短名称>`
+- `release/<版本名称>`（冻结版本，如 `release/demo-v0`）
 
 已记录的例外：`feature/demo-v0` 根据 `docs/DECISIONS.md` 的 D-006，从 `design/invitation-ui-guide` 创建，以继承尚未合并的三端视觉基线；不得为此切换到 `main`、新建仓库或额外工作区。该例外不改变其他功能分支的默认规则。
 
