@@ -102,6 +102,7 @@ interface ParticipantRow {
   identityId: string
   participantRevision: number
   onboardingState: 'NEEDS_COLOR' | 'NEEDS_CAPSULE_DECISION' | 'ADMITTED'
+  displayName: string
   activatedAt: string
   colorTemperatureKelvin: number | null
   displayColor: string | null
@@ -209,9 +210,10 @@ function assertParticipantWriteOpen(runtime: RuntimeRow): void {
 function readParticipant(database: SqliteDatabase, identityId: string): ParticipantRow {
   const participant = database
     .prepare(
-      `SELECT participant.identity_id AS identityId,
+       `SELECT participant.identity_id AS identityId,
               participant.participant_revision AS participantRevision,
               participant.onboarding_state AS onboardingState,
+              identity.display_name AS displayName,
               participant.activated_at AS activatedAt,
               participant.color_temperature_kelvin AS colorTemperatureKelvin,
               participant.display_color AS displayColor,
@@ -230,6 +232,7 @@ function readParticipant(database: SqliteDatabase, identityId: string): Particip
               participant.power_balance AS powerBalance,
               participant.starlight
        FROM v2_participant_states participant
+       JOIN synthetic_identities identity ON identity.id = participant.identity_id
        JOIN v2_identity_slots slot ON slot.identity_id = participant.identity_id
        WHERE participant.identity_id = ?`,
     )
@@ -684,6 +687,8 @@ function participantProjection(
   return {
     participantRevision: participant.participantRevision,
     onboardingState: participant.onboardingState,
+    displayName: participant.displayName,
+    personalStarCode: participant.publicStarId,
     activatedAt: participant.activatedAt,
     colorTemperatureKelvin: participant.colorTemperatureKelvin,
     displayColor: participant.displayColor,

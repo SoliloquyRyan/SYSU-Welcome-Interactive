@@ -112,15 +112,54 @@ function base(command) {
   return { protocolVersion: '2', resetEpoch: snapshot.value.resetEpoch, idempotencyKey: createIdempotencyKey(), command }
 }
 
+// Authoritative success feedback: a 200 response alone does not prove the
+// authoritative state changed (D-021 OBS-01/02 lesson). After the snapshot
+// refresh, compare the revision family this command owns and echo it back.
+const RUN_REVISION_COMMANDS = new Set(['START', 'ADVANCE', 'PAUSE', 'RESUME', 'COMPLETE'])
+const PRESENTATION_COMMANDS = new Set(['PREVIEW_FINALE', 'CLEAR_PRESENTATION', 'SHOW_CAPSULE_INSERT', 'REMOVE_CAPSULE'])
+const INTERACTION_COMMANDS = new Set(['SET_PROGRAM', 'SET_BARRAGE_PAUSED', 'REMOVE_BARRAGE', 'BLOCK_BARRAGE_SOURCE', 'CLEAR_BARRAGES'])
+
+function revisionSnapshot() {
+  return {
+    run: runtime.value?.runRevision ?? null,
+    presentation: snapshot.value?.presentationRevision ?? null,
+    interaction: snapshot.value?.interaction?.interactionRevision ?? null,
+    resetEpoch: snapshot.value?.resetEpoch ?? null,
+  }
+}
+
+function feedbackSuffix(command, before, after, result) {
+  const receipt = [
+    result?.resetEpoch !== undefined ? `epoch=${result.resetEpoch}` : '',
+    result?.runtime?.runRevision !== undefined ? `runRev=${result.runtime.runRevision}` : '',
+    result?.presentationRevision !== undefined ? `presentRev=${result.presentationRevision}` : '',
+    result?.interactionRevision !== undefined ? `interactRev=${result.interactionRevision}` : '',
+  ].filter(Boolean).join(' ')
+  let unchanged = ''
+  if (RUN_REVISION_COMMANDS.has(command) && before.run !== null && after.run === before.run) {
+    unchanged = '（注意：权威 runRevision 未变化，请刷新核对）'
+  } else if (PRESENTATION_COMMANDS.has(command) && before.presentation !== null && after.presentation === before.presentation) {
+    unchanged = '（注意：权威 presentationRevision 未变化，请刷新核对）'
+  } else if (INTERACTION_COMMANDS.has(command) && before.interaction !== null && after.interaction === before.interaction) {
+    unchanged = '（注意：权威 interactionRevision 未变化，请刷新核对）'
+  }
+  return receipt || unchanged ? `${receipt ? `权威回执 ${receipt}；` : ''}${unchanged}`.replace(/；$/, '') : ''
+}
+
 async function runCommand(body, success, allowOverride = false) {
   const ownGeneration = sessionGeneration.capture()
+  const before = revisionSnapshot()
   busy.value = body.command; errorMessage.value = ''; successMessage.value = ''
-  try {
-    await v2AdminApi.command(body)
+  const applySuccess = async (result) => {
     if (!sessionGeneration.isCurrent(ownGeneration)) return
     await refresh(ownGeneration)
     if (!sessionGeneration.isCurrent(ownGeneration)) return
-    successMessage.value = success
+    const suffix = feedbackSuffix(body.command, before, revisionSnapshot(), result)
+    successMessage.value = suffix ? `${success}（${suffix}）` : success
+  }
+  try {
+    const result = await v2AdminApi.command(body)
+    await applySuccess(result)
   } catch (error) {
     if (!sessionGeneration.isCurrent(ownGeneration)) return
     if (allowOverride && error instanceof ApiError && error.code === 'READINESS_CONFIRMATION_REQUIRED') {
@@ -128,10 +167,8 @@ async function runCommand(body, success, allowOverride = false) {
       const accepted = window.confirm(`${warnings.map((item) => warningLabels[item] ?? item).join('；')}。\n仍然推进吗？`)
       if (accepted) {
         try {
-          await v2AdminApi.command({ ...body, idempotencyKey: createIdempotencyKey(), overrideReadinessWarnings: true })
-          if (!sessionGeneration.isCurrent(ownGeneration)) return
-          await refresh(ownGeneration)
-          if (sessionGeneration.isCurrent(ownGeneration)) successMessage.value = success
+          const result = await v2AdminApi.command({ ...body, idempotencyKey: createIdempotencyKey(), overrideReadinessWarnings: true })
+          await applySuccess(result)
         } catch (overrideError) {
           if (sessionGeneration.isCurrent(ownGeneration)) {
             errorMessage.value = publicErrorMessage(overrideError)

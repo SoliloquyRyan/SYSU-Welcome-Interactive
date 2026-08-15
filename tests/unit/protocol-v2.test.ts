@@ -63,6 +63,8 @@ function needsColorParticipant() {
   return {
     participantRevision: 1,
     onboardingState: 'NEEDS_COLOR' as const,
+    displayName: '林同学（合成001）',
+    personalStarCode: 'L-4821',
     activatedAt: NOW,
     colorTemperatureKelvin: null,
     displayColor: null,
@@ -410,6 +412,12 @@ describe('protocol v2 shared contract', () => {
       V2ParticipantProjectionSchema.safeParse({
         ...needsCapsule,
         ownPublicStarId: null,
+      }).success,
+    ).toBe(false)
+    expect(
+      V2ParticipantProjectionSchema.safeParse({
+        ...needsCapsule,
+        ownPublicStarId: 'M-4822',
       }).success,
     ).toBe(false)
 

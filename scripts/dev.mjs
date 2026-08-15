@@ -145,6 +145,17 @@ async function runPnpm(args, { label, environment, sensitive = false }) {
   )
 }
 
+async function runPnpmStatus(args, { label, environment }) {
+  const metadata = spawnPnpm(args, {
+    label,
+    environment,
+    quiet: true,
+    persistent: false,
+  })
+  const [code] = await once(metadata.child, 'exit')
+  return code === 0
+}
+
 function networkCandidates() {
   const candidates = []
   for (const [interfaceName, addresses] of Object.entries(os.networkInterfaces())) {
@@ -351,6 +362,41 @@ async function waitForReady(url, metadata, label) {
   throw new Error(`${label} 在 ${STARTUP_TIMEOUT_MS / 1_000} 秒内未就绪。`)
 }
 
+async function waitForV2Active(url, metadata, label) {
+  const deadline = Date.now() + STARTUP_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    if (metadata.launchError) {
+      throw metadata.launchError
+    }
+    if (metadata.child.exitCode !== null || metadata.child.signalCode !== null) {
+      throw new Error(`${label} 在就绪前已经退出。`)
+    }
+
+    try {
+      const response = await fetch(url, {
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(1_500),
+      })
+      if (response.ok) {
+        const payload = await response.json()
+        if (
+          payload?.contractVersion === '2' &&
+          payload?.activeRuntimeVersion === '2' &&
+          payload?.activationState === 'ACTIVE'
+        ) {
+          return
+        }
+      }
+    } catch {
+      // The process can accept TCP before the v2 runtime reports ACTIVE.
+    }
+
+    await delay(250)
+  }
+
+  throw new Error(`${label} 在 ${STARTUP_TIMEOUT_MS / 1_000} 秒内未就绪。`)
+}
+
 function resolveManifestPath(environment) {
   const configured =
     environment.DEMO_SEED_MANIFEST_PATH ?? '.data/demo-seed-manifest.json'
@@ -506,6 +552,7 @@ async function main() {
     DEMO_FRONTEND_HOST: lan.address,
     DEMO_ALLOWED_ORIGINS: publicOrigin,
     DEMO_PUBLIC_ORIGIN: publicOrigin,
+    DEMO_METRICS: '1',
   }
 
   console.log(`局域网地址：${lan.address}（${lan.interfaceName}，${lan.source}）`)
@@ -517,11 +564,19 @@ async function main() {
     label: '共享契约构建',
     environment,
   })
-  await runPnpm(['run', 'db:setup'], {
-    label: '数据库迁移与固定种子初始化',
-    environment,
-    sensitive: true,
-  })
+  const v2Verified = await runPnpmStatus(
+    ['exec', 'tsx', 'backend/src/cli/v2-verify.ts'],
+    { label: '协议 v2 数据基础验证', environment },
+  )
+  if (v2Verified) {
+    console.log('检测到 V2_ACTIVE 合成库，将启动协议 v2 三端（迁移已由一次性切换完成）。')
+  } else {
+    await runPnpm(['run', 'db:setup'], {
+      label: '数据库迁移与固定种子初始化',
+      environment,
+      sensitive: true,
+    })
+  }
 
   console.log('正在启动后端……')
   const backend = spawnPnpm(
@@ -533,11 +588,19 @@ async function main() {
       persistent: true,
     },
   )
-  await waitForReady(
-    `http://${BACKEND_HOST}:${BACKEND_PORT}/api/ready`,
-    backend,
-    '后端服务',
-  )
+  if (v2Verified) {
+    await waitForV2Active(
+      `http://${BACKEND_HOST}:${BACKEND_PORT}/api/protocol-capabilities`,
+      backend,
+      '后端 v2 服务',
+    )
+  } else {
+    await waitForReady(
+      `http://${BACKEND_HOST}:${BACKEND_PORT}/api/ready`,
+      backend,
+      '后端服务',
+    )
+  }
 
   console.log('正在启动前端并验证同源代理……')
   const frontend = spawnPnpm(
@@ -549,18 +612,26 @@ async function main() {
       persistent: true,
     },
   )
-  await waitForReady(
-    `${publicOrigin}/api/ready`,
-    frontend,
-    '前端同源代理',
-  )
+  if (v2Verified) {
+    await waitForV2Active(
+      `${publicOrigin}/api/protocol-capabilities`,
+      frontend,
+      '前端同源代理',
+    )
+  } else {
+    await waitForReady(
+      `${publicOrigin}/api/ready`,
+      frontend,
+      '前端同源代理',
+    )
+  }
 
   const { adminUsername, manifestPath, qrPath } = await createWelcomeQr(
     publicOrigin,
     environment,
   )
   console.log('')
-  console.log('Demo v0 G2 功能服务已就绪：')
+  console.log('Demo v0 三端服务已就绪：')
   console.log(`WELCOME_URL=${publicOrigin}/welcome`)
   console.log(`ADMIN_URL=${publicOrigin}/admin`)
   console.log(`SCREEN_URL=${publicOrigin}/screen`)

@@ -121,7 +121,12 @@ async function capture(page, name, secrets, baseURL) {
   await page.locator('.v2-welcome').screenshot({
     path: path.join(outputDirectory, `${name}.png`),
     animations: 'allow',
-    mask: [page.locator('input:not([type="range"]), textarea')],
+    mask: [page.locator([
+      '.operation-dock:not([aria-hidden="true"]) input:not([type="range"]):not([type="checkbox"])',
+      '.operation-dock:not([aria-hidden="true"]) textarea',
+      '.modal-backdrop input:not([type="range"]):not([type="checkbox"])',
+      '.modal-backdrop textarea',
+    ].join(', '))],
     maskColor: '#07101f',
   })
 }
@@ -139,6 +144,8 @@ async function assertSignalTitleTyping(page, accessibleName, {
   captureName = '',
   secrets,
   baseURL,
+  partialTimeout = 1_500,
+  allowParentMotion = false,
 } = {}) {
   const heading = page.getByRole('heading', { name: accessibleName, exact: true })
     .and(page.locator('.signal-type-title'))
@@ -151,7 +158,7 @@ async function assertSignalTitleTyping(page, accessibleName, {
     const visibleLength = Array.from(typed?.firstChild?.textContent ?? '').length
     const fullLength = Array.from(measure?.textContent ?? '').length
     return Boolean(typed && !typed.classList.contains('is-complete') && visibleLength > 0 && visibleLength < fullLength)
-  }, handle, { timeout: 1_500 })
+  }, handle, { timeout: partialTimeout })
 
   const typingState = await heading.evaluate((element) => {
     const typed = element.querySelector('.signal-type-title__typed')
@@ -206,7 +213,10 @@ async function assertSignalTitleTyping(page, accessibleName, {
         : Number.POSITIVE_INFINITY,
     }
   })
-  const layoutDelta = Math.max(...finalState.headingBox.map((value, index) => Math.abs(value - typingState.headingBox[index])))
+  const comparedIndexes = allowParentMotion ? [2, 3] : [0, 1, 2, 3]
+  const layoutDelta = Math.max(...comparedIndexes.map(
+    (index) => Math.abs(finalState.headingBox[index] - typingState.headingBox[index]),
+  ))
   if (layoutDelta > 1) throw new Error(`标题“${accessibleName}”逐字显现造成 ${layoutDelta.toFixed(2)}px 布局跳动。`)
   if (finalState.caretGap < -1 || finalState.caretGap > 8 || finalState.caretRowDelta > 4) {
     throw new Error(`标题“${accessibleName}”完成后光标没有紧跟最后一个字。`)
@@ -236,7 +246,7 @@ async function assertReducedSignalTitleStatic(page, accessibleName) {
 
 async function runCapturedJourney(page, demo, participant) {
   const assertBrowserClean = createBrowserAudit(page, demo.baseURL)
-  const secrets = [participant.inviteToken, participant.displayName, participant.studentNumber]
+  const secrets = [participant.inviteToken, participant.studentNumber]
   const invitation = new URL('/welcome', demo.baseURL)
   invitation.searchParams.set('token', participant.inviteToken)
   await page.goto(invitation.toString())
@@ -244,13 +254,22 @@ async function runCapturedJourney(page, demo, participant) {
   await page.locator('[data-testid="personal-journey-stage"][data-phase="discovery"][data-playing="true"]')
     .waitFor({ state: 'visible', timeout: 8_000 })
   await waitForForegroundFrames(page)
-  await captureTimedSequence(page, [
-    ['01-discovery-early', 420],
-    ['02-discovery-depth', 1_650],
-    ['03-discovery-approach', 3_150],
-    ['04-discovery-acquire', 4_500],
-    ['05-discovery-handoff', 5_180],
-  ], secrets, demo.baseURL)
+  await Promise.all([
+    captureTimedSequence(page, [
+      ['01-discovery-early', 420],
+      ['02-discovery-depth', 1_650],
+      ['03-discovery-approach', 3_150],
+      ['04-discovery-acquire', 4_500],
+      ['05-discovery-handoff', 5_180],
+    ], secrets, demo.baseURL),
+    assertSignalTitleTyping(page, `找到属于 ${participant.displayName} 的星`, {
+      captureName: '04b-discovery-title-typing',
+      secrets,
+      baseURL: demo.baseURL,
+      partialTimeout: 5_000,
+      allowParentMotion: true,
+    }),
+  ])
 
   await assertSignalTitleTyping(page, '为你的星选择颜色', {
     captureName: '05b-color-title-typing',
@@ -300,6 +319,9 @@ async function runCapturedJourney(page, demo, participant) {
   await page.waitForTimeout(2_650)
   await capture(page, '15-orbit-flow-late', secrets, demo.baseURL)
   await page.getByRole('button', { name: '节目单', exact: true }).click()
+  if (await page.getByRole('heading', { name: '节目单', exact: true }).count() !== 1) {
+    throw new Error('节目单页面出现重复的同名标题。')
+  }
   await assertSignalTitleTyping(page, '节目单', {
     captureName: '17-program-title-typing',
     secrets,
@@ -307,11 +329,45 @@ async function runCapturedJourney(page, demo, participant) {
   })
   await capture(page, '18-program-index', secrets, demo.baseURL)
   await page.getByRole('button', { name: '档案', exact: true }).click()
-  await assertSignalTitleTyping(page, '我的星际档案', {
+  if (await page.getByRole('heading', { name: '星际档案', exact: true }).count() !== 1) {
+    throw new Error('星际档案页面出现重复的同名标题。')
+  }
+  await assertSignalTitleTyping(page, '星际档案', {
     captureName: '19-archive-title-typing',
     secrets,
     baseURL: demo.baseURL,
   })
+  const archiveTerms = await page.locator('.archive dt').allTextContents()
+  if (
+    archiveTerms.indexOf('星星编号') < 0
+    || archiveTerms.indexOf('星色') < 0
+    || archiveTerms.indexOf('星星编号') > archiveTerms.indexOf('星色')
+    || archiveTerms.includes('入场')
+  ) throw new Error(`星际档案字段顺序或精简规则漂移：${JSON.stringify(archiveTerms)}`)
+  const powerMetric = page.getByRole('button', { name: '动力', exact: true })
+  await powerMetric.tap()
+  const powerHelp = page.getByRole('tooltip')
+  await powerHelp.waitFor()
+  if (
+    await powerMetric.getAttribute('aria-expanded') !== 'true'
+    || await powerMetric.getAttribute('aria-controls') !== 'archive-metric-help'
+    || await powerMetric.getAttribute('aria-describedby') !== 'archive-metric-help'
+    || !(await powerHelp.textContent())?.includes('礼物')
+    || !(await powerHelp.textContent())?.includes('扣减')
+  ) throw new Error('动力说明浮层的文案或可访问关系不完整。')
+  await page.keyboard.press('Escape')
+  if (await page.getByRole('tooltip').count() !== 0 || await powerMetric.getAttribute('aria-expanded') !== 'false') {
+    throw new Error('动力说明浮层未能由 Escape 收束。')
+  }
+  const starlightMetric = page.getByRole('button', { name: '星光', exact: true })
+  await starlightMetric.focus()
+  await page.keyboard.press('Enter')
+  const starlightHelp = page.getByRole('tooltip')
+  await starlightHelp.waitFor()
+  if (
+    !(await starlightHelp.textContent())?.includes('成长')
+    || !(await starlightHelp.textContent())?.includes('不用于支付')
+  ) throw new Error('星光说明浮层没有解释累计与非支付语义。')
   await capture(page, '20-personal-archive', secrets, demo.baseURL)
   await assertCollegeBrandEntry(page)
   await assertLocalAndPrivate(page, demo.baseURL, secrets)
@@ -331,7 +387,7 @@ async function runReducedOrbit(browserInstance, demo, participant) {
   try {
     const page = await reducedContext.newPage()
     const assertBrowserClean = createBrowserAudit(page, demo.baseURL)
-    const secrets = [participant.inviteToken, participant.displayName, participant.studentNumber]
+    const secrets = [participant.inviteToken, participant.studentNumber]
     const invitation = new URL('/welcome', demo.baseURL)
     invitation.searchParams.set('token', participant.inviteToken)
     await page.goto(invitation.toString())
@@ -421,7 +477,7 @@ async function runGiftVisual(browserInstance, demo, participant) {
     const adminPage = await adminContext.newPage()
     adminPage.on('dialog', async (dialog) => dialog.accept())
     const assertBrowserClean = createBrowserAudit(participantPage, demo.baseURL)
-    const secrets = [participant.inviteToken, participant.displayName, participant.studentNumber]
+    const secrets = [participant.inviteToken, participant.studentNumber]
     const invitation = new URL('/welcome', demo.baseURL)
     invitation.searchParams.set('token', participant.inviteToken)
     await participantPage.goto(invitation.toString())

@@ -120,15 +120,28 @@ describe('V2-05 snapshots and split-stream realtime', () => {
   })
 
   it('announces ACTIVE capabilities and serves strict public and participant snapshots', async () => {
+    const selected = readSeedManifest(config.seedManifestPath).participants[0]!
     const capabilities = V2ProtocolCapabilitiesResponseSchema.parse((await app.inject({ method: 'GET', url: '/api/protocol-capabilities', headers: HEADERS })).json())
     expect(capabilities).toMatchObject({ activeRuntimeVersion: '2', activationState: 'ACTIVE', capabilities: { v2Snapshots: true, v2RealtimeEvents: true } })
-    const screen = V2ScreenSnapshotSchema.parse((await app.inject({ method: 'GET', url: '/api/v2/screen/snapshot', headers: HEADERS })).json())
+    const screenPayload = (await app.inject({ method: 'GET', url: '/api/v2/screen/snapshot', headers: HEADERS })).json()
+    const screen = V2ScreenSnapshotSchema.parse(screenPayload)
     expect(screen).toMatchObject({ resetEpoch: 2, publicSeq: 0, publicStars: [] })
-    const participant = V2ParticipantSnapshotSchema.parse((await app.inject({
+    for (const privateField of ['displayName', 'personalStarCode', 'studentNumber']) {
+      expect(JSON.stringify(screenPayload)).not.toContain(`"${privateField}"`)
+    }
+    const participantPayload = (await app.inject({
       method: 'GET', url: '/api/v2/participant/snapshot',
       headers: { ...HEADERS, cookie: `sysu_welcome_participant=${participantSecret}` },
-    })).json())
-    expect(participant.participant).toMatchObject({ onboardingState: 'NEEDS_COLOR', starlight: 20 })
+    })).json()
+    const participant = V2ParticipantSnapshotSchema.parse(participantPayload)
+    expect(participant.participant).toMatchObject({
+      onboardingState: 'NEEDS_COLOR',
+      displayName: selected.displayName,
+      personalStarCode: selected.publicStarId,
+      starlight: 20,
+    })
+    expect(participantPayload.participant).not.toHaveProperty('studentNumber')
+    expect(JSON.stringify(participantPayload)).not.toContain(selected.studentNumber)
     expect(participant).toMatchObject({
       participantStreamId: `participant:${participantId}`,
       interaction: { barragePaused: false },
@@ -153,8 +166,16 @@ describe('V2-05 snapshots and split-stream realtime', () => {
     const body = V2ActivateParticipantResponseSchema.parse(activation.json())
     expect(body).toMatchObject({
       activationCreated: true,
-      snapshot: { participant: { onboardingState: 'NEEDS_COLOR' } },
+      snapshot: {
+        participant: {
+          onboardingState: 'NEEDS_COLOR',
+          displayName: newParticipant.displayName,
+          personalStarCode: newParticipant.publicStarId,
+        },
+      },
     })
+    expect(body.snapshot.participant).not.toHaveProperty('studentNumber')
+    expect(JSON.stringify(body)).not.toContain(newParticipant.studentNumber)
     const cookie = activation.headers['set-cookie']
     expect(cookie).toContain('sysu_welcome_participant=')
     expect((await app.inject({
@@ -183,6 +204,9 @@ describe('V2-05 snapshots and split-stream realtime', () => {
     })).json())
     expect(admin.roles).toEqual(['ALL'])
     expect(JSON.stringify(admin)).not.toContain(participantId)
+    for (const privateField of ['displayName', 'personalStarCode', 'studentNumber']) {
+      expect(JSON.stringify(admin)).not.toContain(`"${privateField}"`)
+    }
   })
 
   it('establishes and revokes a v2 admin session through the shared demo account', async () => {

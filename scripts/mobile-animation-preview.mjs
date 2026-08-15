@@ -540,7 +540,7 @@ async function openInvitation(page, demo, participant, { expectDiscovery = false
   await page.goto(invitation.toString())
   await page.waitForFunction(() => !new URL(window.location.href).searchParams.has('token'))
   if (expectDiscovery) {
-    await page.getByRole('heading', { name: '正在稳定你的星际信号' })
+    await page.locator('[data-testid="color-onboarding"].color-onboarding--pending')
       .waitFor({ state: 'visible', timeout: 6_000 })
     await startDiscoveryClsWindow(page)
     const pendingStarHandle = await page.locator('[data-testid="persistent-focus-star"]').elementHandle()
@@ -617,7 +617,7 @@ async function setSyntheticVisibility(page, hidden) {
 
 async function runPreStartVisibilityHandoff(demo, browser, participant) {
   const { context, page } = await createVisibilityScenarioPage(demo, browser, true)
-  const secrets = [participant.inviteToken, participant.displayName, participant.studentNumber]
+  const secrets = [participant.inviteToken, participant.studentNumber]
   try {
     await openInvitation(page, demo, participant)
     await setSyntheticVisibility(page, true)
@@ -648,7 +648,7 @@ async function runPreStartVisibilityHandoff(demo, browser, participant) {
 
 async function runPlayingVisibilityInterruption(demo, browser, participant) {
   const { context, page } = await createVisibilityScenarioPage(demo, browser, false)
-  const secrets = [participant.inviteToken, participant.displayName, participant.studentNumber]
+  const secrets = [participant.inviteToken, participant.studentNumber]
   try {
     await openInvitation(page, demo, participant)
     await setSyntheticVisibility(page, false)
@@ -984,10 +984,10 @@ async function runReducedMotionAndLogout(demo, browser, participant) {
   monitorPage(page, demo.baseURL)
   try {
     await page.goto('/welcome')
-    await page.getByRole('heading', { name: '重新连接你的邀请' }).waitFor()
+    await page.getByRole('heading', { name: '重新进入你的星域' }).waitFor()
     await setPhoneViewport(page, { width: 390, height: 420 })
-    await page.getByLabel('虚构姓名').focus()
-    await assertControlReachable(page.getByRole('button', { name: '使用合成身份核验' }), '390×420 备用核验按钮')
+    await page.getByLabel('学生姓名').focus()
+    await assertControlReachable(page.getByRole('button', { name: '核验并重新进入' }), '390×420 备用核验按钮')
     await assertPhoneShell(page, '390×420 备用核验输入态')
     const entryKeyboardMode = await page.locator('.v2-welcome').evaluate((element) => (
       element.classList.contains('is-keyboard')
@@ -1017,24 +1017,39 @@ async function runReducedMotionAndLogout(demo, browser, participant) {
     ))
     if (!capsuleKeyboardMode) throw new Error('胶囊输入聚焦后未进入短视口键盘布局。')
     await setPhoneViewport(page, MOBILE_VIEWPORT)
-    await page.getByRole('button', { name: '退出', exact: true }).click()
-    const dialog = page.getByRole('alertdialog', { name: '确认退出？' })
+    await page.getByRole('button', { name: '退出登录', exact: true }).click()
+    const dialog = page.getByRole('alertdialog', { name: '退出当前身份？' })
     await dialog.getByText('未提交草稿将丢失。', { exact: false }).waitFor()
     await dialog.getByRole('button', { name: '取消' }).click()
     if (await draft.inputValue() !== '尚未提交的本页草稿') {
       throw new Error('取消退出后，本页胶囊草稿不应丢失。')
     }
-    await page.getByRole('button', { name: '退出', exact: true }).click()
-    await dialog.getByRole('button', { name: '确认退出' }).click()
-    await page.getByRole('heading', { name: '重新连接你的邀请' }).waitFor()
+    await page.getByRole('button', { name: '退出登录', exact: true }).click()
+    await dialog.getByRole('button', { name: '退出登录' }).click()
+    await page.getByRole('heading', { name: '重新进入你的星域' }).waitFor()
     if (await page.locator('textarea').count() !== 0) {
       throw new Error('退出后不应在 DOM 中保留胶囊草稿。')
     }
     const freshParticipant = demo.credentials.participants[2]
-    await page.getByLabel('虚构姓名').fill(freshParticipant.displayName)
-    await page.getByLabel('合成学号').fill(freshParticipant.studentNumber)
-    await page.getByRole('button', { name: '使用合成身份核验' }).click()
+    await page.getByLabel('学生姓名').fill(freshParticipant.displayName)
+    let assistedActivationRequests = 0
+    const countAssistedActivation = (request) => {
+      if (
+        request.method() === 'POST'
+        && new URL(request.url()).pathname === '/api/v2/participant/activate'
+      ) assistedActivationRequests += 1
+    }
+    page.on('request', countAssistedActivation)
+    await page.getByLabel('8 位学号').fill(freshParticipant.studentNumber.slice(-7))
+    await page.getByRole('button', { name: '核验并重新进入' }).click()
+    await page.getByRole('alert').filter({ hasText: '请输入 8 位学号。' }).waitFor()
+    if (assistedActivationRequests !== 0) {
+      throw new Error('7 位学号被前端错误地发送到身份核验接口。')
+    }
+    await page.getByLabel('8 位学号').fill(freshParticipant.studentNumber.slice(-8))
+    await page.getByRole('button', { name: '核验并重新进入' }).click()
     await waitForColor(page)
+    page.off('request', countAssistedActivation)
     if (await page.getByLabel('恒星色温').inputValue() !== '5800') {
       throw new Error('退出后新身份继承了上一身份的本地色温。')
     }
@@ -1062,7 +1077,6 @@ async function runNormalMotionPersonalJourney(demo, browser, participant, secret
     const journeySecrets = [
       ...secrets,
       participant.inviteToken,
-      participant.displayName,
       participant.studentNumber,
     ]
     await openInvitation(page, demo, participant, { expectDiscovery: true, secrets: journeySecrets })
@@ -1157,17 +1171,17 @@ async function runLogoutGenerationRace(demo, browser, participant) {
     await waitForColor(page)
     await page.getByRole('button', { name: '确认星色' }).click()
     await commandReady
-    await page.getByRole('button', { name: '退出', exact: true }).click()
-    await page.getByRole('alertdialog', { name: '确认退出？' })
-      .getByRole('button', { name: '确认退出' }).click()
-    await page.getByRole('heading', { name: '重新连接你的邀请' }).waitFor()
+    await page.getByRole('button', { name: '退出登录', exact: true }).click()
+    await page.getByRole('alertdialog', { name: '退出当前身份？' })
+      .getByRole('button', { name: '退出登录' }).click()
+    await page.getByRole('heading', { name: '重新进入你的星域' }).waitFor()
     const requestsBeforeRelease = snapshotRequests
     releaseCommand()
     await page.waitForTimeout(500)
     if (snapshotRequests !== requestsBeforeRelease) {
       throw new Error('退出后旧命令仍发起了新的参与者快照请求。')
     }
-    if (!await page.getByRole('heading', { name: '重新连接你的邀请' }).isVisible()) {
+    if (!await page.getByRole('heading', { name: '重新进入你的星域' }).isVisible()) {
       throw new Error('退出后旧命令恢复了已清空的参与者会话。')
     }
     await assertPageDiagnostics(page, '退出代际竞态')
@@ -1419,7 +1433,6 @@ try {
   const participant = demo.credentials.participant
   const secrets = [
     participant.inviteToken,
-    participant.displayName,
     participant.studentNumber,
     demo.credentials.admin.username,
     demo.credentials.admin.password,

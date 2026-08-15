@@ -8,6 +8,7 @@ const props = defineProps({
   replayKey: { type: [String, Number], default: '' },
   animate: { type: Boolean, default: true },
   reduced: { type: Boolean, default: false },
+  delayMs: { type: Number, default: 90 },
 })
 
 const element = ref(null)
@@ -51,7 +52,7 @@ function playReveal() {
   visibleCount.value = 0
   completed.value = false
   staticCompletion.value = false
-  revealTimer = window.setTimeout(revealNext, 90)
+  revealTimer = window.setTimeout(revealNext, Math.max(0, props.delayMs))
 }
 
 function onVisibilityChange() {
@@ -102,6 +103,8 @@ defineExpose({ focus })
   display: block;
   width: fit-content;
   max-width: 100%;
+  font-family: var(--font-display, "Cascadia Mono", "SFMono-Regular", Consolas, ui-monospace, monospace);
+  font-variant-ligatures: none;
 }
 
 .signal-type-title__measure,

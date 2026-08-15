@@ -19,6 +19,17 @@ function customProperty(style: string, name: string) {
   return style.match(new RegExp(`${escapedName}:\\s*([^;]+);`, 'u'))?.[1].trim() ?? ''
 }
 
+function cssRule(style: string, selector: string) {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  return style.match(new RegExp(`(?:^|\\n)\\s*${escapedSelector}\\s*\\{([\\s\\S]*?)\\}`, 'u'))?.[1] ?? ''
+}
+
+function outerTemplate(source: string) {
+  const start = source.indexOf('<template>')
+  const end = source.lastIndexOf('</template>')
+  return start >= 0 && end > start ? source.slice(start, end + '</template>'.length) : ''
+}
+
 describe('V2 mobile visual system contracts', () => {
   it('keeps the complete heading accessible while the visible copy types with a trailing caret', () => {
     const title = read('frontend/src/pages/student/SignalTypeTitle.vue')
@@ -31,6 +42,8 @@ describe('V2 mobile visual system contracts', () => {
     expect(template).toMatch(/class="signal-type-title__typed"[\s\S]*?aria-hidden="true"/u)
     expect(template).toMatch(/\{\{\s*visibleText\s*\}\}\s*<span class="signal-type-title__caret">/u)
     expect(script).toContain("const visibleText = computed(() => glyphs.value.slice(0, visibleCount.value).join(''))")
+    expect(script).toContain('delayMs: { type: Number, default: 90 }')
+    expect(script).toContain('window.setTimeout(revealNext, Math.max(0, props.delayMs))')
     expect(style).toMatch(/\.signal-type-title__caret\s*\{[\s\S]*?display:\s*inline-block/u)
     expect(style).toMatch(/\.signal-type-title__caret\s*\{[\s\S]*?animation:\s*signal-caret-blink/u)
     expect(style).toMatch(/\.signal-type-title__typed\.is-reduced \.signal-type-title__caret\s*\{[\s\S]*?animation:\s*none/u)
@@ -53,6 +66,24 @@ describe('V2 mobile visual system contracts', () => {
     const page = read('frontend/src/pages/student/V2WelcomeExperience.vue')
     expect(page).toContain('accessible-label="为你的星选择颜色"')
     expect(page).toContain(':reduced="reducedMotion"')
+  })
+
+  it('delays the discovery title until the participant signal is framed, then types the personalized welcome', () => {
+    const page = read('frontend/src/pages/student/V2WelcomeExperience.vue')
+    const script = sfcBlock(page, 'script')
+    const discovery = page.match(
+      /<div\s+class="discovery-copy"[\s\S]*?(?=<div\s+class="selection-copy")/u,
+    )?.[0] ?? ''
+
+    expect(script).toContain("participant.value?.displayName ?? '同学'")
+    expect(script).toContain('participant.value?.personalStarCode ?? participant.value?.ownPublicStarId')
+    expect(discovery).toContain('{{ participantDisplayName }}')
+    expect(discovery).toContain('text="找到属于你的星"')
+    expect(discovery).toContain(':accessible-label="`找到属于 ${participantDisplayName} 的星`"')
+    expect(discovery).toContain(':animate="titleMotionEnabled && cinematic === \'discovering\'"')
+    expect(discovery).toContain(':delay-ms="Math.round(DISCOVERY_CINEMATIC_DURATION_MS * 0.72)"')
+    expect(discovery).toContain('星星编号 {{ personalStarCode }}')
+    expect(discovery).toContain('欢迎参加智能工程学院迎新晚会')
   })
 
   it('draws all four gift signals as original inline SVG rather than text glyphs', () => {
@@ -114,25 +145,124 @@ describe('V2 mobile visual system contracts', () => {
     expect(template).toContain('id="gift-availability"')
   })
 
-  it('defines role-specific typography and reusable asymmetric corner tokens', () => {
+  it('defines a code-like display face, restrained body typography and small asymmetric corners', () => {
     const page = read('frontend/src/pages/student/V2WelcomeExperience.vue')
     const style = sfcBlock(page, 'style')
 
     const cjk = customProperty(style, '--font-stack-cjk')
+    const display = customProperty(style, '--font-stack-display')
     const signal = customProperty(style, '--font-stack-signal')
     const data = customProperty(style, '--font-stack-data')
     expect(cjk).toMatch(/system-ui|PingFang SC|Microsoft YaHei/u)
+    expect(display).toMatch(/Cascadia Code|Cascadia Mono|ui-monospace/u)
     expect(signal).toMatch(/Bahnschrift|Segoe UI Variable/u)
     expect(data).toMatch(/Cascadia Mono|SFMono-Regular|Consolas/u)
     expect(style).toContain('var(--font-stack-cjk)')
+    expect(style).toContain('--font-display: var(--font-stack-display)')
     expect(style).toContain('var(--font-stack-signal)')
     expect(style).toContain('var(--font-stack-data)')
+    expect(cssRule(style, '.v2-welcome__main h2')).toContain('font-family: var(--font-display)')
 
     for (const token of ['--shape-panel', '--shape-control', '--shape-item']) {
       const radii = customProperty(style, token).split(/\s+/u)
       expect(radii, `${token} must use four-corner syntax`).toHaveLength(4)
       expect(new Set(radii).size, `${token} must be visibly asymmetric`).toBeGreaterThan(1)
+      expect(
+        radii.every((radius) => Number.parseFloat(radius) <= 8),
+        `${token} must stay subtly bent rather than rounded-card sized`,
+      ).toBe(true)
       expect(style).toContain(`var(${token})`)
     }
+
+    expect(cssRule(style, '.operation-dock')).toContain('border-radius: var(--shape-panel)')
+    const logout = cssRule(style, '.v2-welcome__logout')
+    expect(logout).toContain('min-height: 44px')
+    expect(logout).toContain('border: 0')
+    expect(Number.parseFloat(logout.match(/border-radius:\s*([^;]+)/u)?.[1] ?? '999')).toBeLessThanOrEqual(4)
+    expect(style).toMatch(/\.v2-welcome__logout::before,[\s\S]*?\.v2-welcome__logout::after\s*\{/u)
+  })
+
+  it('keeps one top-level typed heading for program and archive views', () => {
+    const page = read('frontend/src/pages/student/V2WelcomeExperience.vue')
+    const program = page.match(
+      /<section v-else-if="activeTab === 'programs'"[\s\S]*?<\/section>/u,
+    )?.[0] ?? ''
+    const archive = page.match(/<section v-else class="archive"[\s\S]*?<\/section>/u)?.[0] ?? ''
+
+    expect(page.match(/id="view-title"/gu)).toHaveLength(1)
+    expect(page).toContain(':text="viewCopy.title"')
+    for (const panel of [program, archive]) {
+      expect(panel).toContain('aria-labelledby="view-title"')
+      expect(panel).not.toMatch(/<h[1-3]\b/u)
+    }
+    expect(program).toContain('<strong class="panel-context">现场编排</strong>')
+    expect(archive).toContain('<strong class="archive-owner">{{ participantDisplayName }}</strong>')
+  })
+
+  it('validates an 8-digit assisted entry locally and adds the private wire prefix once', () => {
+    const page = read('frontend/src/pages/student/V2WelcomeExperience.vue')
+    const script = sfcBlock(page, 'script')
+    const assisted = script.match(/function activateAssisted\(\)[\s\S]*?\n\}/u)?.[0] ?? ''
+
+    expect(page).toContain('<label>学生姓名<input')
+    expect(page).toContain('<label>8 位学号<input')
+    expect(page).toContain('inputmode="numeric"')
+    expect(page).toContain('maxlength="8"')
+    expect(page).toContain('pattern="[0-9]{8}"')
+    expect(assisted).toContain("if (!/^\\d{8}$/.test(studentNumber.value))")
+    expect(assisted).toContain("persistentError.value = '请输入 8 位学号。'")
+    expect(assisted).toContain('studentNumber: `2026${studentNumber.value}`')
+    expect(assisted).not.toContain('studentNumber: studentNumber.value')
+    expect(page).toContain('输入学生姓名与 8 位学号')
+  })
+
+  it('orders the named archive, omits admission status and exposes dismissible metric explanations', () => {
+    const page = read('frontend/src/pages/student/V2WelcomeExperience.vue')
+    const script = sfcBlock(page, 'script')
+    const archive = page.match(/<section v-else class="archive"[\s\S]*?<\/section>/u)?.[0] ?? ''
+    const escapeHandler = script.match(/function onEscape\(event\)[\s\S]*?\n\}/u)?.[0] ?? ''
+
+    expect(archive.indexOf('<dt>星星编号</dt>')).toBeGreaterThanOrEqual(0)
+    expect(archive.indexOf('<dt>星星编号</dt>')).toBeLessThan(archive.indexOf('<dt>星色</dt>'))
+    expect(archive).toContain('{{ participantDisplayName }}')
+    expect(archive).toContain('{{ personalStarCode }}')
+    expect(archive).not.toContain('<dt>入场</dt>')
+    for (const metric of ['power', 'starlight']) {
+      const trigger = archive.match(
+        new RegExp(`<button type="button"[^>]*archiveMetricHelp === '${metric}'[^>]*>`, 'u'),
+      )?.[0] ?? ''
+      expect(trigger).toContain('aria-controls="archive-metric-help"')
+      expect(trigger).toContain(':aria-expanded=')
+      expect(trigger).toContain(':aria-describedby=')
+      expect(trigger).toContain(`@click="toggleArchiveMetricHelp('${metric}')"`)
+    }
+    expect(archive).toContain(':role="archiveMetricMessage ? \'tooltip\' : undefined"')
+    expect(archive).toContain(":aria-hidden=\"archiveMetricMessage ? undefined : 'true'\"")
+    expect(escapeHandler).toContain("if (event.key !== 'Escape') return")
+    expect(escapeHandler).toContain("else archiveMetricHelp.value = ''")
+  })
+
+  it('does not render the retired English decorative labels', () => {
+    const template = outerTemplate(read('frontend/src/pages/student/V2WelcomeExperience.vue'))
+    const retiredLabels = [
+      'PROGRAM INDEX',
+      'PERSONAL ARCHIVE',
+      'FINALE',
+      'LIVE GALAXY',
+      'SIGNAL ACQUISITION',
+      'ASSISTED SYNTHETIC ENTRY',
+      'A QUIET SIGNAL',
+      'YOUR STAR',
+      'LIGHT REGISTERED',
+      'PERSONAL ORBIT',
+      'A NOTE FOR THE FUTURE',
+      'ORBIT ENTRY',
+      'NOW PLAYING',
+      'LIVE GIFT',
+      'POWER BALANCE',
+      'LEAVE SESSION',
+    ]
+
+    for (const label of retiredLabels) expect(template).not.toContain(label)
   })
 })

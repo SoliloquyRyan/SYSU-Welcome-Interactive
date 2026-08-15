@@ -47,3 +47,6 @@ output/playwright/
 
 # Temporary Office files
 ~$*
+
+# Disposable generated artifacts
+output/

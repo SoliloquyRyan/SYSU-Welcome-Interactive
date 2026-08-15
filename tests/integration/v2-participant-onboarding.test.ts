@@ -158,14 +158,23 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
     expect(first.activated).toBe(true)
     expect(first.snapshot.participant).toMatchObject({
       onboardingState: 'NEEDS_COLOR',
+      displayName: participant(0).displayName,
+      personalStarCode: participant(0).publicStarId,
       powerBalance: 100,
       starlight: 20,
       ownPublicStarId: null,
       allowedActions: ['LOCK_COLOR'],
     })
+    expect(first.snapshot.participant).not.toHaveProperty('studentNumber')
+    expect(JSON.stringify(first.snapshot.participant)).not.toContain(participant(0).studentNumber)
     expect(first.session.secret).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(replay.activated).toBe(false)
     expect(replay.session.id).not.toBe(first.session.id)
+    expect(replay.snapshot.participant).toMatchObject({
+      displayName: participant(0).displayName,
+      personalStarCode: participant(0).publicStarId,
+    })
+    expect(replay.snapshot.participant).not.toHaveProperty('studentNumber')
     expect(
       database
         .prepare(
@@ -455,7 +464,8 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
 
   it('supports the assisted synthetic credential as the same identity', () => {
     const selected = participant(1)
-    const result = activateV2Participant(
+    const invited = activate(1, 'invitation-before-assisted-recovery')
+    const recovered = activateV2Participant(
       database,
       readDemoCredentialContext(manifestPath),
       {
@@ -468,8 +478,35 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
       },
       NOW,
     )
-    expect(result.session.identityId).toBe(selected.id)
-    expect(result.snapshot.participant.onboardingState).toBe('NEEDS_COLOR')
+    expect(invited.activated).toBe(true)
+    expect(recovered.activated).toBe(false)
+    expect(recovered.session.identityId).toBe(selected.id)
+    expect(recovered.session.id).not.toBe(invited.session.id)
+    expect(recovered.snapshot.participant).toMatchObject({
+      participantRevision: invited.snapshot.participant.participantRevision,
+      onboardingState: 'NEEDS_COLOR',
+      displayName: selected.displayName,
+      personalStarCode: selected.publicStarId,
+      powerBalance: 100,
+      starlight: 20,
+    })
+    expect(recovered.snapshot.participant).not.toHaveProperty('studentNumber')
+    expect(JSON.stringify(recovered.snapshot.participant)).not.toContain(selected.studentNumber)
+    expect(
+      database
+        .prepare('SELECT count(*) FROM v2_participant_states WHERE identity_id = ?')
+        .pluck()
+        .get(selected.id),
+    ).toBe(1)
+    expect(
+      database
+        .prepare(
+          `SELECT count(*) FROM v2_reward_ledger
+           WHERE identity_id = ? AND event_key = 'ACTIVATED'`,
+        )
+        .pluck()
+        .get(selected.id),
+    ).toBe(1)
   })
 
   it('rolls back activation when no stable slot is available', () => {

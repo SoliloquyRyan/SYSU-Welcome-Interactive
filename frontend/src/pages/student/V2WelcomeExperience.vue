@@ -53,6 +53,16 @@ const props = defineProps({
 })
 
 const COLLEGE_WEBSITE_URL = 'https://ise.sysu.edu.cn/'
+const PROGRAM_STATE_LABELS = Object.freeze({
+  CURRENT: '进行中',
+  NEXT: '下一节目',
+  CLOSED: '已结束',
+  UPCOMING: '待开始',
+})
+const ARCHIVE_METRIC_HELP = Object.freeze({
+  power: '动力是可用于节目礼物的现场额度；送礼会扣减，初始额度由活动统一发放。',
+  starlight: '星光记录你完成入场、寄语与现场互动的成长进度；它只累计，不用于支付。',
+})
 
 const root = ref(null)
 const journeyStage = ref(null)
@@ -75,6 +85,7 @@ const dockTextInputFocused = ref(false)
 const giftOpen = ref(false)
 const logoutOpen = ref(false)
 const titleMotionEnabled = ref(false)
+const archiveMetricHelp = ref('')
 const busy = ref('')
 const persistentError = ref('')
 const persistentNotice = ref('')
@@ -102,6 +113,10 @@ let snapshotCommitSequence = 0
 const snapshotControllers = new Set()
 
 const participant = computed(() => snapshot.value?.participant ?? null)
+const participantDisplayName = computed(() => participant.value?.displayName ?? '同学')
+const personalStarCode = computed(() =>
+  participant.value?.personalStarCode ?? participant.value?.ownPublicStarId ?? '等待编号',
+)
 const runtime = computed(() => snapshot.value?.runtime ?? null)
 const admitted = computed(() => participant.value?.onboardingState === 'ADMITTED')
 const completed = computed(() => runtime.value?.status === 'COMPLETED')
@@ -114,22 +129,22 @@ const nextProgram = computed(() => snapshot.value?.programs?.find(({ state }) =>
 const viewCopy = computed(() => {
   if (activeTab.value === 'programs') {
     return {
-      kicker: 'PROGRAM INDEX',
+      kicker: '现场编排',
       title: '节目单',
       subtitle: currentProgram.value
-        ? `正在播放：${currentProgram.value.title}`
-        : '现场节目顺序与当前进度。',
+        ? `正在进行：${currentProgram.value.title}`
+        : '查看现场节目顺序与当前进度。',
     }
   }
   if (activeTab.value === 'archive') {
     return {
-      kicker: 'PERSONAL ARCHIVE',
-      title: '我的星际档案',
-      subtitle: '查看动力、星光、星色与时光胶囊状态。',
+      kicker: '个人记录',
+      title: '星际档案',
+      subtitle: `${participantDisplayName.value} · ${personalStarCode.value}`,
     }
   }
   return {
-    kicker: runtime.value?.status === 'COMPLETED' ? 'FINALE' : 'LIVE GALAXY',
+    kicker: runtime.value?.status === 'COMPLETED' ? '活动终章' : '现场信号',
     title: sceneCopy.value.title,
     subtitle: sceneCopy.value.subtitle,
   }
@@ -153,11 +168,12 @@ const ownPublicStar = computed(() => snapshot.value?.publicStars?.find(
   ({ publicStarId }) => publicStarId === participant.value?.ownPublicStarId,
 ) ?? null)
 const journeyOwnStar = computed(() => ({
-  id: participant.value?.ownPublicStarId ?? 'personal-star',
-  label: participant.value?.ownPublicStarId ?? '',
-  formationSlot: ownPublicStar.value?.formationSlot ?? participant.value?.ownPublicStarId ?? 'personal-star',
+  id: personalStarCode.value,
+  label: personalStarCode.value,
+  formationSlot: ownPublicStar.value?.formationSlot ?? personalStarCode.value,
   color: selectedColor.value,
 }))
+const archiveMetricMessage = computed(() => ARCHIVE_METRIC_HELP[archiveMetricHelp.value] ?? '')
 const journeyPhase = computed(() => {
   if (cinematic.value === 'discovery-pending' || cinematic.value === 'discovering') {
     return PERSONAL_JOURNEY_PHASES.DISCOVERY
@@ -403,6 +419,7 @@ function clearSession() {
   colorKelvin.value = STAR_TEMPERATURE_DEFAULT
   activeTab.value = 'scene'
   titleMotionEnabled.value = false
+  archiveMetricHelp.value = ''
   persistentError.value = ''
   persistentNotice.value = ''
   toast.value = ''
@@ -599,14 +616,17 @@ async function activate(method, fields) {
 function activateAssisted() {
   const name = displayName.value.trim()
   if (!name || visibleCharacterCount(name) > 40) {
-    persistentError.value = '请输入 1–40 个字符的虚构姓名。'
+    persistentError.value = '请输入学生姓名（1–40 个字符）。'
     return
   }
-  if (!/^2026\d{8}$/.test(studentNumber.value)) {
-    persistentError.value = '请输入以 2026 开头的 12 位合成学号。'
+  if (!/^\d{8}$/.test(studentNumber.value)) {
+    persistentError.value = '请输入 8 位学号。'
     return
   }
-  void activate('ASSISTED_SYNTHETIC', { displayName: name, studentNumber: studentNumber.value })
+  void activate('ASSISTED_SYNTHETIC', {
+    displayName: name,
+    studentNumber: `2026${studentNumber.value}`,
+  })
 }
 
 async function runCommand(command, fields, successMessage) {
@@ -795,6 +815,7 @@ async function closeGift(restore = true) {
 
 async function openLogout() {
   document.activeElement?.blur?.()
+  archiveMetricHelp.value = ''
   logoutOpen.value = true
   await nextTick()
   logoutCancel.value?.focus()
@@ -847,11 +868,21 @@ function onEscape(event) {
   if (event.key !== 'Escape') return
   if (logoutOpen.value) void closeLogout()
   else if (giftOpen.value) void closeGift()
+  else archiveMetricHelp.value = ''
 }
 
 function selectTab(tab) {
   if (!navigationAvailable.value) return
+  if (tab !== 'archive') archiveMetricHelp.value = ''
   activeTab.value = tab
+}
+
+function toggleArchiveMetricHelp(metric) {
+  archiveMetricHelp.value = archiveMetricHelp.value === metric ? '' : metric
+}
+
+function programStateLabel(state) {
+  return PROGRAM_STATE_LABELS[state] ?? state
 }
 
 watch(() => runtime.value?.currentScene, (next, previous) => {
@@ -986,13 +1017,13 @@ onBeforeUnmount(() => {
           alt=""
         >
       </a>
-      <button
+       <button
         v-if="snapshot"
         ref="logoutTrigger"
         type="button"
-        class="v2-welcome__logout"
-        @click="openLogout"
-      >退出</button>
+         class="v2-welcome__logout"
+         @click="openLogout"
+       >退出登录</button>
     </header>
 
     <main
@@ -1001,14 +1032,14 @@ onBeforeUnmount(() => {
       :aria-hidden="modalOpen ? 'true' : undefined"
     >
       <section v-if="entryState === 'checking'" class="entry-copy" role="status">
-        <p class="kicker">SIGNAL ACQUISITION</p>
+        <p class="kicker">信号检索</p>
         <h2>正在寻找属于你的信号</h2>
       </section>
 
       <section v-else-if="!snapshot" class="entry-copy">
-        <p class="kicker">ASSISTED SYNTHETIC ENTRY</p>
-        <h2>重新连接你的邀请</h2>
-        <p>请再次轻触 NFC 或扫码。排练时也可使用虚构姓名和合成学号核验。</p>
+        <p class="kicker">身份核验</p>
+        <h2>重新进入你的星域</h2>
+        <p>输入学生姓名与 8 位学号，或再次轻触 NFC、扫描邀请函。</p>
       </section>
 
       <section
@@ -1028,9 +1059,20 @@ onBeforeUnmount(() => {
           :role="discoveryActive ? 'status' : undefined"
           :aria-live="discoveryActive ? 'polite' : undefined"
         >
-          <p class="kicker">A QUIET SIGNAL</p>
-          <h2>找到属于你的星</h2>
-          <p>它一直在这里，等待被你点亮。</p>
+          <p class="kicker">星体定位</p>
+          <p class="discovery-person">{{ participantDisplayName }}</p>
+          <SignalTypeTitle
+            text="找到属于你的星"
+            :accessible-label="`找到属于 ${participantDisplayName} 的星`"
+            :replay-key="`discovery-${cinematic}`"
+            :animate="titleMotionEnabled && cinematic === 'discovering'"
+            :reduced="reducedMotion"
+            :delay-ms="Math.round(DISCOVERY_CINEMATIC_DURATION_MS * 0.72)"
+          />
+          <p class="discovery-welcome">
+            <strong>星星编号 {{ personalStarCode }}</strong>
+            <span>欢迎参加智能工程学院迎新晚会</span>
+          </p>
         </div>
 
         <div
@@ -1038,7 +1080,7 @@ onBeforeUnmount(() => {
           :inert="discoveryActive ? true : undefined"
           :aria-hidden="discoveryActive ? 'true' : undefined"
         >
-          <p class="kicker">YOUR STAR · {{ participant.ownPublicStarId }}</p>
+          <p class="kicker">星星编号 · {{ personalStarCode }}</p>
           <SignalTypeTitle
             :text="'为这颗星\n选择一种光'"
             accessible-label="为你的星选择颜色"
@@ -1051,19 +1093,19 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-else-if="cinematic === 'color-confirm'" class="cinematic cinematic--color-confirm" aria-live="polite">
-        <p class="kicker">LIGHT REGISTERED</p>
+        <p class="kicker">色温锁定</p>
         <h2>这束光，已经属于你</h2>
         <p>星色已保存，正在开启你的时光胶囊。</p>
       </section>
 
       <section v-else-if="cinematic === 'orbit-handoff'" class="cinematic cinematic--orbit-handoff" aria-live="polite">
-        <p class="kicker">PERSONAL ORBIT</p>
+        <p class="kicker">轨道接入</p>
         <h2>镜头正在拉远</h2>
         <p>你的星正沿着自己的轨道，汇入流动星系。</p>
       </section>
 
       <section v-else-if="!completed && participant?.onboardingState === 'NEEDS_CAPSULE_DECISION'" class="onboarding-copy onboarding-copy--capsule">
-        <p class="kicker">A NOTE FOR THE FUTURE</p>
+        <p class="kicker">时光胶囊</p>
         <SignalTypeTitle
           :text="'留一句话\n给未来'"
           replay-key="capsule-entry"
@@ -1076,6 +1118,7 @@ onBeforeUnmount(() => {
       <section v-else class="scene-copy" :class="`scene-${runtime?.currentScene?.toLowerCase() ?? 'ready'}`" role="status" aria-live="polite">
         <p class="kicker">{{ viewCopy.kicker }}</p>
         <SignalTypeTitle
+          id="view-title"
           ref="sceneHeading"
           tabindex="-1"
           :text="viewCopy.title"
@@ -1084,7 +1127,6 @@ onBeforeUnmount(() => {
           :reduced="reducedMotion"
         />
         <p>{{ viewCopy.subtitle }}</p>
-        <small v-if="activeTab !== 'scene'">现场仍在：{{ sceneCopy.title }}</small>
       </section>
     </main>
 
@@ -1106,13 +1148,13 @@ onBeforeUnmount(() => {
         <span aria-hidden="true"></span><p>正在核验邀请并恢复权威状态…</p>
       </div>
 
-      <form v-else-if="!snapshot" class="dock-body entry-form" @submit.prevent="activateAssisted">
-        <label>虚构姓名<input v-model="displayName" autocomplete="off" maxlength="40" placeholder="仅限合成排练身份" /></label>
-        <label>合成学号<input v-model="studentNumber" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="2026XXXXXXXX" /></label>
+      <form v-else-if="!snapshot" class="dock-body entry-form" novalidate @submit.prevent="activateAssisted">
+        <label>学生姓名<input v-model="displayName" autocomplete="off" maxlength="40" placeholder="请输入学生姓名" aria-describedby="v2-assisted-disclosure" /></label>
+        <label>8 位学号<input v-model="studentNumber" inputmode="numeric" autocomplete="off" maxlength="8" pattern="[0-9]{8}" placeholder="00000001" aria-describedby="v2-assisted-disclosure" /></label>
         <button class="dock-primary" type="submit" :disabled="busy === 'activation'">
-          {{ busy === 'activation' ? '正在核验…' : '使用合成身份核验' }}
+          {{ busy === 'activation' ? '正在核验…' : '核验并重新进入' }}
         </button>
-        <p class="dock-disclosure">真实活动请重新轻触 NFC 或扫描邀请函上的同一随机令牌。</p>
+        <p id="v2-assisted-disclosure" class="dock-disclosure">当前排练仅识别分配的测试姓名与 8 位编号，不会核验真实学籍信息；也可重新轻触 NFC 或扫码。</p>
       </form>
 
       <div
@@ -1168,7 +1210,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else-if="cinematic === 'orbit-handoff'" class="dock-body dock-handoff-status" role="status">
-        <small>ORBIT ENTRY</small><strong>寄语已保存</strong><p>业务状态已完成，镜头正在回到你的星系。</p>
+        <small>轨道接入</small><strong>寄语已保存</strong><p>业务状态已完成，镜头正在回到你的星系。</p>
       </div>
 
       <form v-else-if="!completed && participant?.onboardingState === 'NEEDS_CAPSULE_DECISION'" class="dock-body capsule-form" @submit.prevent="submitCapsule">
@@ -1213,7 +1255,7 @@ onBeforeUnmount(() => {
             </div>
 
             <form v-else-if="runtime?.currentScene === 'PROGRAM_SUPPORT'" class="program-composer" @submit.prevent="postBarrage">
-              <div class="now-playing"><div><small>NOW PLAYING</small><strong>{{ currentProgram?.title ?? '等待主控选择节目' }}</strong></div><span>热度 {{ currentProgram?.heat ?? 0 }}</span></div>
+              <div class="now-playing"><div><small>当前节目</small><strong>{{ currentProgram?.title ?? '等待主控选择节目' }}</strong></div><span>热度 {{ currentProgram?.heat ?? 0 }}</span></div>
               <label class="sr-only" for="v2-barrage">匿名弹幕</label>
               <div class="composer-row">
                 <input
@@ -1250,23 +1292,36 @@ onBeforeUnmount(() => {
             </div>
           </template>
 
-          <section v-else-if="activeTab === 'programs'" class="program-list" aria-labelledby="program-list-title">
-            <header><div><small>PROGRAM</small><h3 id="program-list-title">节目单</h3></div><span v-if="nextProgram">下一节目：{{ nextProgram.title }}</span></header>
+          <section v-else-if="activeTab === 'programs'" class="program-list" aria-labelledby="view-title">
+            <header><div><small>节目顺序</small><strong class="panel-context">现场编排</strong></div><span v-if="nextProgram">下一节目：{{ nextProgram.title }}</span></header>
             <ol>
               <li v-for="program in snapshot.programs" :key="program.id" :class="`is-${program.state.toLowerCase()}`">
-                <span>{{ String(program.order).padStart(2, '0') }}</span><div><small>{{ program.state }}</small><strong>{{ program.title }}</strong></div><em v-if="program.state === 'CURRENT'">进行中</em>
+                <span>{{ String(program.order).padStart(2, '0') }}</span><div><small>{{ programStateLabel(program.state) }}</small><strong>{{ program.title }}</strong></div><em v-if="program.state === 'CURRENT'">进行中</em>
               </li>
             </ol>
           </section>
 
-          <section v-else class="archive" aria-labelledby="archive-title">
-            <header><div><small>PERSONAL ARCHIVE</small><h3 id="archive-title">我的星际档案</h3></div><strong>{{ participant.ownPublicStarId }}</strong></header>
+          <section v-else class="archive" aria-labelledby="view-title">
+            <header>
+              <div><small>档案归属</small><strong class="archive-owner">{{ participantDisplayName }}</strong></div>
+              <strong>{{ personalStarCode }}</strong>
+            </header>
             <dl>
-              <div><dt>动力</dt><dd>{{ participant.powerBalance }}</dd></div>
-              <div><dt>星光</dt><dd>{{ participant.starlight }}</dd></div>
+              <div><dt>星星编号</dt><dd>{{ personalStarCode }}</dd></div>
               <div><dt>星色</dt><dd>{{ participant.colorTemperatureKelvin?.toLocaleString('zh-CN') }} K</dd></div>
-              <div><dt>入场</dt><dd>{{ admitted ? '已完成' : '未完成' }}</dd></div>
+              <div class="archive-metric archive-metric--interactive" :class="{ 'is-open': archiveMetricHelp === 'power' }">
+                <dt><button type="button" aria-controls="archive-metric-help" :aria-expanded="archiveMetricHelp === 'power'" :aria-describedby="archiveMetricHelp === 'power' ? 'archive-metric-help' : undefined" @click="toggleArchiveMetricHelp('power')">动力<i aria-hidden="true">?</i></button></dt>
+                <dd>{{ participant.powerBalance }}</dd>
+              </div>
+              <div class="archive-metric archive-metric--interactive" :class="{ 'is-open': archiveMetricHelp === 'starlight' }">
+                <dt><button type="button" aria-controls="archive-metric-help" :aria-expanded="archiveMetricHelp === 'starlight'" :aria-describedby="archiveMetricHelp === 'starlight' ? 'archive-metric-help' : undefined" @click="toggleArchiveMetricHelp('starlight')">星光<i aria-hidden="true">?</i></button></dt>
+                <dd>{{ participant.starlight }}</dd>
+              </div>
             </dl>
+            <div id="archive-metric-help" class="archive-metric-help" :class="{ 'is-visible': archiveMetricMessage }" :role="archiveMetricMessage ? 'tooltip' : undefined" :aria-hidden="archiveMetricMessage ? undefined : 'true'" aria-live="polite">
+              <p v-if="archiveMetricMessage">{{ archiveMetricMessage }}</p>
+              <p v-else aria-hidden="true">点击动力或星光，查看它们的含义。</p>
+            </div>
             <div class="archive-capsule">
               <div><span>时光胶囊</span><strong>{{ participant.capsuleDecision === 'SUBMITTED' ? '已提交' : completed ? '未提交' : '待补写' }}</strong></div>
               <p>{{ participant.capsuleText ?? (participant.capsuleDecision === 'SKIPPED' ? (completed ? '本场已结束，胶囊未补写。' : '你选择了暂时跳过；本场结束前仍可补写。') : '本场未完成胶囊决定。') }}</p>
@@ -1296,9 +1351,9 @@ onBeforeUnmount(() => {
 
     <div v-if="giftOpen" class="modal-backdrop">
       <section id="v2-gift-sheet" class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="gift-title" :aria-describedby="giftAvailabilityMessage ? 'gift-description gift-availability' : 'gift-description'" @keydown.tab="trapDialog">
-        <header><div><small>LIVE GIFT</small><h2 id="gift-title">为节目送出礼物</h2></div><button ref="giftClose" type="button" aria-label="关闭礼物面板" @click="closeGift()">关闭</button></header>
+        <header><div><small>节目应援</small><h2 id="gift-title">为节目送出礼物</h2></div><button ref="giftClose" type="button" aria-label="关闭礼物面板" @click="closeGift()">关闭</button></header>
         <div class="gift-balance" aria-label="当前动力余额">
-          <span><small>POWER BALANCE</small><b>我的动力</b></span>
+          <span><small>可用额度</small><b>我的动力</b></span>
           <output>{{ participant.powerBalance }}<small>动力</small></output>
         </div>
         <p id="gift-description">{{ currentProgram ? `当前节目：${currentProgram.title}。` : '' }}礼物只代表现场互动，不涉及真实支付。</p>
@@ -1324,9 +1379,9 @@ onBeforeUnmount(() => {
 
     <div v-if="logoutOpen" class="modal-backdrop modal-backdrop--dialog">
       <section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="logout-title" aria-describedby="logout-description" @keydown.tab="trapDialog">
-        <p class="kicker">LEAVE SESSION</p><h2 id="logout-title">确认退出？</h2>
-        <p id="logout-description">退出后需重新轻触 NFC 或扫码进入。{{ hasCapsuleDraft || barrageDraft ? '未提交草稿将丢失。' : '' }}</p>
-        <div class="dock-actions"><button ref="logoutCancel" class="dock-secondary" type="button" @click="closeLogout()">取消</button><button class="dock-danger" type="button" :disabled="busy === 'logout'" @click="confirmLogout">确认退出</button></div>
+        <h2 id="logout-title">退出当前身份？</h2>
+        <p id="logout-description">退出后可输入学生姓名与 8 位学号重新核验，也可以再次轻触 NFC 或扫码。{{ hasCapsuleDraft || barrageDraft ? '未提交草稿将丢失。' : '' }}</p>
+        <div class="dock-actions"><button ref="logoutCancel" class="dock-secondary" type="button" @click="closeLogout()">取消</button><button class="dock-danger" type="button" :disabled="busy === 'logout'" @click="confirmLogout">退出登录</button></div>
       </section>
     </div>
   </section>
@@ -1355,17 +1410,18 @@ onBeforeUnmount(() => {
   --ink: #f6f8ff;
   --muted: #aab6d0;
   --accent: #8bb8ff;
-  --font-stack-cjk: "vivo Sans", "HarmonyOS Sans SC", "OPPO Sans", "MiSans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --font-stack-cjk: "HarmonyOS Sans SC", "OPPO Sans", "MiSans", "vivo Sans", "Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei UI", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-stack-display: "Cascadia Mono", "SFMono-Regular", Consolas, "HarmonyOS Sans SC", "OPPO Sans", "MiSans", "vivo Sans", "Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei UI", ui-monospace, monospace;
   --font-stack-signal: "Bahnschrift", "Aptos Display", "Segoe UI Variable Display", Inter, system-ui, sans-serif;
   --font-stack-data: "Bahnschrift", "Cascadia Mono", "SFMono-Regular", Consolas, ui-monospace, monospace;
   --font-ui: var(--font-stack-cjk);
-  --font-display: var(--font-stack-cjk);
+  --font-display: var(--font-stack-display);
   --font-signal: var(--font-stack-signal);
   --font-data: var(--font-stack-data);
-  --shape-panel: 22px 6px 22px 6px;
-  --shape-control: 10px 3px 10px 3px;
-  --shape-item: 12px 4px 12px 4px;
-  --shape-sheet: 26px 8px 26px 8px;
+  --shape-panel: 8px 2px 8px 2px;
+  --shape-control: 6px 2px 6px 2px;
+  --shape-item: 7px 2px 7px 2px;
+  --shape-sheet: 12px 3px 12px 3px;
   position: relative;
   isolation: isolate;
   width: 100%;
@@ -1460,7 +1516,37 @@ onBeforeUnmount(() => {
   outline-offset: 4px;
 }
 
-.v2-welcome__logout,
+.v2-welcome__logout {
+  position: relative;
+  min-width: 72px;
+  min-height: 44px;
+  padding: 0 10px 0 20px;
+  border: 0;
+  border-radius: 2px;
+  color: rgba(220, 234, 255, 0.84);
+  background: linear-gradient(90deg, transparent, rgba(84, 139, 217, 0.08));
+  font: 500 0.72rem var(--font-display);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.v2-welcome__logout::before,
+.v2-welcome__logout::after {
+  position: absolute;
+  left: 7px;
+  width: 8px;
+  height: 8px;
+  border-left: 1px solid rgba(126, 190, 255, 0.7);
+  content: "";
+}
+.v2-welcome__logout::before { top: 10px; border-top: 1px solid rgba(126, 190, 255, 0.7); }
+.v2-welcome__logout::after { bottom: 10px; border-bottom: 1px solid rgba(126, 190, 255, 0.7); }
+.v2-welcome__logout:hover,
+.v2-welcome__logout:focus-visible {
+  color: #f3f8ff;
+  background: linear-gradient(90deg, transparent, rgba(96, 160, 242, 0.16));
+}
+.v2-welcome__logout:focus-visible { outline: 2px solid rgba(153, 205, 255, 0.86); outline-offset: 2px; }
+
 .modal-sheet header button {
   min-width: 52px;
   min-height: 44px;
@@ -1487,9 +1573,10 @@ onBeforeUnmount(() => {
   margin: 8px 0 9px;
   font-family: var(--font-display);
   font-size: clamp(2rem, 8.4vw, 2.35rem);
-  font-weight: 600;
-  line-height: 1.08;
-  letter-spacing: -0.025em;
+  font-weight: 500;
+  line-height: 1.13;
+  letter-spacing: 0.015em;
+  font-variant-ligatures: none;
   text-shadow: 0 2px 22px rgba(0, 0, 0, 0.55);
 }
 .v2-welcome__main p:not(.kicker) {
@@ -1518,9 +1605,9 @@ onBeforeUnmount(() => {
 .v2-welcome:not(.is-onboarding):not(.is-orbit-handoff) .scene-copy h2 {
   margin: 7px 0 6px;
   font-size: clamp(1.38rem, 5.8vw, 1.62rem);
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.16;
-  letter-spacing: -0.018em;
+  letter-spacing: 0.02em;
 }
 .v2-welcome:not(.is-onboarding):not(.is-orbit-handoff) .scene-copy p:not(.kicker) {
   max-width: 244px;
@@ -1544,7 +1631,7 @@ onBeforeUnmount(() => {
 .onboarding-copy--capsule h2 {
   font-size: clamp(2rem, 8.4vw, 2.35rem);
   line-height: 1.1;
-  font-weight: 600;
+  font-weight: 500;
 }
 .cinematic--color-confirm,
 .cinematic--orbit-handoff {
@@ -1555,11 +1642,10 @@ onBeforeUnmount(() => {
 .kicker {
   margin: 0;
   color: #8bb8ff;
-  font-family: var(--font-signal);
+  font-family: var(--font-data);
   font-size: 0.68rem;
   font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  letter-spacing: 0.14em;
 }
 
 .color-onboarding {
@@ -1732,9 +1818,9 @@ onBeforeUnmount(() => {
 .selection-copy h2 {
   margin: 9px 0 10px;
   font-size: clamp(2rem, 8.4vw, 2.35rem);
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.08;
-  letter-spacing: -0.035em;
+  letter-spacing: 0.012em;
 }
 .selection-copy p:not(.kicker) {
   max-width: 268px;
@@ -1757,9 +1843,28 @@ onBeforeUnmount(() => {
 }
 .discovery-copy h2 {
   font-size: 1.62rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 500;
+  letter-spacing: 0.05em;
 }
+.discovery-copy .signal-type-title { margin: 8px auto 10px; }
+.discovery-person {
+  margin: 8px 0 0 !important;
+  color: rgba(205, 224, 250, 0.8) !important;
+  font-family: var(--font-data);
+  font-size: 0.72rem !important;
+  letter-spacing: 0.12em;
+}
+.discovery-welcome {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+}
+.discovery-welcome strong {
+  color: #d9ebff;
+  font: 600 0.74rem var(--font-data);
+  letter-spacing: 0.06em;
+}
+.discovery-welcome span { color: rgba(195, 210, 235, 0.76); font-size: 0.74rem; }
 .discovery-copy p:not(.kicker),
 .selection-copy p:not(.kicker) { margin: 0; }
 
@@ -1841,16 +1946,18 @@ onBeforeUnmount(() => {
   max-height: min(52%, 430px);
   overflow: hidden;
   border: 1px solid var(--dock-border);
+  border-top-color: rgba(215, 237, 255, 0.22);
+  border-left-color: rgba(143, 194, 255, 0.19);
   border-radius: var(--shape-panel);
-  background: var(--dock-bg);
-  box-shadow: 0 22px 64px rgba(0, 0, 0, 0.24), inset 0 1px rgba(255, 255, 255, 0.12), inset 0 -1px rgba(105, 165, 225, 0.05);
+  background: linear-gradient(118deg, rgba(25, 56, 92, 0.16), rgba(2, 8, 21, 0.18) 56%, rgba(10, 31, 57, 0.13));
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.2), inset 0 1px rgba(255, 255, 255, 0.1), inset 1px 0 rgba(103, 173, 232, 0.04);
 }
 
 @supports ((-webkit-backdrop-filter: blur(18px)) or (backdrop-filter: blur(18px))) {
   .operation-dock {
-    background: linear-gradient(145deg, rgba(41, 76, 116, 0.065), rgba(2, 8, 21, 0.105));
-    -webkit-backdrop-filter: blur(6px) saturate(116%);
-    backdrop-filter: blur(6px) saturate(116%);
+    background: linear-gradient(118deg, rgba(35, 71, 111, 0.095), rgba(2, 8, 21, 0.13) 56%, rgba(9, 32, 61, 0.08));
+    -webkit-backdrop-filter: blur(11px) saturate(124%);
+    backdrop-filter: blur(11px) saturate(124%);
   }
 }
 
@@ -2182,10 +2289,21 @@ button:active:not(:disabled) { opacity: 0.82; }
   background: #ffbd72;
 }
 
-.program-list header h3,
-.archive header h3,
 .modal-sheet h2,
 .confirm-dialog h2 { margin: 2px 0 0; font-size: 1.08rem; }
+.panel-context,
+.archive-owner {
+  display: block;
+  margin-top: 4px;
+  color: #e7efff;
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.archive-owner {
+  max-width: 190px;
+  overflow-wrap: anywhere;
+}
 .program-list header > span { color: #9aa8c2; font-size: 0.7rem; }
 .program-list ol { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
 .program-list li {
@@ -2214,8 +2332,24 @@ button:active:not(:disabled) { opacity: 0.82; }
   font-size: 0.76rem;
   font-variant-numeric: tabular-nums;
 }
-.archive dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
-.archive dl div { padding: 10px; border-radius: var(--shape-item); background: rgba(255, 255, 255, 0.04); }
+.archive dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin: 14px 0 8px;
+  border-top: 1px solid rgba(157, 201, 255, 0.1);
+  border-bottom: 1px solid rgba(157, 201, 255, 0.08);
+}
+.archive dl > div {
+  position: relative;
+  min-width: 0;
+  padding: 12px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.archive dl > div:nth-child(odd) { border-right: 1px solid rgba(157, 201, 255, 0.08); }
+.archive dl > div:nth-child(n + 3) { border-top: 1px solid rgba(157, 201, 255, 0.08); }
 .archive dt { color: #7f8ca6; font-size: 0.68rem; }
 .archive dd {
   margin: 3px 0 0;
@@ -2223,7 +2357,68 @@ button:active:not(:disabled) { opacity: 0.82; }
   font-size: 0.98rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
+.archive-metric--interactive {
+  transition: background-color 180ms ease;
+}
+.archive-metric--interactive.is-open {
+  background: linear-gradient(90deg, rgba(73, 130, 202, 0.11), rgba(73, 130, 202, 0.025));
+}
+.archive-metric dt button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -10px -4px -5px;
+  padding: 10px 4px 5px;
+  border: 0;
+  color: #91a1bd;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.archive-metric dt button i {
+  display: grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border: 1px solid rgba(139, 190, 255, 0.38);
+  border-radius: 2px;
+  color: #a8cdff;
+  font: 600 0.58rem var(--font-data);
+  font-style: normal;
+}
+.archive-metric dt button:focus-visible {
+  outline: 2px solid rgba(142, 199, 255, 0.86);
+  outline-offset: 2px;
+}
+.archive-metric-help {
+  display: grid;
+  min-height: 62px;
+  align-items: center;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-left: 1px solid transparent;
+  border-radius: 2px 7px 2px 7px;
+  color: rgba(161, 178, 207, 0);
+  background: transparent;
+  opacity: 0;
+  transform: translate3d(0, 6px, 0);
+  visibility: hidden;
+  transition: opacity 180ms ease, transform 180ms ease, visibility 0s linear 180ms;
+}
+.archive-metric-help.is-visible {
+  border-left-color: rgba(117, 196, 255, 0.7);
+  color: #c9d9f1;
+  background: linear-gradient(90deg, rgba(65, 131, 207, 0.13), rgba(2, 8, 20, 0.08));
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  visibility: visible;
+  transition-delay: 0s;
+}
+.archive-metric-help p { margin: 0; font-size: 0.72rem; line-height: 1.5; }
 .archive-capsule { padding: 12px; border-radius: var(--shape-item); background: rgba(112, 150, 221, 0.08); }
 .archive-capsule span { color: #93a2bf; font-size: 0.72rem; }
 .archive-capsule strong { font-size: 0.75rem; }
@@ -2506,6 +2701,8 @@ textarea:focus-visible {
   .v2-welcome.is-capsule-onboarding .onboarding-copy--capsule { top: 64px; }
   .v2-welcome__main p:not(.kicker),
   .scene-copy small { display: none; }
+  .discovery-copy .discovery-person { display: block; }
+  .discovery-copy .discovery-welcome { display: grid; }
   .v2-welcome__main h2 { font-size: 1.35rem; }
   .selection-copy h2 { font-size: 1.55rem; }
   .focus-star { width: 54px; }

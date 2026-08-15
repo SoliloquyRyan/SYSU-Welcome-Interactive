@@ -153,6 +153,55 @@ export async function buildApp(
   const v2Active = startupProtocol?.activeProtocolVersion === '2' && startupProtocol.activationState === 'V2_ACTIVE'
   const serviceInstanceId = randomUUID()
   let serviceGeneration = 0
+
+  // Structured latency metrics for on-site troubleshooting. Opt-in via
+  // DEMO_METRICS=1; disabled by default so tests and CI see zero change.
+  const metricsEnabled = process.env.DEMO_METRICS === '1'
+  const routeLatencySamples = new Map<string, number[]>()
+  const METRICS_SAMPLE_CAP = 500
+  if (metricsEnabled) {
+    app.addHook('onResponse', async (request, reply) => {
+      const route = request.routeOptions?.url ?? request.url.split('?')[0] ?? 'unknown'
+      const duration = reply.elapsedTime
+      if (!Number.isFinite(duration)) return
+      const samples = routeLatencySamples.get(route)
+      if (!samples) {
+        routeLatencySamples.set(route, [duration])
+        return
+      }
+      if (samples.length >= METRICS_SAMPLE_CAP) samples.shift()
+      samples.push(duration)
+    })
+    const metricsInterval = setInterval(() => {
+      if (routeLatencySamples.size === 0) return
+      const percentile = (sorted: number[], ratio: number): number => {
+        if (sorted.length === 0) return 0
+        const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1)
+        return sorted[Math.max(0, index)] ?? 0
+      }
+      const routes = [...routeLatencySamples.entries()]
+        .map(([route, samples]) => {
+          const sorted = [...samples].sort((a, b) => a - b)
+          return {
+            route,
+            count: sorted.length,
+            p50: Math.round(percentile(sorted, 0.5) * 10) / 10,
+            p95: Math.round(percentile(sorted, 0.95) * 10) / 10,
+            max: Math.round(sorted.at(-1)! * 10) / 10,
+          }
+        })
+        .sort((left, right) => right.count - left.count)
+        .slice(0, 12)
+      routeLatencySamples.clear()
+      app.log.info(
+        { metrics: true, windowMs: 60_000, routes },
+        'request latency metrics (ms, last 60s window)',
+      )
+    }, 60_000)
+    metricsInterval.unref()
+    app.addHook('onClose', async () => clearInterval(metricsInterval))
+  }
+
   try {
     if (!v2Active) {
       serviceGeneration = acquireV1ServiceLease(database, serviceInstanceId, now())

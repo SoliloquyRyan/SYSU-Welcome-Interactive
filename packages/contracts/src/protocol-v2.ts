@@ -505,6 +505,8 @@ export const V2ParticipantProjectionSchema = z
   .object({
     participantRevision: V2RevisionSchema,
     onboardingState: V2OnboardingStateSchema,
+    displayName: z.string().trim().min(1).max(40),
+    personalStarCode: V2PublicStarIdSchema,
     activatedAt: V2IsoDateTimeSchema,
     colorTemperatureKelvin: V2ColorTemperatureKelvinSchema.nullable(),
     displayColor: V2DisplayColorSchema.nullable(),
@@ -532,6 +534,16 @@ export const V2ParticipantProjectionSchema = z
   })
   .strict()
   .superRefine((value, context) => {
+    if (
+      value.ownPublicStarId !== null &&
+      value.ownPublicStarId !== value.personalStarCode
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ownPublicStarId'],
+        message: 'The public star must use the participant personalStarCode',
+      })
+    }
     const lockedFacts = [
       value.colorTemperatureKelvin,
       value.displayColor,
