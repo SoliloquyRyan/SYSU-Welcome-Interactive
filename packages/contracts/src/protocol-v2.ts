@@ -127,6 +127,7 @@ export const V2ActiveCapsuleProjectionListSchema = z
 
 export const V2PresentationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('NONE') }).strict(),
+  z.object({ type: z.literal('RAFFLE') }).strict(),
   z
     .object({
       type: z.literal('CAPSULE_INSERT'),
@@ -140,6 +141,34 @@ export const V2PresentationSchema = z.discriminatedUnion('type', [
     })
     .strict(),
 ])
+
+export const V2RaffleWinnerPublicSchema = z
+  .object({
+    raffleDrawId: V2EntityIdSchema,
+    drawSequence: z.number().int().positive(),
+    publicStarId: V2PublicStarIdSchema,
+    displayColor: V2DisplayColorSchema.nullable(),
+    drawnAt: V2IsoDateTimeSchema,
+  })
+  .strict()
+
+export const V2RaffleWinnerAdminSchema = V2RaffleWinnerPublicSchema.extend({
+  displayName: z.string().trim().min(1).max(40),
+}).strict()
+
+export const V2RafflePublicStateSchema = z
+  .object({
+    displayActive: z.boolean(),
+    raffleRevision: V2RevisionSchema,
+    eligibleCount: z.number().int().nonnegative().max(300),
+    remainingCount: z.number().int().nonnegative().max(300),
+    winners: z.array(V2RaffleWinnerPublicSchema).max(300),
+  })
+  .strict()
+
+export const V2RaffleAdminStateSchema = V2RafflePublicStateSchema.omit({ winners: true })
+  .extend({ winners: z.array(V2RaffleWinnerAdminSchema).max(300) })
+  .strict()
 
 export const V2PresentationStateSchema = z
   .object({
@@ -640,20 +669,6 @@ function expectedAllowedActions(input: {
   if (runtime.status === 'PAUSED' || runtime.status === 'COMPLETED') return []
   const actions: V2AllowedAction[] = []
   if (participant.onboardingState === 'NEEDS_COLOR') actions.push('LOCK_COLOR')
-  if (
-    participant.onboardingState === 'NEEDS_CAPSULE_DECISION' ||
-    (participant.onboardingState === 'ADMITTED' &&
-      (participant.capsuleDecision === 'SKIPPED' ||
-        participant.capsuleDecision === 'SUBMITTED'))
-  ) {
-    actions.push('UPSERT_CAPSULE')
-  }
-  if (
-    participant.onboardingState === 'NEEDS_CAPSULE_DECISION' &&
-    participant.capsuleDecision === 'NONE'
-  ) {
-    actions.push('SKIP_CAPSULE')
-  }
   if (participant.onboardingState !== 'ADMITTED' || runtime.status !== 'RUNNING') {
     return actions
   }
@@ -744,6 +759,18 @@ function snapshotStateIssues(value: {
     issues.push({
       path: ['presentation'],
       message: 'READY, PAUSED and COMPLETED snapshots require presentation NONE',
+    })
+  }
+  if (
+    value.presentation.type === 'RAFFLE' &&
+    !(
+      value.runtime.status === 'RUNNING' &&
+      value.runtime.currentScene === 'PROGRAM_SUPPORT'
+    )
+  ) {
+    issues.push({
+      path: ['presentation'],
+      message: 'RAFFLE requires RUNNING PROGRAM_SUPPORT',
     })
   }
   if (
@@ -843,6 +870,7 @@ export const V2ScreenSnapshotSchema = z
     currentProgram: V2ProgramProjectionSchema.nullable(),
     interaction: V2ScreenInteractionStateSchema,
     publishedBarrages: z.array(V2PublicBarrageSchema).max(8),
+    raffle: V2RafflePublicStateSchema,
     finalRecap: V2CapsuleProjectionListSchema,
   })
   .strict()
@@ -959,6 +987,7 @@ export const V2AdminSnapshotSchema = z
     readinessWarnings: z.array(V2ReadinessWarningSchema).max(3),
     interaction: V2ScreenInteractionStateSchema,
     publishedBarrages: z.array(V2AdminBarrageSchema).max(8),
+    raffle: V2RaffleAdminStateSchema,
     capsuleCandidates: z.array(V2AdminCapsuleCandidateSchema).max(300),
     lastControlReceipt: z
       .object({
@@ -1099,6 +1128,10 @@ export const V2_ADMIN_COMMANDS = [
   'RESUME',
   'COMPLETE',
   'PREVIEW_FINALE',
+  'OPEN_RAFFLE',
+  'DRAW_RAFFLE',
+  'CLOSE_RAFFLE',
+  'CLEAR_RAFFLE',
   'SELECT_CAPSULE',
   'SHOW_CAPSULE_INSERT',
   'REMOVE_CAPSULE',
@@ -1174,6 +1207,34 @@ export const V2AdminCommandSchema = z.discriminatedUnion('command', [
     .object({
       ...presentationCommandBase,
       command: z.literal('PREVIEW_FINALE'),
+      confirmed: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      ...presentationCommandBase,
+      command: z.literal('OPEN_RAFFLE'),
+      confirmed: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      ...presentationCommandBase,
+      command: z.literal('DRAW_RAFFLE'),
+      confirmed: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      ...presentationCommandBase,
+      command: z.literal('CLOSE_RAFFLE'),
+      confirmed: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      ...presentationCommandBase,
+      command: z.literal('CLEAR_RAFFLE'),
       confirmed: z.literal(true),
     })
     .strict(),

@@ -61,7 +61,7 @@ const PROGRAM_STATE_LABELS = Object.freeze({
 })
 const ARCHIVE_METRIC_HELP = Object.freeze({
   power: '动力是可用于节目礼物的现场额度；送礼会扣减，初始额度由活动统一发放。',
-  starlight: '星光记录你完成入场、寄语与现场互动的成长进度；它只累计，不用于支付。',
+  starlight: '星光记录你完成入场与现场互动的成长进度；它只累计，不用于支付。',
 })
 
 const root = ref(null)
@@ -73,12 +73,6 @@ const cinematic = ref('')
 const displayName = ref('')
 const studentNumber = ref('')
 const colorKelvin = ref(STAR_TEMPERATURE_DEFAULT)
-const capsuleDraft = ref('')
-const capsuleConsent = ref(false)
-const capsuleBaseline = ref('')
-const capsuleConsentBaseline = ref(false)
-const capsuleConflict = ref(null)
-const capsuleEditing = ref(false)
 const barrageDraft = ref('')
 const barrageConsent = ref(false)
 const dockTextInputFocused = ref(false)
@@ -223,17 +217,9 @@ const giftAvailabilityMessage = computed(() => {
   return ''
 })
 const dockExpanded = computed(() =>
-  participant.value?.onboardingState === 'NEEDS_CAPSULE_DECISION' ||
-  activeTab.value !== 'scene' ||
-  capsuleEditing.value,
+  activeTab.value !== 'scene',
 )
-const capsuleLength = computed(() => visibleCharacterCount(capsuleDraft.value))
 const barrageLength = computed(() => visibleCharacterCount(barrageDraft.value))
-const capsuleDirty = computed(() =>
-  capsuleDraft.value !== capsuleBaseline.value ||
-  capsuleConsent.value !== capsuleConsentBaseline.value,
-)
-const hasCapsuleDraft = computed(() => capsuleDirty.value)
 
 function syncVisualViewport() {
   const height = window.visualViewport?.height ?? window.innerHeight
@@ -282,49 +268,6 @@ function sessionIsCurrent(session, { allowEmpty = false } = {}) {
     && session.participantStreamId === participantStreamId
 }
 
-function setCapsuleBaseline({ text = '', consent = false } = {}) {
-  capsuleBaseline.value = text
-  capsuleConsentBaseline.value = consent
-  capsuleDraft.value = text
-  capsuleConsent.value = consent
-  capsuleConflict.value = null
-}
-
-function reconcileCapsule(participantSnapshot) {
-  const remote = {
-    text: participantSnapshot.capsuleText ?? '',
-    consent: Boolean(participantSnapshot.candidateScopeAcceptedAt),
-  }
-  if (!capsuleDirty.value) {
-    setCapsuleBaseline(remote)
-    return
-  }
-  if (
-    remote.text !== capsuleBaseline.value ||
-    remote.consent !== capsuleConsentBaseline.value
-  ) {
-    capsuleConflict.value = remote
-  } else {
-    capsuleConflict.value = null
-  }
-}
-
-function useRemoteCapsule() {
-  if (!capsuleConflict.value) return
-  setCapsuleBaseline(capsuleConflict.value)
-  persistentError.value = ''
-  persistentNotice.value = '已载入另一设备保存的最新胶囊。'
-}
-
-function keepLocalCapsule() {
-  if (!capsuleConflict.value) return
-  capsuleBaseline.value = capsuleConflict.value.text
-  capsuleConsentBaseline.value = capsuleConflict.value.consent
-  capsuleConflict.value = null
-  persistentError.value = ''
-  persistentNotice.value = '已保留本页草稿；再次提交会替换最新保存内容。'
-}
-
 function abortSnapshotRequests() {
   sessionGeneration += 1
   for (const controller of snapshotControllers) controller.abort()
@@ -333,10 +276,8 @@ function abortSnapshotRequests() {
 }
 
 function clearSensitiveDrafts() {
-  setCapsuleBaseline()
   barrageDraft.value = ''
   barrageConsent.value = false
-  capsuleEditing.value = false
 }
 
 function cancelDiscoveryVisibilityWait() {
@@ -437,7 +378,6 @@ function clearSession() {
 function putSnapshot(next) {
   const previous = snapshot.value
   snapshot.value = next
-  reconcileCapsule(next.participant)
   if (next.participant.colorTemperatureKelvin !== null) {
     colorKelvin.value = next.participant.colorTemperatureKelvin
   } else if (!previous) {
@@ -709,7 +649,9 @@ async function lockColor() {
     cinematic.value = ''
   }
   if (!sessionIsCurrent(colorSession)) return
-  setToast('星色已锁定；写下寄语后，你会随镜头进入星系。')
+  await playOrbitHandoff(previousState, next, colorSession)
+  if (!sessionIsCurrent(colorSession)) return
+  setToast('星色已锁定；你的星已经汇入智工星河。')
 }
 
 async function playOrbitHandoff(previousState, next, commandSession) {
@@ -719,50 +661,6 @@ async function playOrbitHandoff(previousState, next, commandSession) {
   await waitForJourneyPhase(PERSONAL_JOURNEY_PHASES.HANDOFF, ORBIT_HANDOFF_CINEMATIC_DURATION_MS)
   if (!sessionIsCurrent(commandSession)) return
   cinematic.value = ''
-}
-
-async function submitCapsule() {
-  if (capsuleConflict.value) {
-    persistentError.value = '请先选择载入最新内容，或明确保留本页草稿。'
-    return
-  }
-  if (!capsuleDraft.value.trim() || capsuleLength.value > 80) {
-    persistentError.value = '请填写 1–80 个可见字符。'
-    return
-  }
-  if (!capsuleConsent.value) {
-    persistentError.value = '请确认文字可进入人工审核候选池。'
-    return
-  }
-  const capsuleSession = captureSession()
-  const previousState = participant.value?.onboardingState
-  const wasSubmitted = participant.value?.capsuleDecision === 'SUBMITTED'
-  const next = await runCommand('UPSERT_CAPSULE', {
-    text: capsuleDraft.value.trim(),
-    candidateScopeAccepted: true,
-  }, wasSubmitted ? '时光胶囊已更新。' : '')
-  if (next) {
-    setCapsuleBaseline({
-      text: next.participant.capsuleText ?? '',
-      consent: Boolean(next.participant.candidateScopeAcceptedAt),
-    })
-    capsuleEditing.value = false
-    await playOrbitHandoff(previousState, next, capsuleSession)
-    if (sessionIsCurrent(capsuleSession) && !wasSubmitted) {
-      setToast('时光胶囊已提交，你的星正在星系中继续前行。')
-    }
-  }
-}
-
-async function skipCapsule() {
-  const capsuleSession = captureSession()
-  const previousState = participant.value?.onboardingState
-  const next = await runCommand('SKIP_CAPSULE', {}, '')
-  if (!next || !sessionIsCurrent(capsuleSession)) return
-  await playOrbitHandoff(previousState, next, capsuleSession)
-  if (sessionIsCurrent(capsuleSession)) {
-    setToast('已暂时跳过；你的星已进入星系，本场结束前仍可在档案补写。')
-  }
 }
 
 async function startStar() {
@@ -984,7 +882,6 @@ onBeforeUnmount(() => {
       'is-discovery-pending': cinematic === 'discovery-pending',
       'is-discovering': cinematic === 'discovering',
       'is-color-confirming': cinematic === 'color-confirm',
-      'is-capsule-onboarding': participant?.onboardingState === 'NEEDS_CAPSULE_DECISION',
       'is-orbit-handoff': cinematic === 'orbit-handoff',
     }"
     :style="welcomeStyle"
@@ -1095,24 +992,13 @@ onBeforeUnmount(() => {
       <section v-else-if="cinematic === 'color-confirm'" class="cinematic cinematic--color-confirm" aria-live="polite">
         <p class="kicker">色温锁定</p>
         <h2>这束光，已经属于你</h2>
-        <p>星色已保存，正在开启你的时光胶囊。</p>
+        <p>星色已保存，正在为你接入星河轨道。</p>
       </section>
 
       <section v-else-if="cinematic === 'orbit-handoff'" class="cinematic cinematic--orbit-handoff" aria-live="polite">
         <p class="kicker">轨道接入</p>
         <h2>镜头正在拉远</h2>
         <p>你的星正沿着自己的轨道，汇入流动星系。</p>
-      </section>
-
-      <section v-else-if="!completed && participant?.onboardingState === 'NEEDS_CAPSULE_DECISION'" class="onboarding-copy onboarding-copy--capsule">
-        <p class="kicker">时光胶囊</p>
-        <SignalTypeTitle
-          :text="'留一句话\n给未来'"
-          replay-key="capsule-entry"
-          :animate="titleMotionEnabled"
-          :reduced="reducedMotion"
-        />
-        <p>你的星会在这里等待，直到这句话被保存。</p>
       </section>
 
       <section v-else class="scene-copy" :class="`scene-${runtime?.currentScene?.toLowerCase() ?? 'ready'}`" role="status" aria-live="polite">
@@ -1206,30 +1092,12 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else-if="cinematic === 'color-confirm'" class="dock-body dock-waiting">
-        <span aria-hidden="true"></span><p>星色已经保存，正在开启时光胶囊。</p>
+        <span aria-hidden="true"></span><p>星色已经保存，正在建立星河轨道。</p>
       </div>
 
       <div v-else-if="cinematic === 'orbit-handoff'" class="dock-body dock-handoff-status" role="status">
-        <small>轨道接入</small><strong>寄语已保存</strong><p>业务状态已完成，镜头正在回到你的星系。</p>
+        <small>轨道接入</small><strong>星色已确认</strong><p>身份与星星已经绑定，镜头正在回到你的星系。</p>
       </div>
-
-      <form v-else-if="!completed && participant?.onboardingState === 'NEEDS_CAPSULE_DECISION'" class="dock-body capsule-form" @submit.prevent="submitCapsule">
-        <label for="v2-capsule">时光胶囊</label>
-        <textarea id="v2-capsule" v-model="capsuleDraft" rows="3" placeholder="写下一句想留给未来的话…"></textarea>
-        <div class="counter" :class="{ invalid: capsuleLength > 80 }">{{ capsuleLength }} / 80</div>
-        <div v-if="capsuleConflict" class="capsule-conflict" role="status">
-          <p>这段胶囊已在另一设备更新。本页草稿没有被覆盖，请先选择如何继续。</p>
-          <div class="dock-actions">
-            <button class="dock-secondary" type="button" @click="useRemoteCapsule">载入最新内容</button>
-            <button class="dock-primary" type="button" @click="keepLocalCapsule">保留本页草稿</button>
-          </div>
-        </div>
-        <label class="check-row"><input v-model="capsuleConsent" type="checkbox" />我同意这段文字进入人工审核候选池；只有人工选中后才会匿名上屏。</label>
-        <div class="dock-actions">
-          <button class="dock-secondary" type="button" :disabled="!writesReady || Boolean(busy)" @click="skipCapsule">暂时跳过</button>
-          <button class="dock-primary" type="submit" :disabled="!writesReady || Boolean(busy) || Boolean(capsuleConflict)">{{ busy === 'UPSERT_CAPSULE' ? '提交中…' : '提交并进入现场' }}</button>
-        </div>
-      </form>
 
       <template v-else>
         <div class="dock-body admitted-panel">
@@ -1322,29 +1190,11 @@ onBeforeUnmount(() => {
               <p v-if="archiveMetricMessage">{{ archiveMetricMessage }}</p>
               <p v-else aria-hidden="true">点击动力或星光，查看它们的含义。</p>
             </div>
-            <div class="archive-capsule">
-              <div><span>时光胶囊</span><strong>{{ participant.capsuleDecision === 'SUBMITTED' ? '已提交' : completed ? '未提交' : '待补写' }}</strong></div>
-              <p>{{ participant.capsuleText ?? (participant.capsuleDecision === 'SKIPPED' ? (completed ? '本场已结束，胶囊未补写。' : '你选择了暂时跳过；本场结束前仍可补写。') : '本场未完成胶囊决定。') }}</p>
-              <button v-if="actionAllowed(snapshot, 'UPSERT_CAPSULE') && !capsuleEditing" class="text-action" type="button" @click="capsuleEditing = true">{{ participant.capsuleDecision === 'SUBMITTED' ? '修改胶囊' : '补写胶囊' }}</button>
-              <form v-if="capsuleEditing" class="capsule-form capsule-form--archive" @submit.prevent="submitCapsule">
-                <textarea v-model="capsuleDraft" rows="3" aria-label="补写时光胶囊"></textarea>
-                <div class="counter" :class="{ invalid: capsuleLength > 80 }">{{ capsuleLength }} / 80</div>
-                <div v-if="capsuleConflict" class="capsule-conflict" role="status">
-                  <p>这段胶囊已在另一设备更新。本页草稿没有被覆盖，请先选择如何继续。</p>
-                  <div class="dock-actions">
-                    <button class="dock-secondary" type="button" @click="useRemoteCapsule">载入最新内容</button>
-                    <button class="dock-primary" type="button" @click="keepLocalCapsule">保留本页草稿</button>
-                  </div>
-                </div>
-                <label class="check-row"><input v-model="capsuleConsent" type="checkbox" />同意进入人工审核候选池</label>
-                <div class="dock-actions"><button class="dock-secondary" type="button" @click="capsuleEditing = false">取消</button><button class="dock-primary" type="submit" :disabled="!writesReady || Boolean(busy) || Boolean(capsuleConflict)">提交补写</button></div>
-              </form>
-            </div>
           </section>
         </div>
 
         <nav class="dock-tabs" aria-label="手机端主导航">
-          <button v-for="tab in V2_MOBILE_TABS" :key="tab.id" type="button" :aria-current="activeTab === tab.id ? 'page' : undefined" @click="selectTab(tab.id)">{{ tab.label }}<i v-if="tab.id === 'archive' && participant.capsuleDecision === 'SKIPPED'" aria-label="待补写"></i></button>
+          <button v-for="tab in V2_MOBILE_TABS" :key="tab.id" type="button" :aria-current="activeTab === tab.id ? 'page' : undefined" @click="selectTab(tab.id)">{{ tab.label }}</button>
         </nav>
       </template>
     </aside>
@@ -1380,7 +1230,7 @@ onBeforeUnmount(() => {
     <div v-if="logoutOpen" class="modal-backdrop modal-backdrop--dialog">
       <section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="logout-title" aria-describedby="logout-description" @keydown.tab="trapDialog">
         <h2 id="logout-title">退出当前身份？</h2>
-        <p id="logout-description">退出后可输入学生姓名与 8 位学号重新核验，也可以再次轻触 NFC 或扫码。{{ hasCapsuleDraft || barrageDraft ? '未提交草稿将丢失。' : '' }}</p>
+        <p id="logout-description">退出后可输入学生姓名与 8 位学号重新核验，也可以再次轻触 NFC 或扫码。{{ barrageDraft ? '未提交的弹幕草稿将丢失。' : '' }}</p>
         <div class="dock-actions"><button ref="logoutCancel" class="dock-secondary" type="button" @click="closeLogout()">取消</button><button class="dock-danger" type="button" :disabled="busy === 'logout'" @click="confirmLogout">退出登录</button></div>
       </section>
     </div>
@@ -1619,19 +1469,6 @@ onBeforeUnmount(() => {
   margin-top: 8px;
   color: rgba(159, 180, 214, 0.72);
   font-size: 0.68rem;
-}
-.onboarding-copy--capsule {
-  width: 100%;
-  position: absolute;
-  top: clamp(170px, 25vh, 218px);
-  left: 0;
-  margin: 0;
-  text-align: left;
-}
-.onboarding-copy--capsule h2 {
-  font-size: clamp(2rem, 8.4vw, 2.35rem);
-  line-height: 1.1;
-  font-weight: 500;
 }
 .cinematic--color-confirm,
 .cinematic--orbit-handoff {
@@ -1924,10 +1761,6 @@ onBeforeUnmount(() => {
 .focus-star--confirming .focus-star__temperature {
   animation: color-confirm-glow var(--color-confirm-duration) ease-out both;
 }
-.focus-star--capsule {
-  transform: translate3d(-50%, calc(-50% - 17vh), 0) scale(0.82);
-  opacity: 1;
-}
 .focus-star--handoff {
   animation: orbit-handoff-star var(--orbit-handoff-duration) cubic-bezier(0.2, 0.72, 0.18, 1) both;
 }
@@ -2024,10 +1857,8 @@ onBeforeUnmount(() => {
 }
 
 .entry-form,
-.capsule-form,
 .program-composer { display: grid; gap: 11px; }
-.entry-form label,
-.capsule-form > label:first-child {
+.entry-form label {
   display: grid;
   gap: 6px;
   color: #dce5f9;
@@ -2035,7 +1866,6 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 .entry-form input,
-.capsule-form textarea,
 .program-composer input {
   width: 100%;
   min-height: 46px;
@@ -2048,9 +1878,7 @@ onBeforeUnmount(() => {
 }
 .entry-form input,
 .program-composer input { padding: 0 13px; }
-.capsule-form textarea { min-height: 88px; padding: 11px 13px; resize: vertical; }
 .entry-form input:focus,
-.capsule-form textarea:focus,
 .program-composer input:focus {
   border-color: #8bb8ff;
   box-shadow: 0 0 0 3px rgba(87, 145, 255, 0.2);
@@ -2059,15 +1887,6 @@ onBeforeUnmount(() => {
 .counter { margin: 0; color: #8999b5; font-size: 0.72rem; line-height: 1.45; }
 .counter { justify-self: end; }
 .counter.invalid { color: #ff9caa; }
-.capsule-conflict {
-  display: grid;
-  gap: 9px;
-  padding: 11px;
-  border: 1px solid rgba(255, 203, 137, 0.28);
-  border-radius: var(--shape-item);
-  background: rgba(152, 104, 23, 0.16);
-}
-.capsule-conflict p { margin: 0; color: #ffe4aa; font-size: 0.74rem; line-height: 1.5; }
 .check-row {
   display: flex;
   align-items: flex-start;
@@ -2213,8 +2032,7 @@ button:active:not(:disabled) { opacity: 0.82; }
 .composer-row,
 .composer-tools,
 .program-list header,
-.archive header,
-.archive-capsule > div {
+.archive header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2419,13 +2237,7 @@ button:active:not(:disabled) { opacity: 0.82; }
   transition-delay: 0s;
 }
 .archive-metric-help p { margin: 0; font-size: 0.72rem; line-height: 1.5; }
-.archive-capsule { padding: 12px; border-radius: var(--shape-item); background: rgba(112, 150, 221, 0.08); }
-.archive-capsule span { color: #93a2bf; font-size: 0.72rem; }
-.archive-capsule strong { font-size: 0.75rem; }
-.archive-capsule > p { margin: 9px 0; color: #c5cee0; font-size: 0.77rem; line-height: 1.55; }
 .text-action { min-height: 38px; }
-.archive-capsule .text-action { min-height: 44px; }
-.capsule-form--archive { margin-top: 10px; }
 
 .modal-backdrop {
   position: absolute;
@@ -2698,7 +2510,6 @@ textarea:focus-visible {
   .v2-welcome__college-link img { width: clamp(148px, 46vw, 172px); }
   .v2-welcome__main { inset: 58px 18px 176px; }
   .v2-welcome:not(.is-onboarding):not(.is-orbit-handoff) .v2-welcome__main { inset: 68px 18px auto; }
-  .v2-welcome.is-capsule-onboarding .onboarding-copy--capsule { top: 64px; }
   .v2-welcome__main p:not(.kicker),
   .scene-copy small { display: none; }
   .discovery-copy .discovery-person { display: block; }
@@ -2708,10 +2519,6 @@ textarea:focus-visible {
   .focus-star { width: 54px; }
   .operation-dock { max-height: min(64%, 390px); bottom: max(6px, env(safe-area-inset-bottom)); }
   .operation-dock--expanded { max-height: min(72%, 430px); }
-}
-
-@media (max-height: 500px) {
-  .v2-welcome.is-capsule-onboarding .onboarding-copy--capsule { top: 8px; }
 }
 
 .v2-welcome.is-keyboard .v2-welcome__main { opacity: 0; visibility: hidden; }

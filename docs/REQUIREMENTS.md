@@ -1,12 +1,12 @@
 # 产品与系统需求（v2 现行）
 
-> 状态：协议 v2 现行（D-025～D-032）；细节与验收口径以 [`PROTOCOL_V2.md`](./PROTOCOL_V2.md) 为唯一权威。v1 六阶段历史需求已归档至 [`archive/v1-requirements.md`](./archive/v1-requirements.md)，不再是实现或验收依据。
+> 状态：协议 v2 现行（D-037 已取消寄语并启用中场个人抽奖）；细节与验收口径以 [`PROTOCOL_V2.md`](./PROTOCOL_V2.md) 顶部 D-037 覆盖说明为权威。v1 六阶段历史需求已归档，不再是实现或验收依据。
 
 ## 1. 角色
 
 - **Demo 参与者**：固定合成邀请令牌进入 H5；二维码/短链接携带同一令牌；人工协助使用虚构姓名 + 合成学号定位同一身份，不得建立第二账号。
 - **共用后台操作会话**：登录后可自提 `REVIEWER`、`STAGE_CONTROLLER`、`DEMO_ADMIN` 或 `ALL`；角色只是能力分组（接受无个人归因风险，D-010）。
-- **大屏会话**：只读聚合数据、公开星号/星色、公开弹幕与人工选中胶囊。
+- **大屏会话**：只读聚合数据、公开星号/星色、公开弹幕与抽奖公开结果；不读取姓名。
 - **项目负责人**：单人维护，负责产品取舍、运行与最终验收。
 
 ## 2. 入口与身份
@@ -39,8 +39,8 @@
 
 - **REQ-V2-ONBOARD-001**：激活先原子预留 300 slot 之一，再建会话并发 100 动力 + 20 星光一次；满员以 `STAR_CAPACITY_REACHED` 整笔拒绝。
 - **REQ-V2-ONBOARD-002**：`READY`/`RUNNING` 接受新到与晚到者；晚到者完成后直接进入当前场景，不补播。
-- **REQ-V2-ONBOARD-003**：锁色即把预留恒星以 `publicStarId` 原子加入公开星系并发 `star.node.upserted`；本人端突出标注，他人无标签。
-- **REQ-V2-ONBOARD-004**：胶囊决定持久化为 `SUBMITTED`（≤80 可见字符、明确确认入候选池）或 `SKIPPED`；首次实际提交 +20 星光；跳过 0；`READY`/`RUNNING` 可补填且只奖励一次，不改 `admittedAt`。
+- **REQ-V2-ONBOARD-003**：锁色即把预留恒星以 `publicStarId` 原子加入公开星系、发 `star.node.upserted` 并直接准入；本人端突出标注，他人无标签。
+- **REQ-V2-ONBOARD-004**：手机端、后台和大屏均不提供寄语/时光胶囊入口；旧字段只作迁移兼容，旧写命令稳定拒绝。
 - **REQ-V2-ONBOARD-005**：重复、刷新、多设备、断线、并发不重复激活/锁色/入星系/奖励。
 - **REQ-V2-ONBOARD-006**：`PAUSED` 不接受入场写入；`COMPLETED` 后本 epoch 已激活身份只读重认证，未完成者不能继续入场。
 
@@ -48,12 +48,12 @@
 
 - **REQ-V2-GALAXY-001**：最多 300 颗真实恒星，不用装饰星补位、不静默截断；slot 从确定性目录预留。
 - **REQ-V2-GALAXY-002**：客户端先取权威快照再幂等消费事件；刷新/重连/乱序/重放不制造重复恒星或伪缺口。
-- **REQ-V2-SCENE-001**：`ASSEMBLY` 仅一次 `START_STAR`（+20 星光）；`PROGRAM_SUPPORT` 仅礼物/弹幕；`COOPERATIVE_LIGHT` 仅一次点亮（+20 星光）；晚到者不补旧场景奖励。
-- **REQ-V2-SCENE-002**：presentation 为服务端权威互斥状态 `NONE|CAPSULE_INSERT|FINALE_PREVIEW`，独立 `presentationRevision`；胶囊由人工触发、每次 ≤6 条，无自动轮播/AI 公开。
-- **REQ-V2-SCENE-003**：场景变化/暂停/重置清除活动投影；LIVE 完成同事务捕获 ≤6 条胶囊到终局 recap。
+- **REQ-V2-SCENE-001**：`ASSEMBLY` 仅一次 `START_STAR`（+40 星光）；`PROGRAM_SUPPORT` 允许礼物/弹幕/抽奖；`COOPERATIVE_LIGHT` 仅一次点亮（+20 星光）；晚到者不补旧场景奖励。
+- **REQ-V2-SCENE-002**：presentation 为服务端权威互斥状态 `NONE|RAFFLE|FINALE_PREVIEW`，独立 `presentationRevision`；抽奖只在 `RUNNING + PROGRAM_SUPPORT` 合法。
+- **REQ-V2-SCENE-003**：抽奖由服务端在已准入参与者中无放回随机抽取；后台显示姓名+星号，大屏只显示星号；场景变化/暂停/完成自动关闭投影并保留记录，排练模式可清空。
 - **REQ-V2-SCENE-004**：大屏恒星含 `started`；聚合至少区分激活/公开恒星/已准入/已启动/点亮/星光总量；后台匿名漏斗不以在线数作分母。
 - **REQ-V2-SCENE-005**：`ADVANCE`/`COMPLETE` 的就绪警告合并进一次确认，可明确 override 并审计；权限/旧 revision/非法 tuple 不可 override。
-- **REQ-V2-SCENE-006**：胶囊审核 `SUBMITTED→SELECTED→DISPLAYED`、撤下为 `REMOVED`；唯一迁移与事件按协议 §5.1。
+- **REQ-V2-SCENE-006**：抽奖结果持久化并随快照、刷新和重连恢复；同一轮同一身份不得重复中奖。
 
 ### 3.4 大屏、OBS 与公共互动（PROTOCOL_V2 §5.2）
 
@@ -62,7 +62,7 @@
 - **REQ-V2-SCREEN-003**：弹幕 ≤40 字符、单人 3 条/10s、全场 12 条/s，规则拒绝敏感词/链接/联系方式/暂停/屏蔽；Screen 不含来源，Admin 只取匿名 `sourceId`。
 - **REQ-V2-SCREEN-004**：后台可暂停、带原因撤下、屏蔽来源、紧急清屏；`COMPLETED` 后只允许减少公开内容。
 - **REQ-V2-SCREEN-005**：礼物事件只含节目/礼物/时间；1.5 秒同类可合并；大屏最多一主一次；星舰可突出但限时。
-- **REQ-V2-SCREEN-006**：视觉优先级 `COMPLETED > FINALE_PREVIEW > CAPSULE_INSERT > 故障提示 > 当前场景 > 实时互动`；胶囊期间不排队补播。
+- **REQ-V2-SCREEN-006**：视觉优先级 `COMPLETED > FINALE_PREVIEW > RAFFLE > 故障提示 > 当前场景 > 实时互动`；抽奖期间不排队补播，减少动态时直接显示结果。
 - **REQ-V2-SCREEN-007**：终章只在实时观察到权威完成时播 5～6 秒；快照已完成/刷新/重连/reduced-motion 直接静态终态。
 - **REQ-V2-SCREEN-008**：`/screen` 可按需加载 GSAP core 只做少量覆层 transform/opacity；300 星点必须 Canvas 绘制；手机端不迁移 GSAP。
 

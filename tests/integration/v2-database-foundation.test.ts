@@ -174,7 +174,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
 
     const result = migrateDatabase(database, MIGRATIONS_PATH, () => NOW)
 
-    expect(result.applied).toEqual([8, 9, 10, 11, 12])
+    expect(result.applied).toEqual([8, 9, 10, 11, 12, 13])
     expect(readProtocolRuntime(database)).toMatchObject({
       activeProtocolVersion: '1',
       activationState: 'V1_ACTIVE',
@@ -228,6 +228,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
       10,
       11,
       12,
+      13,
     ])
 
     await expect(
@@ -466,7 +467,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
       }),
     ).toMatchObject({
       ready: true,
-      schemaVersion: 12,
+      schemaVersion: 13,
       protocolVersion: '2',
       resetEpoch: 2,
       participantCount: 300,

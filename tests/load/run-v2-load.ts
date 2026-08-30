@@ -49,7 +49,6 @@ const RESTART_TIMEOUT_MS = 30_000
 type OperationName =
   | 'activation'
   | 'colorLock'
-  | 'capsuleDecision'
   | 'runtimeFanout'
   | 'starStart'
   | 'gift'
@@ -352,6 +351,7 @@ function readDatabaseInvariants(
       'v2_gift_transactions', 'v2_barrages', 'v2_final_recap_capsules',
       'v2_screen_interaction_state', 'v2_public_sources',
       'v2_barrage_publications', 'v2_screen_moderation_audit',
+      'v2_raffle_state', 'v2_raffle_draws',
     ]) {
       report.oldEpochRows += scalar(
         database,
@@ -362,15 +362,15 @@ function readDatabaseInvariants(
       report.participantStates === PARTICIPANT_COUNT &&
       report.publicStars === PARTICIPANT_COUNT &&
       report.admitted === PARTICIPANT_COUNT &&
-      report.capsulesSubmitted === PARTICIPANT_COUNT / 2 &&
-      report.capsulesSkipped === PARTICIPANT_COUNT / 2 &&
+      report.capsulesSubmitted === 0 &&
+      report.capsulesSkipped === PARTICIPANT_COUNT &&
       report.startedStars === PARTICIPANT_COUNT &&
       report.cooperativeLights === PARTICIPANT_COUNT &&
-      report.ledgerEntries === 1_650 &&
+      report.ledgerEntries === 1_500 &&
       report.giftTransactions === 1_200 &&
       report.publishedBarrages === PARTICIPANT_COUNT &&
       report.totalPower === PARTICIPANT_COUNT * 15 &&
-      report.totalStarlight === 27_000 &&
+      report.totalStarlight === 30_000 &&
       report.programHeat === PARTICIPANT_COUNT * 85 &&
       report.duplicatePublicStarIds === 0 &&
       report.duplicateFormationSlots === 0 &&
@@ -397,6 +397,7 @@ function readPostResetOldEpochRows(stack: DemoTestStack, oldEpoch: number): numb
       'v2_capsules', 'v2_sessions', 'v2_idempotency_records',
       'v2_domain_events', 'v2_gift_transactions', 'v2_barrages',
       'v2_barrage_publications', 'v2_public_sources',
+      'v2_raffle_state', 'v2_raffle_draws',
     ].reduce(
       (sum, table) => sum + scalar(database, `SELECT count(*) FROM ${table} WHERE reset_epoch=${Number(oldEpoch)}`),
       0,
@@ -425,7 +426,6 @@ function reportPrivacyAudit(report: unknown, stack: DemoTestStack | null): boole
     forbidden.add(participant.inviteToken)
     forbidden.add(participant.displayName)
     forbidden.add(participant.studentNumber)
-    forbidden.add(`v2-load-capsule-${String(index).padStart(3, '0')}`)
     forbidden.add(`v2-load-barrage-${String(index).padStart(3, '0')}`)
   }
   forbidden.add(stack.credentials.admin.username)
@@ -481,7 +481,6 @@ async function run(): Promise<void> {
   const recorders: Record<OperationName, OperationRecorder> = {
     activation: new OperationRecorder(),
     colorLock: new OperationRecorder(),
-    capsuleDecision: new OperationRecorder(),
     runtimeFanout: new OperationRecorder(),
     starStart: new OperationRecorder(),
     gift: new OperationRecorder(),
@@ -627,40 +626,6 @@ async function run(): Promise<void> {
       } catch (error) {
         recorders.colorLock.failure()
         recordFailure(failures, 'colorLock', error)
-        throw error
-      }
-    })
-
-    await mapLimit(participants, PRIMARY_CONCURRENCY, async (participant) => {
-      const started = performance.now()
-      const submitted = participant.index % 2 === 0
-      try {
-        const response = V2ParticipantCommandResponseSchema.parse((await client.request(
-          'capsule-decision', 'POST', '/api/v2/participant/commands',
-          { cookie: participant.cookie, body: submitted ? {
-            protocolVersion: '2', resetEpoch: initialEpoch,
-            idempotencyKey: idempotencyKey('capsule', participant.index),
-            expectedParticipantRevision: participant.snapshot.participant.participantRevision,
-            command: 'UPSERT_CAPSULE',
-            text: `v2-load-capsule-${String(participant.index).padStart(3, '0')}`,
-            candidateScopeAccepted: true,
-          } : {
-            protocolVersion: '2', resetEpoch: initialEpoch,
-            idempotencyKey: idempotencyKey('capsule', participant.index),
-            expectedParticipantRevision: participant.snapshot.participant.participantRevision,
-            command: 'SKIP_CAPSULE',
-          } },
-        )).body)
-        await waitForCondition('capsule-private-observation', () =>
-          participant.observer!.participantRevision >= response.participant.participantRevision)
-        participant.snapshot = V2ParticipantSnapshotSchema.parse((await client.request(
-          'snapshot-after-capsule', 'GET', '/api/v2/participant/snapshot',
-          { cookie: participant.cookie },
-        )).body)
-        recorders.capsuleDecision.success(performance.now() - started)
-      } catch (error) {
-        recorders.capsuleDecision.failure()
-        recordFailure(failures, 'capsuleDecision', error)
         throw error
       }
     })

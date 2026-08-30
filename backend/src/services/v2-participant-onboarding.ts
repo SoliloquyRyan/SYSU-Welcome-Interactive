@@ -83,7 +83,7 @@ interface RuntimeRow {
   status: 'READY' | 'RUNNING' | 'PAUSED' | 'COMPLETED'
   currentScene: 'ASSEMBLY' | 'PROGRAM_SUPPORT' | 'COOPERATIVE_LIGHT' | null
   runRevision: number
-  presentationType: 'NONE' | 'CAPSULE_INSERT' | 'FINALE_PREVIEW'
+  presentationType: 'NONE' | 'CAPSULE_INSERT' | 'RAFFLE' | 'FINALE_PREVIEW'
   presentationRevision: number
   publicAggregateRevision: number
   adminAggregateRevision: number
@@ -158,7 +158,8 @@ function readRuntime(database: SqliteDatabase): RuntimeRow {
     .prepare(
       `SELECT reset_epoch AS resetEpoch, mode, status,
               current_scene AS currentScene, run_revision AS runRevision,
-              presentation_type AS presentationType,
+              CASE WHEN presentation_type = 'CAPSULE_INSERT' THEN 'RAFFLE'
+                   ELSE presentation_type END AS presentationType,
               presentation_revision AS presentationRevision,
               public_aggregate_revision AS publicAggregateRevision,
               admin_aggregate_revision AS adminAggregateRevision,
@@ -581,6 +582,7 @@ function appendInteractionEvent(
 
 function presentationFor(database: SqliteDatabase, runtime: RuntimeRow) {
   if (runtime.presentationType === 'NONE') return { type: 'NONE' as const }
+  if (runtime.presentationType === 'RAFFLE') return { type: 'RAFFLE' as const }
   if (runtime.presentationType === 'FINALE_PREVIEW') {
     return { type: 'FINALE_PREVIEW' as const, rehearsal: true as const }
   }
@@ -614,20 +616,6 @@ function allowedActions(runtime: RuntimeRow, participant: ParticipantRow) {
   if (runtime.status === 'PAUSED' || runtime.status === 'COMPLETED') return []
   const actions: string[] = []
   if (participant.onboardingState === 'NEEDS_COLOR') actions.push('LOCK_COLOR')
-  if (
-    participant.onboardingState === 'NEEDS_CAPSULE_DECISION' ||
-    (participant.onboardingState === 'ADMITTED' &&
-      (participant.capsuleDecision === 'SKIPPED' ||
-        participant.capsuleDecision === 'SUBMITTED'))
-  ) {
-    actions.push('UPSERT_CAPSULE')
-  }
-  if (
-    participant.onboardingState === 'NEEDS_CAPSULE_DECISION' &&
-    participant.capsuleDecision === 'NONE'
-  ) {
-    actions.push('SKIP_CAPSULE')
-  }
   if (participant.onboardingState !== 'ADMITTED' || runtime.status !== 'RUNNING') {
     return actions
   }
@@ -1130,6 +1118,14 @@ export function executeV2ParticipantOnboardingCommand(
     const runtime = readRuntime(database)
     assertExpectedEpoch(runtime, request.resetEpoch)
     assertParticipantWriteOpen(runtime)
+    if (request.command === 'UPSERT_CAPSULE' || request.command === 'SKIP_CAPSULE') {
+      throw new V2ParticipantCommandError(
+        'ONBOARDING_STATE_INVALID',
+        '时光胶囊功能已下线；锁定星色后会直接进入现场。',
+        409,
+        runtime.resetEpoch,
+      )
+    }
     const participant = readParticipant(database, identityId)
     const scope = `participant:${request.command.toLowerCase()}:${identityId}`
     const idempotency = assertIdempotency(database, {
@@ -1240,7 +1236,7 @@ export function executeV2ParticipantOnboardingCommand(
             runtime.resetEpoch,
           )
         }
-        nextStarlight += 20
+        nextStarlight += 40
         database.prepare(
           `UPDATE v2_participant_states
            SET participant_revision = ?, started_at = ?, starlight = ?, updated_at = ?
@@ -1254,7 +1250,7 @@ export function executeV2ParticipantOnboardingCommand(
         database.prepare(
           `INSERT INTO v2_reward_ledger (
              reset_epoch, identity_id, event_key, delta, reward_rule_version, created_at
-           ) VALUES (?, ?, 'STAR_STARTED', 20, ?, ?)`,
+           ) VALUES (?, ?, 'STAR_STARTED', 40, ?, ?)`,
         ).run(runtime.resetEpoch, identityId, runtime.rewardRuleVersion, timestamp)
         appendStarEvent(database, runtime, identityId, timestamp)
         firstReward = true
@@ -1458,9 +1454,11 @@ export function executeV2ParticipantOnboardingCommand(
         database
           .prepare(
             `UPDATE v2_participant_states
-             SET participant_revision = ?, onboarding_state = 'NEEDS_CAPSULE_DECISION',
+             SET participant_revision = ?, onboarding_state = 'ADMITTED',
                  color_temperature_kelvin = ?, display_color = ?,
-                 color_locked_at = ?, updated_at = ?
+                 color_locked_at = ?, capsule_decision = 'SKIPPED',
+                 capsule_skipped_at = ?, admitted_at = ?, admitted_scene = ?,
+                 admitted_run_revision = ?, updated_at = ?
              WHERE identity_id = ? AND reset_epoch = ?`,
           )
           .run(
@@ -1468,6 +1466,10 @@ export function executeV2ParticipantOnboardingCommand(
             request.colorTemperatureKelvin,
             displayColor,
             timestamp,
+            timestamp,
+            timestamp,
+            runtime.currentScene,
+            runtime.runRevision,
             timestamp,
             identityId,
             runtime.resetEpoch,
@@ -1498,143 +1500,6 @@ export function executeV2ParticipantOnboardingCommand(
           timestamp,
         )
         aggregateChanged = true
-      }
-    } else if (request.command === 'SKIP_CAPSULE') {
-      if (
-        participant.onboardingState !== 'NEEDS_CAPSULE_DECISION' ||
-        participant.capsuleDecision !== 'NONE'
-      ) {
-        throw new V2ParticipantCommandError(
-          'ONBOARDING_STATE_INVALID',
-          '当前状态不能跳过时光胶囊。',
-          409,
-          runtime.resetEpoch,
-        )
-      }
-      const revision = participant.participantRevision + 1
-      database
-        .prepare(
-          `UPDATE v2_participant_states
-           SET participant_revision = ?, onboarding_state = 'ADMITTED',
-               capsule_decision = 'SKIPPED', capsule_skipped_at = ?,
-               admitted_at = ?, admitted_scene = ?, admitted_run_revision = ?,
-               updated_at = ?
-           WHERE identity_id = ? AND reset_epoch = ?`,
-        )
-        .run(
-          revision,
-          timestamp,
-          timestamp,
-          runtime.currentScene,
-          runtime.runRevision,
-          timestamp,
-          identityId,
-          runtime.resetEpoch,
-        )
-      appendParticipantEvent(
-        database,
-        identityId,
-        runtime.resetEpoch,
-        revision,
-        timestamp,
-      )
-      aggregateChanged = true
-    } else {
-      if (
-        participant.onboardingState !== 'NEEDS_CAPSULE_DECISION' &&
-        participant.onboardingState !== 'ADMITTED'
-      ) {
-        throw new V2ParticipantCommandError(
-          'ONBOARDING_STATE_INVALID',
-          '请先锁定星色，再填写时光胶囊。',
-          409,
-          runtime.resetEpoch,
-        )
-      }
-      const existingCapsule = database
-        .prepare(
-          `SELECT text, moderation_status AS moderationStatus
-           FROM v2_capsules WHERE reset_epoch = ? AND identity_id = ?`,
-        )
-        .get(runtime.resetEpoch, identityId) as
-        | { text: string; moderationStatus: string }
-        | undefined
-      if (
-        participant.capsuleDecision === 'SUBMITTED' &&
-        existingCapsule?.text === request.text &&
-        existingCapsule.moderationStatus === 'SUBMITTED'
-      ) {
-      } else {
-        const firstSubmission = participant.capsuleDecision !== 'SUBMITTED'
-        const firstDecision = participant.onboardingState !== 'ADMITTED'
-        const revision = participant.participantRevision + 1
-        const nextStarlight = participant.starlight + (firstSubmission ? 20 : 0)
-        database
-          .prepare(
-            `INSERT INTO v2_capsules (
-               identity_id, reset_epoch, capsule_id, text,
-               candidate_scope_accepted_at, moderation_status,
-               submitted_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, 'SUBMITTED', ?, ?)
-             ON CONFLICT(identity_id) DO UPDATE SET
-               text = excluded.text,
-               candidate_scope_accepted_at = excluded.candidate_scope_accepted_at,
-               moderation_status = 'SUBMITTED',
-               updated_at = excluded.updated_at`,
-          )
-          .run(
-            identityId,
-            runtime.resetEpoch,
-            `capsule:${identityId}`,
-            request.text,
-            timestamp,
-            timestamp,
-            timestamp,
-          )
-        database
-          .prepare(
-            `UPDATE v2_participant_states
-             SET participant_revision = ?, onboarding_state = 'ADMITTED',
-                 capsule_decision = 'SUBMITTED',
-                 admitted_at = COALESCE(admitted_at, ?),
-                 admitted_scene = CASE WHEN admitted_at IS NULL THEN ? ELSE admitted_scene END,
-                 admitted_run_revision = CASE WHEN admitted_at IS NULL THEN ? ELSE admitted_run_revision END,
-                 starlight = ?, updated_at = ?
-             WHERE identity_id = ? AND reset_epoch = ?`,
-          )
-          .run(
-            revision,
-            timestamp,
-            runtime.currentScene,
-            runtime.runRevision,
-            nextStarlight,
-            timestamp,
-            identityId,
-            runtime.resetEpoch,
-          )
-        if (firstSubmission) {
-          database
-            .prepare(
-              `INSERT INTO v2_reward_ledger (
-                 reset_epoch, identity_id, event_key, delta,
-                 reward_rule_version, created_at
-               ) VALUES (?, ?, 'CAPSULE_SUBMITTED', 20, ?, ?)`,
-            )
-            .run(
-              runtime.resetEpoch,
-              identityId,
-              runtime.rewardRuleVersion,
-              timestamp,
-            )
-        }
-        appendParticipantEvent(
-          database,
-          identityId,
-          runtime.resetEpoch,
-          revision,
-          timestamp,
-        )
-        aggregateChanged = firstSubmission || firstDecision
       }
     }
 

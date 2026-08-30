@@ -22,6 +22,8 @@ const gifts = ref([])
 const errorMessage = ref('')
 const reducedMotion = ref(false)
 const finalePlayed = ref(false)
+const rafflePhase = ref('waiting')
+const raffleCode = ref('星海正在等待')
 let renderer = null
 let gsap = null
 let gsapContext = null
@@ -30,13 +32,16 @@ let giftSerial = 0
 const giftTimers = new Map()
 const barrageTimers = new Set()
 const activeAnimations = new Set()
+let raffleTimer = null
 
 const runtime = computed(() => snapshot.value?.runtime)
 const presentation = computed(() => snapshot.value?.presentation ?? { type: 'NONE' })
 const currentScene = computed(() => runtime.value?.currentScene ?? 'ASSEMBLY')
 const completed = computed(() => runtime.value?.status === 'COMPLETED')
 const previewingFinale = computed(() => presentation.value.type === 'FINALE_PREVIEW')
-const capsuleInsert = computed(() => presentation.value.type === 'CAPSULE_INSERT')
+const raffleActive = computed(() => presentation.value.type === 'RAFFLE')
+const raffle = computed(() => snapshot.value?.raffle)
+const raffleWinner = computed(() => raffle.value?.winners?.[0] ?? null)
 const interactionVisible = computed(() =>
   runtime.value?.status === 'RUNNING'
   && currentScene.value === 'PROGRAM_SUPPORT'
@@ -57,6 +62,11 @@ function putSnapshot(next, { reconnect = false } = {}) {
   const hadSnapshot = snapshot.value !== null
   const wasCompleted = snapshot.value?.runtime.status === 'COMPLETED'
   snapshot.value = next
+  if ((!hadSnapshot || reconnect) && next.presentation.type === 'RAFFLE') {
+    const winner = next.raffle?.winners?.[0]
+    rafflePhase.value = winner ? 'revealed' : 'waiting'
+    raffleCode.value = winner?.publicStarId ?? '星海正在等待'
+  }
   initialBarrages.value = next.publishedBarrages.slice(-8)
   if (reconnect) {
     liveBarrages.value = []
@@ -88,6 +98,41 @@ function trackAnimation(animation) {
 function stopTrackedAnimations() {
   for (const animation of activeAnimations) animation.kill()
   activeAnimations.clear()
+}
+
+function stopRaffleTimer() {
+  if (raffleTimer) window.clearInterval(raffleTimer)
+  raffleTimer = null
+}
+
+function randomStarCode() {
+  const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26))
+  return `${letter}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`
+}
+
+function playRaffleReveal(winner) {
+  stopRaffleTimer()
+  if (!winner) {
+    rafflePhase.value = 'waiting'
+    raffleCode.value = '星海正在等待'
+    return
+  }
+  if (reducedMotion.value) {
+    rafflePhase.value = 'revealed'
+    raffleCode.value = winner.publicStarId
+    return
+  }
+  rafflePhase.value = 'rolling'
+  raffleCode.value = randomStarCode()
+  const startedAt = performance.now()
+  raffleTimer = window.setInterval(() => {
+    raffleCode.value = randomStarCode()
+    if (performance.now() - startedAt >= 1800) {
+      stopRaffleTimer()
+      raffleCode.value = winner.publicStarId
+      rafflePhase.value = 'revealed'
+    }
+  }, 70)
 }
 
 async function animateBarrage(barrage) {
@@ -197,8 +242,17 @@ async function onLiveEvent(frame) {
     await playSceneTransition()
     if (payload.runtime.status === 'COMPLETED') await playFinale()
   } else if (frame.name === 'presentation.changed') {
-    snapshot.value.presentation = payload.presentation
-    snapshot.value.presentationRevision = payload.presentationRevision
+    const previousWinnerId = snapshot.value.raffle?.winners?.[0]?.raffleDrawId ?? null
+    if (payload.presentation.type === 'RAFFLE') {
+      await refresh()
+      const nextWinner = snapshot.value.raffle?.winners?.[0] ?? null
+      if (nextWinner?.raffleDrawId !== previousWinnerId) playRaffleReveal(nextWinner)
+      else if (!nextWinner) playRaffleReveal(null)
+    } else {
+      snapshot.value.presentation = payload.presentation
+      snapshot.value.presentationRevision = payload.presentationRevision
+      stopRaffleTimer()
+    }
     if (payload.presentation.type !== 'NONE') {
       stopTrackedAnimations()
       liveBarrages.value = []
@@ -270,6 +324,7 @@ onBeforeUnmount(() => {
   barrageTimers.clear()
   for (const timer of giftTimers.values()) clearTimeout(timer)
   giftTimers.clear()
+  stopRaffleTimer()
 })
 </script>
 
@@ -295,19 +350,21 @@ onBeforeUnmount(() => {
             <div><dt>累计星光</dt><dd>{{ snapshot.aggregate.totalStarlight }}</dd></div>
             <div><dt>协同点亮</dt><dd>{{ snapshot.aggregate.cooperativeLightCount }}</dd></div>
           </dl>
-          <ul v-if="snapshot.finalRecap.length" class="v2-finale__capsules" aria-label="终章回顾">
-            <li v-for="capsule in snapshot.finalRecap" :key="capsule.capsuleId">{{ capsule.text }}</li>
-          </ul>
         </div>
       </div>
 
-      <div v-else-if="capsuleInsert" class="v2-capsule-insert">
-        <p class="v2-kicker">此刻 · 星语</p>
-        <ul>
-          <li v-for="capsule in presentation.capsules" :key="capsule.capsuleId" :style="{ '--capsule-color': capsule.displayColor }">
-            <span aria-hidden="true"></span><p>{{ capsule.text }}</p>
-          </li>
-        </ul>
+      <div v-else-if="raffleActive" class="v2-raffle" :class="`is-${rafflePhase}`">
+        <div class="v2-raffle__orbit" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="v2-raffle__content">
+          <p class="v2-kicker">MID-SHOW · STAR DRAW</p>
+          <h1>星河幸运坐标</h1>
+          <p class="v2-raffle__hint">{{ rafflePhase === 'waiting' ? '等待主控抽取第一颗幸运星' : rafflePhase === 'rolling' ? '正在穿越星海定位坐标' : '恭喜这颗幸运星' }}</p>
+          <strong class="v2-raffle__code">{{ raffleCode }}</strong>
+          <div class="v2-raffle__meta"><span>已抽取 {{ raffle?.winners.length ?? 0 }}</span><span>剩余 {{ raffle?.remainingCount ?? 0 }}</span></div>
+          <ol v-if="raffle?.winners.length" class="v2-raffle__history" aria-label="本轮中奖星星代号">
+            <li v-for="item in raffle.winners.slice(0, 6)" :key="item.raffleDrawId" :class="{ current: item.raffleDrawId === raffleWinner?.raffleDrawId }">{{ item.publicStarId }}</li>
+          </ol>
+        </div>
       </div>
 
       <div v-else ref="sceneLayer" class="v2-scene-copy">
@@ -362,7 +419,7 @@ html.v2-program-overlay,html.v2-program-overlay body,html.v2-program-overlay .ap
 .v2-live-layer{position:absolute;z-index:4;inset:0;overflow:hidden;pointer-events:none}.v2-live-barrage{position:absolute;top:calc(10vh + var(--lane)*10vh);left:0;margin:0;padding:10px 18px;max-width:56vw;border-radius:999px;color:#fff;background:rgba(4,9,20,.72);font-size:clamp(20px,1.7vw,34px);font-weight:600;white-space:nowrap;text-shadow:0 2px 6px #000;will-change:transform,opacity}
 .v2-static-barrages{position:absolute;top:14vh;right:3vw;width:min(34vw,620px);margin:0;padding:0;display:grid;gap:12px;list-style:none;opacity:.64}.v2-static-barrages li{padding:9px 14px;border-right:3px solid rgba(151,192,255,.72);background:linear-gradient(90deg,transparent,rgba(3,8,18,.72));font-size:clamp(18px,1.25vw,26px);text-align:right;text-shadow:0 2px 8px #000}
 .v2-gifts{position:absolute;left:4vw;bottom:12vh;display:flex;align-items:flex-end;gap:16px}.v2-gifts article{display:flex;align-items:center;gap:14px;min-width:260px;padding:16px 22px;border:1px solid rgba(150,197,255,.5);border-radius:18px;background:linear-gradient(135deg,rgba(9,22,49,.92),rgba(23,52,88,.74));box-shadow:0 12px 50px rgba(14,61,131,.34);will-change:transform,opacity}.v2-gifts article>span{font-size:46px;color:#ffd57a}.v2-gifts p{margin:0;font-size:22px}.v2-gifts strong{display:block;margin-top:4px;font-size:28px;color:#ffd57a}.v2-gifts .gift-starship{min-width:340px;border-color:rgba(255,211,113,.75);box-shadow:0 0 64px rgba(255,195,66,.35)}
-.v2-capsule-insert{position:absolute;z-index:7;inset:0;display:grid;place-content:center;padding:8vh 10vw;background:radial-gradient(circle at 50% 44%,rgba(26,50,88,.96),rgba(2,6,14,.98) 70%);text-align:center}.v2-capsule-insert ul{list-style:none;margin:20px 0 0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;max-width:1500px}.v2-capsule-insert li{display:flex;align-items:flex-start;gap:16px;padding:26px 30px;border:1px solid rgba(169,196,235,.32);background:rgba(5,12,26,.62);text-align:left}.v2-capsule-insert li span{width:12px;height:12px;margin-top:9px;flex:none;border-radius:50%;background:var(--capsule-color);box-shadow:0 0 18px var(--capsule-color)}.v2-capsule-insert li p{margin:0;font-size:clamp(22px,1.65vw,34px);line-height:1.55}
-.v2-finale{position:absolute;z-index:8;inset:0;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 50% 48%,rgba(22,51,101,.72),rgba(2,5,12,.97) 68%)}.v2-finale__halo{position:absolute;width:min(70vw,1100px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,rgba(146,192,255,.26),rgba(88,131,216,.08) 38%,transparent 68%)}.v2-finale__copy{position:relative;z-index:1;width:min(1500px,88vw);text-align:center}.v2-finale__preview{color:#ffc86c!important;font-weight:700}.v2-finale__metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin:44px 0 0}.v2-finale__metrics div{padding:18px;border-top:1px solid rgba(170,202,246,.34)}.v2-finale__metrics dt{color:#9fb5d4;font-size:16px}.v2-finale__metrics dd{margin:5px 0 0;font-size:clamp(28px,3vw,52px);font-weight:700}.v2-finale__capsules{list-style:none;margin:28px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.v2-finale__capsules li{padding:14px 18px;background:rgba(8,19,39,.64);font-size:18px}
+.v2-raffle{position:absolute;z-index:7;inset:0;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 50% 46%,rgba(27,48,94,.94),rgba(3,7,17,.985) 68%);text-align:center}.v2-raffle__content{position:relative;z-index:2;width:min(1280px,88vw)}.v2-raffle h1{margin:0;font-size:clamp(48px,5vw,92px);letter-spacing:.08em}.v2-raffle__hint{margin:22px 0 8px;color:#aebed8;font-size:clamp(18px,1.4vw,28px)}.v2-raffle__code{display:block;margin:12px 0 28px;color:#ffe8a4;font:700 clamp(74px,11vw,190px)/1 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.08em;text-shadow:0 0 22px rgba(255,217,119,.55),0 0 72px rgba(83,150,255,.4)}.v2-raffle.is-rolling .v2-raffle__code{filter:blur(1px);opacity:.85}.v2-raffle.is-revealed .v2-raffle__code{animation:raffle-reveal .75s cubic-bezier(.2,.8,.2,1)}.v2-raffle__meta{display:flex;justify-content:center;gap:36px;color:#95aaca;font-size:18px}.v2-raffle__history{list-style:none;display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin:30px 0 0;padding:0}.v2-raffle__history li{padding:8px 15px;border:1px solid rgba(145,178,226,.3);color:#9eb2d1;background:rgba(7,14,29,.5);font-family:ui-monospace,Consolas,monospace}.v2-raffle__history li.current{border-color:rgba(255,222,139,.75);color:#ffe7a6}.v2-raffle__orbit{position:absolute;width:min(76vw,1180px);aspect-ratio:1;border-radius:50%;border:1px solid rgba(117,168,242,.12);animation:raffle-orbit 20s linear infinite}.v2-raffle__orbit i{position:absolute;width:9px;height:9px;border-radius:50%;background:#ffe4a0;box-shadow:0 0 24px #ffe4a0}.v2-raffle__orbit i:nth-child(1){top:11%;left:22%}.v2-raffle__orbit i:nth-child(2){top:59%;right:2%}.v2-raffle__orbit i:nth-child(3){bottom:7%;left:34%}@keyframes raffle-orbit{to{transform:rotate(360deg)}}@keyframes raffle-reveal{0%{transform:scale(.78);opacity:.35}65%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+.v2-finale{position:absolute;z-index:8;inset:0;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 50% 48%,rgba(22,51,101,.72),rgba(2,5,12,.97) 68%)}.v2-finale__halo{position:absolute;width:min(70vw,1100px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,rgba(146,192,255,.26),rgba(88,131,216,.08) 38%,transparent 68%)}.v2-finale__copy{position:relative;z-index:1;width:min(1500px,88vw);text-align:center}.v2-finale__preview{color:#ffc86c!important;font-weight:700}.v2-finale__metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin:44px 0 0}.v2-finale__metrics div{padding:18px;border-top:1px solid rgba(170,202,246,.34)}.v2-finale__metrics dt{color:#9fb5d4;font-size:16px}.v2-finale__metrics dd{margin:5px 0 0;font-size:clamp(28px,3vw,52px);font-weight:700}
 @media(prefers-reduced-motion:reduce){.v2-live-barrage{display:none}.v2-screen *{animation:none!important;transition:none!important}}
 </style>

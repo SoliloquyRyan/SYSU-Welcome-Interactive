@@ -53,10 +53,10 @@ pnpm preview:v2:field
 
 1. **就绪**：后台 `SET_MODE` 选择 `REHEARSAL`（排练，可跳场景）或 `LIVE`（现场，只向前）。
 2. **开场**：`START` 进入 `RUNNING + ASSEMBLY`。参与者完成入场后点 `START_STAR`。
-3. **节目**：`ADVANCE` → `PROGRAM_SUPPORT`；后台 `SET_PROGRAM` 选当前节目；参与者送礼/发弹幕；大屏切 OBS 透明源。
+3. **节目**：`ADVANCE` → `PROGRAM_SUPPORT`；后台 `SET_PROGRAM` 选当前节目；参与者送礼/发弹幕；大屏切 OBS 透明源。中场需要抽奖时依次执行“开启抽奖大屏 → 抽取一位（可重复）→ 关闭抽奖大屏”。
 4. **点亮**：`ADVANCE` → `COOPERATIVE_LIGHT`；参与者各点一次。
-5. **结束**：仅 `LIVE` 在 `COOPERATIVE_LIGHT` 出现 `COMPLETE`，一次确认后服务端原子写入终态（含 ≤6 条胶囊 recap）。`REHEARSAL` 只能 `PREVIEW_FINALE` 预览终章。
-6. **随时**：`PAUSE`/`RESUME`（暂停时参与者只读）；胶囊人工插入（`SELECT_CAPSULE → SHOW_CAPSULE_INSERT → CLEAR_PRESENTATION`）；弹幕处置（暂停/撤下/屏蔽来源/清屏）。
+5. **结束**：仅 `LIVE` 在 `COOPERATIVE_LIGHT` 出现 `COMPLETE`，一次确认后服务端原子写入终态。`REHEARSAL` 只能 `PREVIEW_FINALE` 预览终章。
+6. **随时**：`PAUSE`/`RESUME`（暂停时参与者只读）；弹幕处置（暂停/撤下/屏蔽来源/清屏）。暂停、换场或完成会自动关闭抽奖大屏但保留中奖记录；排练模式可由 Demo 管理员清空结果。
 7. **推进警告**：`ADVANCE`/`COMPLETE` 出现就绪警告时在同一确认中明确 override；权限/旧 revision/非法组合不可 override。
 
 ## 6. 故障与处置

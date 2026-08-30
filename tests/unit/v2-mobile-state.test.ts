@@ -105,40 +105,40 @@ describe('V2-08 mobile state and motion gates', () => {
   it('starts pullback only after the authoritative snapshot contains the own public star', () => {
     expect(shouldPlayPullback({
       previousState: 'NEEDS_COLOR', nextSnapshot: {
-        participant: { onboardingState: 'NEEDS_CAPSULE_DECISION', ownPublicStarId: 'L-4821' },
+        participant: { onboardingState: 'ADMITTED', ownPublicStarId: 'L-4821' },
         publicStars: [{ publicStarId: 'L-4821' }],
       }, reducedMotion: false,
     })).toBe(true)
     expect(shouldPlayPullback({
       previousState: 'NEEDS_COLOR', nextSnapshot: {
-        participant: { onboardingState: 'NEEDS_CAPSULE_DECISION', ownPublicStarId: 'L-4821' },
+        participant: { onboardingState: 'ADMITTED', ownPublicStarId: 'L-4821' },
         publicStars: [],
       }, reducedMotion: false,
     })).toBe(false)
     expect(shouldPlayPullback({
       previousState: 'NEEDS_COLOR', nextSnapshot: {
-        participant: { onboardingState: 'NEEDS_CAPSULE_DECISION', ownPublicStarId: 'L-4821' },
+        participant: { onboardingState: 'ADMITTED', ownPublicStarId: 'L-4821' },
         publicStars: [{ publicStarId: 'L-4821' }],
       }, reducedMotion: true,
     })).toBe(false)
   })
 
-  it('starts the final orbit handoff only after the capsule decision admits the participant', () => {
+  it('starts the final orbit handoff after locking color directly admits the participant', () => {
     const admittedSnapshot = {
       participant: { onboardingState: 'ADMITTED', ownPublicStarId: 'L-4821' },
       publicStars: [{ publicStarId: 'L-4821' }],
     }
     expect(shouldPlayOrbitHandoff({
-      previousState: 'NEEDS_CAPSULE_DECISION', nextSnapshot: admittedSnapshot, reducedMotion: false,
+      previousState: 'NEEDS_COLOR', nextSnapshot: admittedSnapshot, reducedMotion: false,
     })).toBe(true)
     expect(shouldPlayOrbitHandoff({
       previousState: 'ADMITTED', nextSnapshot: admittedSnapshot, reducedMotion: false,
     })).toBe(false)
     expect(shouldPlayOrbitHandoff({
-      previousState: 'NEEDS_CAPSULE_DECISION', nextSnapshot: admittedSnapshot, reducedMotion: true,
+      previousState: 'NEEDS_COLOR', nextSnapshot: admittedSnapshot, reducedMotion: true,
     })).toBe(false)
     expect(shouldPlayOrbitHandoff({
-      previousState: 'NEEDS_CAPSULE_DECISION',
+      previousState: 'NEEDS_COLOR',
       nextSnapshot: { ...admittedSnapshot, publicStars: [] },
       reducedMotion: false,
     })).toBe(false)
@@ -453,7 +453,7 @@ describe('V2-08 mobile state and motion gates', () => {
       path.join(ROOT, 'frontend/src/pages/student/personal-journey-timeline.js'), 'utf8',
     )
     const activationFlow = page.match(
-      /async function acceptActivation[\s\S]*?\n\}\n\nasync function activate/u,
+      /async function acceptActivation[\s\S]*?\r?\n\}\r?\n\r?\nasync function activate/u,
     )?.[0] ?? ''
     expect(activationFlow.indexOf("cinematic.value = 'discovery-pending'"))
       .toBeLessThan(activationFlow.indexOf('await waitForStableDocumentVisibility()'))
@@ -472,7 +472,7 @@ describe('V2-08 mobile state and motion gates', () => {
     expect(activationEntry).toContain("if (busy.value === 'activation') return")
 
     const journeyWait = page.match(
-      /function waitForJourneyPhase[\s\S]*?\n\}\n\nasync function acceptActivation/u,
+      /function waitForJourneyPhase[\s\S]*?\r?\n\}\r?\n\r?\nasync function acceptActivation/u,
     )?.[0] ?? ''
     expect(journeyWait).toContain('journeyStage.value?.waitForPhase(phase)')
     expect(journeyWait).toContain('duration + 450')

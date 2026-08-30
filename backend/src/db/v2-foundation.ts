@@ -18,7 +18,7 @@ import {
 
 export const V2_DESTRUCTIVE_CONFIRMATION =
   'SYNTHETIC_DEMO_DATA_IS_DISPOSABLE' as const
-export const V2_REWARD_RULE_VERSION = 'v2-rewards-2026-08-13' as const
+export const V2_REWARD_RULE_VERSION = 'v2-rewards-2026-08-30-raffle' as const
 export const V1_SERVICE_LEASE_MS = 30_000
 
 export type V2MaintenanceErrorCode =
@@ -144,6 +144,7 @@ const V1_MUTABLE_TABLES = [
 ] as const
 
 const V2_EPOCH_MUTABLE_TABLES = [
+  'v2_raffle_draws',
   'v2_screen_moderation_audit',
   'v2_barrage_publications',
   'v2_public_sources',
@@ -164,6 +165,7 @@ const V2_EPOCH_MUTABLE_TABLES = [
 
 const V2_PRE_CUTOVER_TABLES = [
   ...V2_EPOCH_MUTABLE_TABLES,
+  'v2_raffle_state',
   'v2_screen_interaction_state',
   'v2_identity_slots',
   'v2_runtime_state',
@@ -211,6 +213,8 @@ const EXPECTED_TABLES = new Set([
   'v2_public_sources',
   'v2_barrage_publications',
   'v2_screen_moderation_audit',
+  'v2_raffle_state',
+  'v2_raffle_draws',
 ])
 
 const EXPECTED_CUTOVER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
@@ -379,6 +383,12 @@ const EXPECTED_CUTOVER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   v2_screen_moderation_audit: [
     'id', 'reset_epoch', 'action', 'target_id', 'reason',
     'session_short_id', 'request_id', 'created_at',
+  ],
+  v2_raffle_state: [
+    'id', 'reset_epoch', 'display_active', 'raffle_revision', 'updated_at',
+  ],
+  v2_raffle_draws: [
+    'id', 'reset_epoch', 'draw_sequence', 'identity_id', 'drawn_at',
   ],
 }
 
@@ -756,10 +766,10 @@ function assertMigrationsReady(
   migrationsPath: string,
 ): void {
   const verification = verifyMigrations(database, migrationsPath)
-  if (!verification.ready || verification.currentVersion !== 12) {
+  if (!verification.ready || verification.currentVersion !== 13) {
     maintenanceError(
       'V2_MIGRATIONS_NOT_READY',
-      `V2 cutover requires the complete schema through migration 0012: ${verification.issues.join('; ')}`,
+      `V2 cutover requires the complete schema through migration 0013: ${verification.issues.join('; ')}`,
     )
   }
 }
@@ -833,7 +843,7 @@ function assessSyntheticDemoData(
   if (!schemaMatchesMigrations(database, options.migrationsPath)) {
     maintenanceError(
       'V2_DATA_CLASSIFICATION_UNSAFE',
-      'The live SQLite schema does not exactly match migrations 0001-0012',
+      'The live SQLite schema does not exactly match migrations 0001-0013',
     )
   }
 
@@ -1038,6 +1048,8 @@ function clearV1MutableState(database: SqliteDatabase): void {
 
 function clearV2MutableState(database: SqliteDatabase): void {
   database.exec(`
+    DELETE FROM v2_raffle_draws;
+    DELETE FROM v2_raffle_state;
     DELETE FROM v2_screen_moderation_audit;
     DELETE FROM v2_barrage_publications;
     DELETE FROM v2_public_sources;
@@ -1104,6 +1116,11 @@ function initializeV2Runtime(
        id, reset_epoch, interaction_revision, barrage_paused,
        display_batch, next_display_seq, updated_at
      ) VALUES (1, ?, 0, 0, 0, 1, ?)`,
+  ).run(resetEpoch, timestamp)
+  database.prepare(
+    `INSERT INTO v2_raffle_state (
+       id, reset_epoch, display_active, raffle_revision, updated_at
+     ) VALUES (1, ?, 0, 0, ?)`,
   ).run(resetEpoch, timestamp)
   database
     .prepare(
@@ -1312,7 +1329,7 @@ export function verifyV2Foundation(
   }
   issues.push(...schemaDriftIssues(database))
   if (migrations.ready && !schemaMatchesMigrations(database, options.migrationsPath)) {
-    issues.push('The live SQLite schema does not exactly match migrations 0001-0012')
+    issues.push('The live SQLite schema does not exactly match migrations 0001-0013')
   }
 
   const seed = verifyDemoSeed(database, options)
@@ -1336,6 +1353,7 @@ export function verifyV2Foundation(
       .prepare(
         `SELECT v.reset_epoch AS resetEpoch,
                 v.run_revision AS runRevision,
+                v.presentation_type AS presentationType,
                 v.presentation_revision AS presentationRevision,
                 v.public_aggregate_revision AS publicAggregateRevision,
                 v.admin_aggregate_revision AS adminAggregateRevision,
@@ -1350,6 +1368,7 @@ export function verifyV2Foundation(
           resetEpoch: number
           appResetEpoch: number
           runRevision: number
+          presentationType: string
           presentationRevision: number
           publicAggregateRevision: number
           adminAggregateRevision: number
@@ -1369,6 +1388,32 @@ export function verifyV2Foundation(
     }
     if (runtime.rewardRuleVersion !== V2_REWARD_RULE_VERSION) {
       issues.push('The v2 runtime reward rule version is not supported')
+    }
+    const raffleState = database.prepare(
+      `SELECT reset_epoch AS resetEpoch, display_active AS displayActive
+       FROM v2_raffle_state WHERE id = 1`,
+    ).get() as { resetEpoch: number; displayActive: number } | undefined
+    if (
+      !raffleState ||
+      raffleState.resetEpoch !== currentEpoch ||
+      Boolean(raffleState.displayActive) !== (runtime.presentationType === 'CAPSULE_INSERT')
+    ) {
+      issues.push('The v2 raffle state does not match the active runtime presentation')
+    }
+    const raffleDrawMismatchCount = Number(database.prepare(
+      `SELECT count(*) FROM v2_raffle_draws draw
+       LEFT JOIN v2_participant_states participant
+         ON participant.reset_epoch = draw.reset_epoch
+        AND participant.identity_id = draw.identity_id
+       WHERE draw.reset_epoch != ?
+          OR participant.onboarding_state != 'ADMITTED'
+          OR draw.draw_sequence > (
+            SELECT count(*) FROM v2_raffle_draws current_draw
+            WHERE current_draw.reset_epoch = draw.reset_epoch
+          )`,
+    ).pluck().get(currentEpoch))
+    if (raffleDrawMismatchCount !== 0) {
+      issues.push('The v2 raffle contains an invalid epoch, participant or draw sequence')
     }
 
     const slotCount = countTableRows(database, 'v2_identity_slots')
@@ -1435,6 +1480,7 @@ export function verifyV2Foundation(
       'v2_gift_transactions',
       'v2_barrages',
       'v2_final_recap_capsules',
+      'v2_raffle_draws',
     ]) {
       const wrongEpoch = Number(
         database
@@ -1535,7 +1581,7 @@ export function verifyV2Foundation(
                AND reward.delta != CASE reward.event_key
                  WHEN 'ACTIVATED' THEN 20
                  WHEN 'CAPSULE_SUBMITTED' THEN 20
-                 WHEN 'STAR_STARTED' THEN 20
+                 WHEN 'STAR_STARTED' THEN 40
                  WHEN 'FIRST_GIFT' THEN 10
                  WHEN 'FIRST_BARRAGE' THEN 10
                  WHEN 'COOPERATIVE_LIGHT' THEN 20

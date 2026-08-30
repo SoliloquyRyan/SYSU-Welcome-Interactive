@@ -24,15 +24,13 @@ const snapshot = ref(null)
 const busy = ref('')
 const errorMessage = ref('')
 const successMessage = ref('')
-const selectedCapsules = ref([])
 const selectedProgramId = ref('')
 const sessionGeneration = createAdminSessionGeneration()
 
 const runtime = computed(() => snapshot.value?.runtime)
 const presentation = computed(() => snapshot.value?.presentation)
-const candidates = computed(() => snapshot.value?.capsuleCandidates ?? [])
+const raffle = computed(() => snapshot.value?.raffle)
 const barrages = computed(() => snapshot.value?.publishedBarrages ?? [])
-const selectedCandidates = computed(() => candidates.value.filter((item) => item.moderationStatus === 'SELECTED'))
 const canWrite = computed(() => realtime.state.value === 'online' && !busy.value)
 
 async function refresh(expectedGeneration = sessionGeneration.capture()) {
@@ -45,8 +43,6 @@ async function refresh(expectedGeneration = sessionGeneration.capture()) {
       selectedProgramId.value = next.currentProgram?.id ?? next.programs[0]?.id ?? ''
     }
     authState.value = 'active'
-    selectedCapsules.value = selectedCapsules.value.filter((id) =>
-      next.capsuleCandidates.some((item) => item.capsuleId === id && item.moderationStatus === 'SELECTED'))
     return next
   } catch (error) {
     if (!sessionGeneration.isCurrent(expectedGeneration)) return snapshot.value
@@ -116,7 +112,7 @@ function base(command) {
 // authoritative state changed (D-021 OBS-01/02 lesson). After the snapshot
 // refresh, compare the revision family this command owns and echo it back.
 const RUN_REVISION_COMMANDS = new Set(['START', 'ADVANCE', 'PAUSE', 'RESUME', 'COMPLETE'])
-const PRESENTATION_COMMANDS = new Set(['PREVIEW_FINALE', 'CLEAR_PRESENTATION', 'SHOW_CAPSULE_INSERT', 'REMOVE_CAPSULE'])
+const PRESENTATION_COMMANDS = new Set(['PREVIEW_FINALE', 'CLEAR_PRESENTATION', 'OPEN_RAFFLE', 'DRAW_RAFFLE', 'CLOSE_RAFFLE', 'CLEAR_RAFFLE'])
 const INTERACTION_COMMANDS = new Set(['SET_PROGRAM', 'SET_BARRAGE_PAUSED', 'REMOVE_BARRAGE', 'BLOCK_BARRAGE_SOURCE', 'CLEAR_BARRAGES'])
 
 function revisionSnapshot() {
@@ -214,16 +210,15 @@ function complete() {
   return runCommand({ ...base('COMPLETE'), expectedRunRevision: runtime.value.runRevision, expectedPresentationRevision: snapshot.value.presentationRevision, confirmed: true, overrideReadinessWarnings: false }, '活动已完成并锁定终章。', true)
 }
 function clearPresentation() { return runCommand({ ...base('CLEAR_PRESENTATION'), expectedRunRevision: runtime.value.runRevision, expectedPresentationRevision: snapshot.value.presentationRevision, confirmed: true }, '活动投影已清除。') }
-function selectCapsule(item) { return runCommand({ ...base('SELECT_CAPSULE'), capsuleId: item.capsuleId, expectedParticipantRevision: item.participantRevision, confirmed: true }, '胶囊已选中。') }
-function showCapsules() {
-  const capsuleIds = selectedCapsules.value
-  if (!capsuleIds.length) { errorMessage.value = '请先勾选 1～6 条已选胶囊。'; return }
-  return runCommand({ ...base('SHOW_CAPSULE_INSERT'), expectedRunRevision: runtime.value.runRevision, expectedPresentationRevision: snapshot.value.presentationRevision, capsuleIds, confirmed: true }, '胶囊插播已上屏。')
+function raffleCommand(command, success) {
+  return runCommand({ ...base(command), expectedRunRevision: runtime.value.runRevision, expectedPresentationRevision: snapshot.value.presentationRevision, confirmed: true }, success)
 }
-function removeCapsule(item) {
-  const reason = window.prompt('请输入撤下原因（会写入管理审计）')?.trim()
-  if (!reason) return
-  return runCommand({ ...base('REMOVE_CAPSULE'), capsuleId: item.capsuleId, expectedParticipantRevision: item.participantRevision, expectedPresentationRevision: snapshot.value.presentationRevision, reason, confirmed: true }, '胶囊已安全撤下。')
+function openRaffle() { return raffleCommand('OPEN_RAFFLE', '抽奖大屏已开启。') }
+function drawRaffle() { return raffleCommand('DRAW_RAFFLE', '已抽出一位新生，结果已同步上屏。') }
+function closeRaffle() { return raffleCommand('CLOSE_RAFFLE', '抽奖大屏已关闭，中奖记录已保留。') }
+function clearRaffle() {
+  if (!window.confirm('确认清空本轮全部中奖记录？此操作仅用于排练。')) return
+  return raffleCommand('CLEAR_RAFFLE', '排练抽奖记录已清空。')
 }
 function setBarragePaused(paused) {
   return runCommand({
@@ -330,8 +325,8 @@ void boot()
             <div><dt>已锁色入星系</dt><dd>{{ snapshot.funnel.publicStarCount }}</dd></div>
             <div><dt>已完成个人入场</dt><dd>{{ snapshot.funnel.admittedCount }}</dd></div>
             <div><dt>个人入场待处理</dt><dd>{{ snapshot.funnel.onboardingPendingCount }}</dd></div>
-            <div><dt>胶囊已提交</dt><dd>{{ snapshot.funnel.capsuleSubmittedCount }}</dd></div>
-            <div><dt>胶囊待补写</dt><dd>{{ snapshot.funnel.capsuleSkippedCount }}</dd></div>
+            <div><dt>恒星已启动</dt><dd>{{ snapshot.funnel.starStartedCount }}</dd></div>
+            <div><dt>协同点亮完成</dt><dd>{{ snapshot.funnel.cooperativeLightCount }}</dd></div>
           </dl>
         </BaseCard>
         <BaseCard padding="lg">
@@ -342,20 +337,31 @@ void boot()
         </BaseCard>
       </div>
 
-      <BaseCard padding="lg">
-        <div class="capsule-heading"><div><h2>人工胶囊审核与插播</h2><p>正文只在受限后台显示；不会自动轮播或由 AI 公开。</p></div><BaseButton v-if="runtime.status === 'RUNNING' && presentation.type === 'NONE'" :disabled="!canWrite || !selectedCapsules.length" @click="showCapsules">插播已勾选（{{ selectedCapsules.length }}/6）</BaseButton></div>
-        <p v-if="!candidates.length" class="quiet">暂无胶囊候选。</p>
-        <ul v-else class="capsule-list">
-          <li v-for="item in candidates" :key="item.capsuleId">
-            <label v-if="item.moderationStatus === 'SELECTED'"><input v-model="selectedCapsules" type="checkbox" :value="item.capsuleId" :disabled="selectedCapsules.length >= 6 && !selectedCapsules.includes(item.capsuleId)"><span class="sr-only">勾选 {{ item.publicStarId }}</span></label>
-            <div><strong>{{ item.publicStarId }}</strong><span class="candidate-status">{{ item.moderationStatus }}</span><p>{{ item.text }}</p></div>
-            <div class="candidate-actions"><BaseButton v-if="item.moderationStatus === 'SUBMITTED' && runtime.status !== 'COMPLETED'" variant="secondary" :disabled="!canWrite" @click="selectCapsule(item)">选中</BaseButton><BaseButton v-if="item.moderationStatus !== 'REMOVED'" variant="danger" :disabled="!canWrite" @click="removeCapsule(item)">撤下</BaseButton></div>
+      <BaseCard padding="lg" class="raffle-card">
+        <div class="panel-heading">
+          <div><h2>中场新生抽奖</h2><p>按已入场新生随机抽取；同一轮不会重复中奖。姓名仅在主控端显示，大屏只显示星星代号。</p></div>
+          <div class="control-actions">
+            <BaseButton v-if="runtime.status === 'RUNNING' && runtime.currentScene === 'PROGRAM_SUPPORT' && presentation.type === 'NONE'" :disabled="!canWrite || !raffle?.remainingCount" @click="openRaffle">开启抽奖大屏</BaseButton>
+            <BaseButton v-if="presentation.type === 'RAFFLE'" :disabled="!canWrite || !raffle?.remainingCount" @click="drawRaffle">抽取一位</BaseButton>
+            <BaseButton v-if="presentation.type === 'RAFFLE'" variant="secondary" :disabled="!canWrite" @click="closeRaffle">关闭抽奖大屏</BaseButton>
+            <BaseButton v-if="runtime.mode === 'REHEARSAL' && raffle?.winners.length" variant="danger" :disabled="!canWrite" @click="clearRaffle">清空排练结果</BaseButton>
+          </div>
+        </div>
+        <dl class="raffle-summary">
+          <div><dt>符合条件</dt><dd>{{ raffle?.eligibleCount ?? 0 }}</dd></div>
+          <div><dt>尚未中奖</dt><dd>{{ raffle?.remainingCount ?? 0 }}</dd></div>
+          <div><dt>本轮已中奖</dt><dd>{{ raffle?.winners.length ?? 0 }}</dd></div>
+        </dl>
+        <p v-if="!raffle?.winners.length" class="quiet">还没有抽出中奖新生。</p>
+        <ol v-else class="winner-list">
+          <li v-for="item in raffle.winners" :key="item.raffleDrawId">
+            <span>第 {{ item.drawSequence }} 位</span><strong>{{ item.displayName }}</strong><code>{{ item.publicStarId }}</code>
           </li>
-        </ul>
+        </ol>
       </BaseCard>
 
       <BaseCard padding="lg">
-        <div class="capsule-heading">
+        <div class="panel-heading">
           <div><h2>节目单与礼物</h2><p>只有节目支持场景的当前节目可接收礼物；节目媒体仍由 OBS/导播控制。</p></div>
           <div class="program-control">
             <label for="v2-current-program">当前节目</label>
@@ -374,7 +380,7 @@ void boot()
       </BaseCard>
 
       <BaseCard padding="lg">
-        <div class="capsule-heading">
+        <div class="panel-heading">
           <div>
             <h2>直播互动安全控制</h2>
             <p>大屏不显示身份；后台只使用会话内匿名来源标识执行撤下或屏蔽。</p>
@@ -411,18 +417,18 @@ void boot()
 
 <style scoped>
 .v2-admin{display:grid;gap:var(--space-5);max-width:1240px;margin:0 auto;padding:var(--space-5)}
-.v2-heading,.v2-heading-actions,.capsule-heading,.control-actions,.candidate-actions{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap}
-.v2-heading p,.capsule-heading p,.quiet{color:var(--color-text-secondary)}
+.v2-heading,.v2-heading-actions,.panel-heading,.control-actions,.candidate-actions{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap}
+.v2-heading p,.panel-heading p,.quiet{color:var(--color-text-secondary)}
 .login-card{display:grid;gap:var(--space-4);max-width:480px}.login-card label{display:grid;gap:var(--space-2)}
 .login-card input{min-height:44px;padding:0 12px;border:1px solid var(--color-border-subtle);background:var(--color-paper-300);color:inherit}
 .feedback{padding:var(--space-3);border-radius:var(--radius-md)}.error{background:color-mix(in srgb,var(--color-danger) 16%,transparent)}.success{background:color-mix(in srgb,var(--color-success) 16%,transparent)}
 .runtime-card{display:grid;gap:var(--space-4)}.runtime-facts,.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-3)}
 .runtime-facts div,.metrics div{padding:var(--space-3);border:1px solid var(--color-border-subtle)}.runtime-facts span,.metrics dt{display:block;color:var(--color-text-secondary);font-size:var(--font-size-xs)}.metrics dd{margin:4px 0 0;font-size:var(--font-size-xl);font-weight:700}
 .v2-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)}.warning-list{display:grid;gap:var(--space-2);color:var(--color-warning)}
-.capsule-list{list-style:none;padding:0;display:grid;gap:var(--space-2)}.capsule-list li{display:grid;grid-template-columns:auto 1fr auto;gap:var(--space-3);align-items:start;padding:var(--space-3);border:1px solid var(--color-border-subtle)}.capsule-list p{margin:6px 0 0;white-space:pre-wrap}.candidate-status{margin-left:8px;color:var(--color-text-secondary);font-size:var(--font-size-xs)}
+.raffle-card{border-top:3px solid #e6b45f}.raffle-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-3);margin:var(--space-4) 0}.raffle-summary div{padding:var(--space-3);background:color-mix(in srgb,#e6b45f 9%,transparent);border:1px solid color-mix(in srgb,#e6b45f 28%,transparent)}.raffle-summary dt{color:var(--color-text-secondary);font-size:var(--font-size-xs)}.raffle-summary dd{margin:4px 0 0;font-size:var(--font-size-xl);font-weight:700}.winner-list{list-style:none;padding:0;display:grid;gap:var(--space-2)}.winner-list li{display:grid;grid-template-columns:90px minmax(0,1fr) auto;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid var(--color-border-subtle)}.winner-list span{color:var(--color-text-secondary)}.winner-list code{color:#f0c575;font-size:1rem}
 .barrage-list{list-style:none;padding:0;display:grid;gap:var(--space-2)}.barrage-list li{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-3);border:1px solid var(--color-border-subtle)}.barrage-list p{margin:0;white-space:pre-wrap}.barrage-list small{display:block;margin-top:5px;color:var(--color-text-secondary)}.pause-notice{padding:var(--space-3);background:color-mix(in srgb,var(--color-warning) 14%,transparent)}
 .danger-card{border-left:6px solid var(--color-danger)}
 .program-control{display:flex;align-items:end;gap:var(--space-3);flex-wrap:wrap}.program-control label{display:grid;gap:var(--space-2);color:var(--color-text-secondary);font-size:var(--font-size-xs)}.program-control select{min-height:44px;min-width:min(360px,72vw);padding:0 12px;border:1px solid var(--color-border-subtle);background:var(--color-paper-300);color:inherit}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
-@media(max-width:760px){.v2-grid{grid-template-columns:1fr}.runtime-facts,.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.capsule-list li{grid-template-columns:auto 1fr}.candidate-actions{grid-column:2;justify-content:flex-start}}
+@media(max-width:760px){.v2-grid{grid-template-columns:1fr}.runtime-facts,.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.raffle-summary{grid-template-columns:1fr}.winner-list li{grid-template-columns:80px 1fr}.winner-list code{grid-column:2}.candidate-actions{grid-column:2;justify-content:flex-start}}
 </style>

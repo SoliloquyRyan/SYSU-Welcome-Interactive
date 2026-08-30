@@ -61,7 +61,12 @@ describe('V2-05 snapshots and split-stream realtime', () => {
          presentation_revision,public_aggregate_revision,admin_aggregate_revision,
          reward_rule_version,public_seq,admin_seq,completed_at,updated_at
        ) VALUES (1,2,'REHEARSAL','READY',NULL,0,'NONE',0,0,0,
-         'v2-rewards-2026-08-13',0,0,NULL,?)`,
+         'v2-rewards-2026-08-30-raffle',0,0,NULL,?)`,
+    ).run(timestamp)
+    database.prepare(
+      `INSERT INTO v2_raffle_state (
+         id, reset_epoch, display_active, raffle_revision, updated_at
+       ) VALUES (1, 2, 0, 0, ?)`,
     ).run(timestamp)
     database.prepare(`UPDATE app_state SET reset_epoch=2,event_seq=0,updated_at=? WHERE id=1`).run(timestamp)
     database.prepare(
@@ -91,7 +96,7 @@ describe('V2-05 snapshots and split-stream realtime', () => {
          NULL,NULL,NULL,NULL,100,20,?)`,
     ).run(participantId, timestamp, timestamp)
     database.prepare(
-      `INSERT INTO v2_reward_ledger VALUES (NULL,2,?,'ACTIVATED',20,'v2-rewards-2026-08-13',?)`,
+      `INSERT INTO v2_reward_ledger VALUES (NULL,2,?,'ACTIVATED',20,'v2-rewards-2026-08-30-raffle',?)`,
     ).run(participantId, timestamp)
     database.prepare(
       `INSERT INTO v2_domain_events (
@@ -294,7 +299,7 @@ describe('V2-05 snapshots and split-stream realtime', () => {
       },
     })).json())
     expect(participantResponse.participant).toMatchObject({
-      onboardingState: 'NEEDS_CAPSULE_DECISION', colorTemperatureKelvin: 5800,
+      onboardingState: 'ADMITTED', colorTemperatureKelvin: 5800,
     })
 
     const adminSecret = 'c'.repeat(43)

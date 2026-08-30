@@ -775,19 +775,6 @@ async function run(): Promise<void> {
             } },
           )).body)
           snapshot = { ...snapshot, participant: locked.participant }
-          const skipped = V2ParticipantCommandResponseSchema.parse((await client.request(
-            'soak-skip-capsule',
-            'POST',
-            '/api/v2/participant/commands',
-            { cookie: activation.cookie, body: {
-              protocolVersion: '2',
-              resetEpoch,
-              idempotencyKey: idempotencyKey('skip', index),
-              expectedParticipantRevision: snapshot.participant.participantRevision,
-              command: 'SKIP_CAPSULE',
-            } },
-          )).body)
-          snapshot = { ...snapshot, participant: skipped.participant }
           return { index, cookie: activation.cookie, snapshot } satisfies ParticipantState
         },
       )

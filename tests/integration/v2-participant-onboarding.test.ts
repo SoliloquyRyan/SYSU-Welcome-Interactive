@@ -82,7 +82,7 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
            reward_rule_version, public_seq, admin_seq, completed_at, updated_at
          ) VALUES (
            1, 2, 'REHEARSAL', 'READY', NULL, 0, 'NONE', 0,
-           0, 0, 'v2-rewards-2026-08-13', 0, 0, NULL, ?
+           0, 0, 'v2-rewards-2026-08-30-raffle', 0, 0, NULL, ?
          )`,
       )
       .run(timestamp)
@@ -97,6 +97,11 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
          id, reset_epoch, interaction_revision, barrage_paused,
          display_batch, next_display_seq, updated_at
        ) VALUES (1, 2, 0, 0, 0, 1, ?)`,
+    ).run(timestamp)
+    database.prepare(
+      `INSERT INTO v2_raffle_state (
+         id, reset_epoch, display_active, raffle_revision, updated_at
+       ) VALUES (1, 2, 0, 0, ?)`,
     ).run(timestamp)
     database
       .prepare(
@@ -204,11 +209,12 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
 
     expect(locked.participant).toMatchObject({
       participantRevision: 2,
-      onboardingState: 'NEEDS_CAPSULE_DECISION',
+      onboardingState: 'ADMITTED',
       colorTemperatureKelvin: 6500,
       displayColor: '#fff4dc',
       ownPublicStarId: participant(0).publicStarId,
-      allowedActions: ['UPSERT_CAPSULE', 'SKIP_CAPSULE'],
+      capsuleDecision: 'SKIPPED',
+      allowedActions: [],
     })
     const snapshot = readV2ParticipantSnapshot(database, identityId, LATER)
     expect(snapshot.publicStars).toHaveLength(1)
@@ -221,7 +227,7 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
     expect(snapshot.aggregate).toMatchObject({
       activatedCount: 1,
       publicStarCount: 1,
-      admittedCount: 0,
+      admittedCount: 1,
       totalStarlight: 20,
     })
     const sameValueRetry = command(identityId, {
@@ -237,7 +243,7 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
     ).toBe(1)
   })
 
-  it('admits a submitted capsule and awards exactly one 20-point reward', () => {
+  it('retires message commands without creating content or changing rewards', () => {
     activate(0)
     const identityId = participant(0).id
     command(identityId, {
@@ -246,28 +252,13 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
       command: 'LOCK_COLOR',
       colorTemperatureKelvin: 5000,
     })
-    const submitted = command(identityId, {
-      idempotencyKey: 'submit-capsule-key',
-      expectedParticipantRevision: 2,
-      command: 'UPSERT_CAPSULE',
-      text: '愿我们都能找到自己的轨道。',
-      candidateScopeAccepted: true,
-    })
-    const replayed = command(identityId, {
-      idempotencyKey: 'submit-capsule-key',
-      expectedParticipantRevision: 2,
-      command: 'UPSERT_CAPSULE',
-      text: '愿我们都能找到自己的轨道。',
-      candidateScopeAccepted: true,
-    })
-
-    expect(submitted.participant).toMatchObject({
-      onboardingState: 'ADMITTED',
-      capsuleDecision: 'SUBMITTED',
-      starlight: 40,
-    })
-    expect(replayed.replayed).toBe(true)
-    expect(replayed.participant.starlight).toBe(40)
+    expect(() => command(identityId, {
+      idempotencyKey: 'retired-message-key', expectedParticipantRevision: 2,
+      command: 'UPSERT_CAPSULE', text: '旧入口不得再写入。', candidateScopeAccepted: true,
+    })).toThrowError(expect.objectContaining({ code: 'ONBOARDING_STATE_INVALID' }))
+    const snapshot = readV2ParticipantSnapshot(database, identityId, LATER)
+    expect(snapshot.participant).toMatchObject({ onboardingState: 'ADMITTED', starlight: 20 })
+    expect(database.prepare('SELECT count(*) FROM v2_capsules').pluck().get()).toBe(0)
     expect(
       database
         .prepare(
@@ -276,10 +267,10 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
         )
         .pluck()
         .get(identityId),
-    ).toBe(1)
+    ).toBe(0)
   })
 
-  it('persists skip with zero reward and later fills without moving admittedAt', () => {
+  it('locks color and admits atomically without a second onboarding decision', () => {
     activate(0)
     const identityId = participant(0).id
     command(identityId, {
@@ -288,35 +279,14 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
       command: 'LOCK_COLOR',
       colorTemperatureKelvin: 9000,
     })
-    const skipped = command(identityId, {
-      idempotencyKey: 'skip-capsule-key',
-      expectedParticipantRevision: 2,
-      command: 'SKIP_CAPSULE',
-    })
-    const admittedAt = skipped.participant.admittedAt
-    expect(skipped.participant).toMatchObject({
+    const admitted = readV2ParticipantSnapshot(database, identityId, LATER)
+    expect(admitted.participant).toMatchObject({
       onboardingState: 'ADMITTED',
       capsuleDecision: 'SKIPPED',
       starlight: 20,
+      admittedAt: expect.any(String),
     })
-
-    const filled = command(
-      identityId,
-      {
-        idempotencyKey: 'late-fill-capsule-key',
-        expectedParticipantRevision: 3,
-        command: 'UPSERT_CAPSULE',
-        text: '后来补上的一句话。',
-        candidateScopeAccepted: true,
-      },
-      new Date('2026-08-13T06:05:00.000Z'),
-    )
-    expect(filled.participant).toMatchObject({
-      capsuleDecision: 'SUBMITTED',
-      starlight: 40,
-      admittedAt,
-    })
-    expect(filled.participant.skippedAt).not.toBeNull()
+    expect(admitted.participant.skippedAt).not.toBeNull()
     expect(
       verifyV2Foundation(database, {
         migrationsPath: MIGRATIONS_PATH,
@@ -342,18 +312,14 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
       command: 'LOCK_COLOR',
       colorTemperatureKelvin: 6500,
     })
-    const admitted = command(identityId, {
-      idempotencyKey: 'late-skip-capsule',
-      expectedParticipantRevision: 2,
-      command: 'SKIP_CAPSULE',
-    })
+    const admitted = readV2ParticipantSnapshot(database, identityId, LATER)
 
     expect(admitted.participant).toMatchObject({
       admittedScene: 'PROGRAM_SUPPORT',
       admittedRunRevision: 2,
       started: false,
       starlight: 20,
-      allowedActions: ['UPSERT_CAPSULE', 'SEND_GIFT', 'POST_BARRAGE'],
+      allowedActions: ['SEND_GIFT', 'POST_BARRAGE'],
     })
     expect(
       database
@@ -442,13 +408,10 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
       colorTemperatureKelvin: 5000,
     })
 
-    expect(() =>
-      command(identityId, {
-        idempotencyKey: 'stale-lock-key',
-        expectedParticipantRevision: 1,
-        command: 'SKIP_CAPSULE',
-      }),
-    ).toThrowError(expect.objectContaining({ code: 'REVISION_CONFLICT' }))
+    expect(() => command(identityId, {
+      idempotencyKey: 'retired-skip-key', expectedParticipantRevision: 2,
+      command: 'SKIP_CAPSULE',
+    })).toThrowError(expect.objectContaining({ code: 'ONBOARDING_STATE_INVALID' }))
     expect(() =>
       command(identityId, {
         idempotencyKey: 'stable-lock-key',

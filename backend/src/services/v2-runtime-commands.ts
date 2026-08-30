@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomInt, randomUUID } from 'node:crypto'
 
 import {
   V2AdminCommandResponseSchema,
@@ -20,7 +20,7 @@ interface RuntimeRow {
   status: Status
   currentScene: Scene | null
   runRevision: number
-  presentationType: 'NONE' | 'CAPSULE_INSERT' | 'FINALE_PREVIEW'
+  presentationType: 'NONE' | 'CAPSULE_INSERT' | 'RAFFLE' | 'FINALE_PREVIEW'
   presentationRevision: number
   publicAggregateRevision: number
   adminAggregateRevision: number
@@ -92,7 +92,8 @@ function readRuntime(database: SqliteDatabase): RuntimeRow {
   return database.prepare(
     `SELECT reset_epoch AS resetEpoch, mode, status,
             current_scene AS currentScene, run_revision AS runRevision,
-            presentation_type AS presentationType,
+            CASE WHEN presentation_type = 'CAPSULE_INSERT' THEN 'RAFFLE'
+                 ELSE presentation_type END AS presentationType,
             presentation_revision AS presentationRevision,
             public_aggregate_revision AS publicAggregateRevision,
             admin_aggregate_revision AS adminAggregateRevision,
@@ -112,6 +113,7 @@ function tuple(runtime: RuntimeRow) {
 
 function presentation(database: SqliteDatabase, runtime: RuntimeRow) {
   if (runtime.presentationType === 'NONE') return { type: 'NONE' as const }
+  if (runtime.presentationType === 'RAFFLE') return { type: 'RAFFLE' as const }
   if (runtime.presentationType === 'FINALE_PREVIEW') {
     return { type: 'FINALE_PREVIEW' as const, rehearsal: true as const }
   }
@@ -268,6 +270,12 @@ function appendInteractionEvent(
 
 function clearPresentation(database: SqliteDatabase, runtime: RuntimeRow, timestamp: string) {
   if (runtime.presentationType === 'NONE') return runtime.presentationRevision
+  if (runtime.presentationType === 'RAFFLE') {
+    database.prepare(
+      `UPDATE v2_raffle_state SET display_active = 0,
+         raffle_revision = raffle_revision + 1, updated_at = ? WHERE reset_epoch = ?`,
+    ).run(timestamp, runtime.resetEpoch)
+  }
   if (runtime.presentationType === 'CAPSULE_INSERT') {
     const participants = database.prepare(
       `SELECT participant.identity_id AS identityId,
@@ -376,7 +384,7 @@ export function executeV2RuntimeCommand(
         !actor.roles.includes('STAGE_CONTROLLER') && !actor.roles.includes('DEMO_ADMIN')) {
       throw new V2RuntimeCommandError('ROLE_REQUIRED', '需要内容审核或阶段控制权限。', 403)
     }
-  } else if (request.command === 'RESET_DEMO') {
+  } else if (request.command === 'RESET_DEMO' || request.command === 'CLEAR_RAFFLE') {
     requireRole(actor, 'DEMO_ADMIN', '需要 Demo 管理权限。')
   } else {
     requireRole(actor, 'STAGE_CONTROLLER', '需要阶段控制权限。')
@@ -387,6 +395,10 @@ export function executeV2RuntimeCommand(
   database.exec('BEGIN IMMEDIATE')
   try {
     const runtime = readRuntime(database)
+    const requestedCommand = String(request.command)
+    if (requestedCommand === 'SELECT_CAPSULE' || requestedCommand === 'SHOW_CAPSULE_INSERT' || requestedCommand === 'REMOVE_CAPSULE') {
+      throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '时光胶囊展示功能已下线。', 409)
+    }
     if (runtime.resetEpoch !== request.resetEpoch) {
       throw new V2RuntimeCommandError('STALE_RESET_EPOCH', '运行代际已变化。', 409)
     }
@@ -643,6 +655,91 @@ export function executeV2RuntimeCommand(
          ) VALUES (?, ?, 'V2_REMOVE_CAPSULE', ?, ?, ?)`,
       ).run(actor.sessionShortId, JSON.stringify(actor.roles),
         JSON.stringify({ capsuleId: request.capsuleId, reason: request.reason }), actor.requestId, timestamp)
+    } else if (request.command === 'OPEN_RAFFLE') {
+      updateRuntimeTuple = false
+      if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' || runtime.presentationType !== 'NONE') {
+        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '抽奖只能在节目支持阶段且当前无其他投影时开启。', 409)
+      }
+      const raffle = database.prepare(
+        `SELECT raffle_revision AS raffleRevision FROM v2_raffle_state WHERE reset_epoch = ?`,
+      ).get(runtime.resetEpoch) as { raffleRevision: number }
+      database.prepare(
+        `UPDATE v2_raffle_state SET display_active = 1, raffle_revision = ?, updated_at = ?
+         WHERE reset_epoch = ?`,
+      ).run(raffle.raffleRevision + 1, timestamp, runtime.resetEpoch)
+      nextPresentationRevision += 1
+      database.prepare(
+        `UPDATE v2_runtime_state SET presentation_type = 'CAPSULE_INSERT',
+           presentation_revision = ?, updated_at = ? WHERE id = 1`,
+      ).run(nextPresentationRevision, timestamp)
+      appendEvent(database, runtime, 'presentation.changed', nextPresentationRevision, {
+        presentation: { type: 'RAFFLE' }, presentationRevision: nextPresentationRevision,
+      }, timestamp)
+      appendAdminInvalidation(database, runtime, now)
+    } else if (request.command === 'DRAW_RAFFLE') {
+      updateRuntimeTuple = false
+      if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' || runtime.presentationType !== 'RAFFLE') {
+        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '请先在节目支持阶段开启抽奖大屏。', 409)
+      }
+      const candidates = database.prepare(
+        `SELECT participant.identity_id AS identityId
+         FROM v2_participant_states participant
+         LEFT JOIN v2_raffle_draws draw ON draw.reset_epoch = participant.reset_epoch
+           AND draw.identity_id = participant.identity_id
+         WHERE participant.reset_epoch = ? AND participant.onboarding_state = 'ADMITTED'
+           AND draw.id IS NULL ORDER BY participant.identity_id`,
+      ).all(runtime.resetEpoch) as Array<{ identityId: string }>
+      if (candidates.length === 0) {
+        throw new V2RuntimeCommandError('RESOURCE_NOT_FOUND', '没有尚未中奖的已入场新生。', 409)
+      }
+      const selected = candidates[randomInt(candidates.length)]!
+      const drawSequence = Number(database.prepare(
+        `SELECT COALESCE(max(draw_sequence), 0) + 1 FROM v2_raffle_draws WHERE reset_epoch = ?`,
+      ).pluck().get(runtime.resetEpoch))
+      database.prepare(
+        `INSERT INTO v2_raffle_draws (id, reset_epoch, draw_sequence, identity_id, drawn_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run(randomUUID(), runtime.resetEpoch, drawSequence, selected.identityId, timestamp)
+      database.prepare(
+        `UPDATE v2_raffle_state SET raffle_revision = raffle_revision + 1, updated_at = ?
+         WHERE reset_epoch = ?`,
+      ).run(timestamp, runtime.resetEpoch)
+      nextPresentationRevision += 1
+      database.prepare(
+        `UPDATE v2_runtime_state SET presentation_revision = ?, updated_at = ? WHERE id = 1`,
+      ).run(nextPresentationRevision, timestamp)
+      appendEvent(database, runtime, 'presentation.changed', nextPresentationRevision, {
+        presentation: { type: 'RAFFLE' }, presentationRevision: nextPresentationRevision,
+      }, timestamp)
+      appendAdminInvalidation(database, runtime, now)
+    } else if (request.command === 'CLOSE_RAFFLE') {
+      updateRuntimeTuple = false
+      if (runtime.presentationType !== 'RAFFLE') {
+        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '抽奖大屏当前未开启。', 409)
+      }
+      nextPresentationRevision = clearPresentation(database, runtime, timestamp)
+      appendAdminInvalidation(database, runtime, now)
+    } else if (request.command === 'CLEAR_RAFFLE') {
+      updateRuntimeTuple = false
+      if (runtime.mode !== 'REHEARSAL') {
+        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '只有排练模式可以清空抽奖记录。', 409)
+      }
+      database.prepare(`DELETE FROM v2_raffle_draws WHERE reset_epoch = ?`).run(runtime.resetEpoch)
+      database.prepare(
+        `UPDATE v2_raffle_state SET display_active = 0,
+           raffle_revision = raffle_revision + 1, updated_at = ? WHERE reset_epoch = ?`,
+      ).run(timestamp, runtime.resetEpoch)
+      if (runtime.presentationType === 'RAFFLE') {
+        nextPresentationRevision = runtime.presentationRevision + 1
+        database.prepare(
+          `UPDATE v2_runtime_state SET presentation_type = 'NONE', presentation_revision = ?,
+             updated_at = ? WHERE id = 1`,
+        ).run(nextPresentationRevision, timestamp)
+        appendEvent(database, runtime, 'presentation.changed', nextPresentationRevision, {
+          presentation: { type: 'NONE' }, presentationRevision: nextPresentationRevision,
+        }, timestamp)
+      }
+      appendAdminInvalidation(database, runtime, now)
     } else if (request.command === 'SET_MODE') {
       if (runtime.status !== 'READY' || runtime.currentScene !== null) throw new V2RuntimeCommandError('SCENE_TRANSITION_INVALID', '只能在 READY 切换模式。', 409)
       nextMode = request.targetMode

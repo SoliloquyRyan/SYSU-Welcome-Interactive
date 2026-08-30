@@ -14,7 +14,7 @@ interface RuntimeRow {
   status: 'READY' | 'RUNNING' | 'PAUSED' | 'COMPLETED'
   currentScene: 'ASSEMBLY' | 'PROGRAM_SUPPORT' | 'COOPERATIVE_LIGHT' | null
   runRevision: number
-  presentationType: 'NONE' | 'CAPSULE_INSERT' | 'FINALE_PREVIEW'
+  presentationType: 'NONE' | 'CAPSULE_INSERT' | 'RAFFLE' | 'FINALE_PREVIEW'
   presentationRevision: number
   publicAggregateRevision: number
   adminAggregateRevision: number
@@ -26,7 +26,9 @@ interface RuntimeRow {
 function runtime(database: SqliteDatabase): RuntimeRow {
   return database.prepare(
     `SELECT reset_epoch AS resetEpoch, mode, status, current_scene AS currentScene,
-            run_revision AS runRevision, presentation_type AS presentationType,
+            run_revision AS runRevision,
+            CASE WHEN presentation_type = 'CAPSULE_INSERT' THEN 'RAFFLE'
+                 ELSE presentation_type END AS presentationType,
             presentation_revision AS presentationRevision,
             public_aggregate_revision AS publicAggregateRevision,
             admin_aggregate_revision AS adminAggregateRevision,
@@ -74,8 +76,40 @@ function capsuleRows(database: SqliteDatabase, row: RuntimeRow, recap = false) {
 
 function presentation(database: SqliteDatabase, row: RuntimeRow) {
   if (row.presentationType === 'NONE') return { type: 'NONE' as const }
+  if (row.presentationType === 'RAFFLE') return { type: 'RAFFLE' as const }
   if (row.presentationType === 'FINALE_PREVIEW') return { type: 'FINALE_PREVIEW' as const, rehearsal: true as const }
   return { type: 'CAPSULE_INSERT' as const, capsules: capsuleRows(database, row) }
+}
+
+function raffleState(database: SqliteDatabase, epoch: number, includeNames: boolean) {
+  const state = database.prepare(
+    `SELECT display_active AS displayActive, raffle_revision AS raffleRevision
+     FROM v2_raffle_state WHERE reset_epoch = ?`,
+  ).get(epoch) as { displayActive: number; raffleRevision: number }
+  const nameColumn = includeNames ? ', identity.display_name AS displayName' : ''
+  const winners = database.prepare(
+    `SELECT draw.id AS raffleDrawId, draw.draw_sequence AS drawSequence,
+            slot.public_star_id AS publicStarId,
+            star.display_color AS displayColor, draw.drawn_at AS drawnAt${nameColumn}
+     FROM v2_raffle_draws draw
+     JOIN v2_identity_slots slot ON slot.reserved_reset_epoch = draw.reset_epoch
+       AND slot.identity_id = draw.identity_id
+     LEFT JOIN v2_public_stars star ON star.reset_epoch = draw.reset_epoch
+       AND star.identity_id = draw.identity_id
+     ${includeNames ? 'JOIN synthetic_identities identity ON identity.id = draw.identity_id' : ''}
+     WHERE draw.reset_epoch = ? ORDER BY draw.draw_sequence DESC`,
+  ).all(epoch)
+  const eligibleCount = Number(database.prepare(
+    `SELECT count(*) FROM v2_participant_states
+     WHERE reset_epoch = ? AND onboarding_state = 'ADMITTED'`,
+  ).pluck().get(epoch))
+  return {
+    displayActive: state.displayActive === 1,
+    raffleRevision: state.raffleRevision,
+    eligibleCount,
+    remainingCount: Math.max(0, eligibleCount - winners.length),
+    winners,
+  }
 }
 
 function aggregate(database: SqliteDatabase, epoch: number) {
@@ -251,6 +285,7 @@ function readScreen(database: SqliteDatabase, now: Date): V2ScreenSnapshot {
     aggregate: aggregate(database, row.resetEpoch), currentProgram: currentProgram(database),
     interaction: interaction(database, row.resetEpoch),
     publishedBarrages: publishedBarrages(database, row.resetEpoch, false),
+    raffle: raffleState(database, row.resetEpoch, false),
     finalRecap: capsuleRows(database, row, true),
   })
 }
@@ -286,6 +321,7 @@ function readAdminSnapshot(
     roles, aggregateRevision: row.adminAggregateRevision, funnel: adminFunnel,
     readinessWarnings: warnings, interaction: interaction(database, row.resetEpoch),
     publishedBarrages: publishedBarrages(database, row.resetEpoch, true),
+    raffle: raffleState(database, row.resetEpoch, true),
     capsuleCandidates: candidateRows,
     lastControlReceipt: lastReceipt,
     currentProgram: currentProgram(database), programs: programSchedule(database),

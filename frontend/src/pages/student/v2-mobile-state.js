@@ -49,7 +49,7 @@ export function shouldPlayPullback({ previousState, nextSnapshot, reducedMotion 
   if (reducedMotion || previousState !== 'NEEDS_COLOR') return false
   const participant = nextSnapshot?.participant
   return Boolean(
-    participant?.onboardingState === 'NEEDS_CAPSULE_DECISION' &&
+    participant?.onboardingState === 'ADMITTED' &&
       participant.ownPublicStarId &&
       nextSnapshot.publicStars?.some(
         ({ publicStarId }) => publicStarId === participant.ownPublicStarId,
@@ -58,7 +58,7 @@ export function shouldPlayPullback({ previousState, nextSnapshot, reducedMotion 
 }
 
 export function shouldPlayOrbitHandoff({ previousState, nextSnapshot, reducedMotion }) {
-  if (reducedMotion || previousState !== 'NEEDS_CAPSULE_DECISION') return false
+  if (reducedMotion || previousState !== 'NEEDS_COLOR') return false
   const participant = nextSnapshot?.participant
   return Boolean(
     participant?.onboardingState === 'ADMITTED' &&

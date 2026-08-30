@@ -82,7 +82,6 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     const screenPage = await screenContext.newPage()
     const adminPage = await adminContext.newPage()
     const credential = demo.credentials.participants[0]
-    const capsule = 'v2 三浏览器合成胶囊'
     const barrage = 'v2 三端合成弹幕'
 
     await screenPage.goto('/screen')
@@ -93,10 +92,6 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     await expect(participantPage.getByRole('heading', { name: '为你的星选择颜色' })).toBeVisible()
     expect(new URL(participantPage.url()).searchParams.has('token')).toBe(false)
     await participantPage.getByRole('button', { name: '确认星色' }).click()
-    await expect(participantPage.getByRole('heading', { name: /留一句话\s*给未来/u })).toBeVisible()
-    await participantPage.getByLabel('时光胶囊').fill(capsule)
-    await participantPage.getByLabel(/我同意这段文字进入人工审核候选池/u).check()
-    await participantPage.getByRole('button', { name: '提交并进入现场' }).click()
     await expect(participantPage.getByText('1 颗真实星已抵达')).toBeVisible()
     await expect(screenPage.getByText('/ 300 颗真实星点')).toBeVisible()
 
@@ -106,12 +101,11 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
       demo.credentials.admin.password,
     )
     await expect(adminPage.locator('.metrics')).toContainText('1')
-    await expect(adminPage.locator('.capsule-list')).toContainText(capsule)
     await expectNoForbiddenText(
       [adminPage, screenPage],
       [credential.displayName, credential.studentNumber, credential.inviteToken],
     )
-    await expectNoForbiddenText([screenPage], [credential.publicStarId, capsule])
+    await expectNoForbiddenText([screenPage], [credential.publicStarId])
 
     await acceptNextDialog(adminPage)
     await adminPage.getByRole('button', { name: '切换为现场' }).click()
@@ -133,6 +127,15 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     await advance(adminPage)
     await waitForRuntime(adminPage, '运行中', '02 节目应援')
     await expect(screenPage.locator('.v2-screen')).toHaveClass(/scene-program_support/u)
+
+    await clickAdminCommand(adminPage, '开启抽奖大屏')
+    await expect(screenPage.getByRole('heading', { name: '星河幸运坐标' })).toBeVisible()
+    await clickAdminCommand(adminPage, '抽取一位')
+    await expect(screenPage.locator('.v2-raffle__code')).toHaveText(credential.publicStarId)
+    await expect(adminPage.locator('.winner-list')).toContainText(credential.displayName)
+    await expect(adminPage.locator('.winner-list')).toContainText(credential.publicStarId)
+    await clickAdminCommand(adminPage, '关闭抽奖大屏')
+    await expect(screenPage.locator('.v2-raffle')).toHaveCount(0)
 
     // The information panel must remain reachable before an admin chooses a
     // current program. Sending stays unavailable and explains why.

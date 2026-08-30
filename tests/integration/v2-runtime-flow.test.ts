@@ -65,7 +65,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
          admin_aggregate_revision, reward_rule_version, public_seq, admin_seq,
          completed_at, updated_at
        ) VALUES (1, 2, 'REHEARSAL', 'READY', NULL, 0, 'NONE', 0, 0, 0,
-         'v2-rewards-2026-08-13', 0, 0, NULL, ?)`,
+         'v2-rewards-2026-08-30-raffle', 0, 0, NULL, ?)`,
     ).run(timestamp)
     database.prepare(
       `INSERT INTO v2_stream_cursors (reset_epoch, stream_id, stream_seq)
@@ -76,6 +76,11 @@ describe('V2-04 three-scene runtime and participant actions', () => {
          id, reset_epoch, interaction_revision, barrage_paused,
          display_batch, next_display_seq, updated_at
        ) VALUES (1, 2, 0, 0, 0, 1, ?)`,
+    ).run(timestamp)
+    database.prepare(
+      `INSERT INTO v2_raffle_state (
+         id, reset_epoch, display_active, raffle_revision, updated_at
+       ) VALUES (1, 2, 0, 0, ?)`,
     ).run(timestamp)
     database.prepare(
       `INSERT INTO v2_identity_slots (
@@ -123,15 +128,10 @@ describe('V2-04 three-scene runtime and participant actions', () => {
 
   function admit(index = 0) {
     const activated = activate(index)
-    participantCommand(index, {
+    return participantCommand(index, {
       command: 'LOCK_COLOR',
       expectedParticipantRevision: activated.snapshot.participant.participantRevision,
       colorTemperatureKelvin: 6500,
-    })
-    const snapshot = readV2ParticipantSnapshot(database, manifest(index).id, NOW)
-    return participantCommand(index, {
-      command: 'SKIP_CAPSULE',
-      expectedParticipantRevision: snapshot.participant.participantRevision,
     })
   }
 
@@ -206,7 +206,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 12, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 13, issues: [] })
   })
 
   it('requires an explicit readiness override and audits the anonymous funnel', () => {
@@ -295,7 +295,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 12, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 13, issues: [] })
   })
 
   it('starts one public star once and grants the scene reward atomically', () => {
@@ -306,7 +306,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       command: 'START_STAR',
       expectedParticipantRevision: before.participant.participantRevision,
     })
-    expect(result.participant).toMatchObject({ started: true, starlight: 40 })
+    expect(result.participant).toMatchObject({ started: true, starlight: 60 })
     expect(readV2ParticipantSnapshot(database, manifest(0).id, NOW).publicStars[0]).toMatchObject({ started: true, starRevision: 2 })
     expect(database.prepare(
       `SELECT count(*) FROM v2_reward_ledger WHERE event_key = 'STAR_STARTED'`,
@@ -397,7 +397,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 12, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 13, issues: [] })
   })
 
   it('pauses, removes, source-blocks and clears anonymous barrages with audit facts', () => {
@@ -538,22 +538,8 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     expect(database.prepare('SELECT completed_at FROM v2_runtime_state').pluck().get()).toBeNull()
   })
 
-  it('captures the displayed capsule in the immutable final recap and rejects later participant writes', () => {
-    const activated = activate(0)
-    participantCommand(0, {
-      command: 'LOCK_COLOR',
-      expectedParticipantRevision: activated.snapshot.participant.participantRevision,
-      colorTemperatureKelvin: 6500,
-    })
-    let snapshot = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
-    participantCommand(0, {
-      command: 'UPSERT_CAPSULE',
-      expectedParticipantRevision: snapshot.participant.participantRevision,
-      text: '愿今晚的光继续前行', candidateScopeAccepted: true,
-    })
-    database.prepare(
-      `UPDATE v2_capsules SET moderation_status = 'DISPLAYED' WHERE identity_id = ?`,
-    ).run(manifest(0).id)
+  it('completes without a message recap and rejects later participant writes', () => {
+    admit(0)
     setLiveAndStart()
     runtime({
       command: 'ADVANCE', expectedRunRevision: 2,
@@ -565,18 +551,13 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       expectedPresentationRevision: 0, confirmed: true,
       overrideReadinessWarnings: true,
     })
-    database.prepare(
-      `UPDATE v2_runtime_state SET presentation_type = 'CAPSULE_INSERT',
-         presentation_revision = 1 WHERE id = 1`,
-    ).run()
     runtime({
       command: 'COMPLETE', expectedRunRevision: 4,
-      expectedPresentationRevision: 1, confirmed: true,
+      expectedPresentationRevision: 0, confirmed: true,
       overrideReadinessWarnings: true,
     })
-    snapshot = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
-    expect(snapshot.finalRecap).toHaveLength(1)
-    expect(snapshot.finalRecap[0]).toMatchObject({ text: '愿今晚的光继续前行' })
+    const snapshot = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
+    expect(snapshot.finalRecap).toEqual([])
     expect(snapshot.participant.allowedActions).toEqual([])
     expect(() => participantCommand(0, {
       command: 'POST_BARRAGE',
@@ -643,53 +624,33 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     expect(() => runtime({ command: 'PAUSE', expectedRunRevision: 0, expectedPresentationRevision: 0, confirmed: true })).toThrowError(V2RuntimeCommandError)
   })
 
-  it('selects, explicitly shows, clears and safely removes capsule inserts', () => {
-    const activated = activate(0)
-    participantCommand(0, {
-      command: 'LOCK_COLOR', expectedParticipantRevision: activated.snapshot.participant.participantRevision,
-      colorTemperatureKelvin: 6500,
-    })
-    let participant = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
-    participantCommand(0, {
-      command: 'UPSERT_CAPSULE', expectedParticipantRevision: participant.participant.participantRevision,
-      text: '愿星光照亮新的旅程', candidateScopeAccepted: true,
-    })
-    participant = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
-    const capsuleId = String(database.prepare('SELECT capsule_id FROM v2_capsules WHERE identity_id = ?').pluck().get(manifest(0).id))
-    commandCounter += 1
-    executeV2RuntimeCommand(database, {
-      sessionShortId: 'reviewer', requestId: `review-${commandCounter}`, roles: ['REVIEWER'],
-    }, {
-      protocolVersion: '2', resetEpoch: 2, idempotencyKey: `select-${commandCounter}`,
-      command: 'SELECT_CAPSULE', capsuleId,
-      expectedParticipantRevision: participant.participant.participantRevision, confirmed: true,
-    }, NOW)
-    expect(database.prepare('SELECT moderation_status FROM v2_capsules WHERE capsule_id = ?').pluck().get(capsuleId)).toBe('SELECTED')
-
+  it('draws admitted participants without replacement and auto-closes on pause', () => {
+    admit(0)
+    admit(1)
     runtime({ command: 'START', expectedRunRevision: 0, confirmed: true })
-    const selectedRevision = Number(database.prepare('SELECT participant_revision FROM v2_participant_states WHERE identity_id = ?').pluck().get(manifest(0).id))
-    commandCounter += 1
-    const shown = executeV2RuntimeCommand(database, {
-      sessionShortId: 'reviewer', requestId: `show-${commandCounter}`, roles: ['REVIEWER'],
-    }, {
-      protocolVersion: '2', resetEpoch: 2, idempotencyKey: `show-capsule-${commandCounter}`,
-      command: 'SHOW_CAPSULE_INSERT', expectedRunRevision: 1,
-      expectedPresentationRevision: 0, capsuleIds: [capsuleId], confirmed: true,
-    }, NOW)
-    expect(shown.presentation).toMatchObject({ type: 'CAPSULE_INSERT', capsules: [{ capsuleId }] })
-
-    const displayedRevision = Number(database.prepare('SELECT participant_revision FROM v2_participant_states WHERE identity_id = ?').pluck().get(manifest(0).id))
-    expect(displayedRevision).toBe(selectedRevision + 1)
-    commandCounter += 1
-    const removed = executeV2RuntimeCommand(database, {
-      sessionShortId: 'reviewer', requestId: `remove-${commandCounter}`, roles: ['REVIEWER'],
-    }, {
-      protocolVersion: '2', resetEpoch: 2, idempotencyKey: `remove-capsule-${commandCounter}`,
-      command: 'REMOVE_CAPSULE', capsuleId, expectedParticipantRevision: displayedRevision,
-      expectedPresentationRevision: shown.presentationRevision, reason: '现场内容安全撤下', confirmed: true,
-    }, NOW)
-    expect(removed.presentation).toEqual({ type: 'NONE' })
-    expect(database.prepare('SELECT moderation_status FROM v2_capsules WHERE capsule_id = ?').pluck().get(capsuleId)).toBe('REMOVED')
-    expect(String(database.prepare("SELECT result FROM admin_operation_records WHERE action = 'V2_REMOVE_CAPSULE'").pluck().get())).toContain('现场内容安全撤下')
+    runtime({
+      command: 'SET_SCENE', expectedRunRevision: 1,
+      expectedPresentationRevision: 0, targetScene: 'PROGRAM_SUPPORT', confirmed: true,
+    })
+    const opened = runtime({
+      command: 'OPEN_RAFFLE', expectedRunRevision: 2,
+      expectedPresentationRevision: 0, confirmed: true,
+    })
+    expect(opened.presentation).toEqual({ type: 'RAFFLE' })
+    runtime({ command: 'DRAW_RAFFLE', expectedRunRevision: 2, expectedPresentationRevision: 1, confirmed: true })
+    runtime({ command: 'DRAW_RAFFLE', expectedRunRevision: 2, expectedPresentationRevision: 2, confirmed: true })
+    const admin = readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW)
+    const screen = readV2ScreenSnapshot(database, NOW)
+    expect(admin.raffle.winners).toHaveLength(2)
+    expect(new Set(admin.raffle.winners.map(({ publicStarId }) => publicStarId)).size).toBe(2)
+    expect(admin.raffle.winners[0]).toMatchObject({ displayName: expect.any(String) })
+    expect(JSON.stringify(screen.raffle)).not.toContain('displayName')
+    expect(screen.raffle).toMatchObject({ eligibleCount: 2, remainingCount: 0 })
+    const paused = runtime({
+      command: 'PAUSE', expectedRunRevision: 2,
+      expectedPresentationRevision: 3, confirmed: true,
+    })
+    expect(paused.presentation).toEqual({ type: 'NONE' })
+    expect(readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW).raffle.winners).toHaveLength(2)
   })
 })

@@ -166,6 +166,7 @@ function screenSnapshot() {
     currentProgram: null,
     interaction: { interactionRevision: 0, barragePaused: false, displayBatch: 0 },
     publishedBarrages: [],
+    raffle: { displayActive: false, raffleRevision: 0, eligibleCount: 0, remainingCount: 0, winners: [] },
     finalRecap: [],
   }
 }
@@ -198,6 +199,7 @@ function adminSnapshot() {
     readinessWarnings: [],
     interaction: { interactionRevision: 0, barragePaused: false, displayBatch: 0 },
     publishedBarrages: [],
+    raffle: { displayActive: false, raffleRevision: 0, eligibleCount: 0, remainingCount: 0, winners: [] },
     capsuleCandidates: [],
     lastControlReceipt: null,
     currentProgram: null,
@@ -430,7 +432,7 @@ describe('protocol v2 shared contract', () => {
       admittedAt: NOW,
       admittedScene: 'ASSEMBLY' as const,
       admittedRunRevision: 1,
-      allowedActions: ['UPSERT_CAPSULE'] as const,
+      allowedActions: [] as const,
     }
     expect(V2ParticipantProjectionSchema.safeParse(admitted).success).toBe(true)
     expect(
@@ -481,7 +483,7 @@ describe('protocol v2 shared contract', () => {
       admittedAt: NOW,
       admittedScene: 'PROGRAM_SUPPORT' as const,
       admittedRunRevision: 4,
-      allowedActions: ['UPSERT_CAPSULE'] as const,
+      allowedActions: [] as const,
     }
     const rehearsalReturn = {
       ...snapshot,
@@ -510,7 +512,7 @@ describe('protocol v2 shared contract', () => {
         ...rehearsalReturn,
         participant: {
           ...admitted,
-          allowedActions: ['UPSERT_CAPSULE', 'START_STAR'],
+          allowedActions: ['START_STAR'],
         },
       }).success,
     ).toBe(false)
@@ -530,7 +532,7 @@ describe('protocol v2 shared contract', () => {
         participant: {
           ...admitted,
           admittedScene: null,
-          allowedActions: ['UPSERT_CAPSULE', 'START_STAR'],
+          allowedActions: ['START_STAR'],
         },
       }).success,
     ).toBe(true)
@@ -856,7 +858,7 @@ describe('protocol v2 shared contract', () => {
       colorLockedAt: NOW,
       ownPublicStarId: star.publicStarId,
       formationSlot: star.formationSlot,
-      allowedActions: ['UPSERT_CAPSULE', 'SKIP_CAPSULE'] as const,
+      allowedActions: [] as const,
     }
     const participant = {
       ...participantSnapshot(),
@@ -1008,7 +1010,7 @@ describe('protocol v2 shared contract', () => {
       admittedAt: NOW,
       admittedScene: 'COOPERATIVE_LIGHT' as const,
       admittedRunRevision: 9,
-      allowedActions: ['UPSERT_CAPSULE'] as const,
+      allowedActions: [] as const,
     }
     const returnedToProgram = {
       ...participantSnapshot(),
@@ -1037,7 +1039,7 @@ describe('protocol v2 shared contract', () => {
         ...returnedToProgram,
         participant: {
           ...admitted,
-          allowedActions: ['UPSERT_CAPSULE', 'SEND_GIFT', 'POST_BARRAGE'],
+          allowedActions: ['SEND_GIFT', 'POST_BARRAGE'],
         },
       }).success,
     ).toBe(false)
