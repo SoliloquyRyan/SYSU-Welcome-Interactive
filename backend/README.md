@@ -1,10 +1,10 @@
-# Demo v0 本地后端（G2 基线 / G4 验证）
+# Demo v0 本地后端
 
 Demo v0 的本地技术方向已经由 D-007 冻结：同仓库 Node.js/TypeScript、Fastify 5、`better-sqlite3`/SQLite（WAL）、HTTP 接口、`@fastify/websocket` 事件流，以及前后端共享的 TypeScript/Zod 契约。G2 已在 G1 底座上形成可操作的六阶段业务闭环；正式公网平台、域名和生产部署仍待确认，本地选择不代表学院正式生产架构。
 
-D-022 已验收的当前后端实现：
+D-022 历史基线与后续 v2 当前实现包括：
 
-- 七份有顺序、带校验和的 SQLite 迁移，以及 WAL、外键和忙等待设置；
+- 有顺序、带校验和的 SQLite 迁移（当前顶端 `0013`），以及 WAL、外键和忙等待设置；
 - 300 个虚构参与者、固定虚构节目和四档礼物的本地种子；
 - 随机邀请令牌、合成学号和后台口令只保存在被忽略的本地 manifest，数据库仅保存安全摘要；
 - 参与者与后台相互独立的 `HttpOnly` 会话、严格的同源 `Origin`/`Host` 边界，以及按本地来源隔离的失败认证限频；
@@ -15,7 +15,7 @@ D-022 已验收的当前后端实现：
 - 保持种子稳定、清理完整业务运行态、轮换会话并增加 `resetEpoch` 的确定性重置；
 - 根级初始化、验证、构建、测试和局域网启动命令。
 
-D-023 的 G5-03～G5-05 已完成：`0005`/`0006` 分别加入 Kelvin 星色锁定与时光胶囊候选状态，`0007` 把旧六位码摘要原子替换为合成学号摘要；种子清单升级会保留邀请令牌和身份 ID。参与者接口支持个性令牌直接建会话及姓名+合成学号备用核验；后台可人工选择、上屏和撤下胶囊，大屏只获得最多 6 条严格脱敏的公开投影。字段处置（v1 历史）见 [`../docs/archive/g5-mobile-baseline.md`](../docs/archive/g5-mobile-baseline.md)。
+D-023 的 G5-03～G5-05 曾在 v1 引入 Kelvin 星色、胶囊候选和合成学号摘要；该实现只作历史，见 [`../docs/archive/g5-mobile-baseline.md`](../docs/archive/g5-mobile-baseline.md)。D-037 现已从三端退役寄语/胶囊，锁色直接准入，并通过迁移 `0013` 建立中场个人抽奖。已有 schema-12 `V2_ACTIVE` 库不得自动迁移，须按 [`../docs/RUNBOOK.md`](../docs/RUNBOOK.md) §7.2 停服、先备份再显式升级。
 
 > 本文描述 v1/G2 基线与历史验收；协议 v2（`V2_ACTIVE` 后）的端点与迁移以 [`../docs/PROTOCOL_V2.md`](../docs/PROTOCOL_V2.md) 与共享契约为准，运行与维护见 [`../docs/RUNBOOK.md`](../docs/RUNBOOK.md)。
 
@@ -25,6 +25,7 @@ D-023 的 G5-03～G5-05 已完成：`0005`/`0006` 分别加入 Kelvin 星色锁�
 pnpm db:setup
 pnpm db:verify
 pnpm db:reset
+pnpm db:v2:upgrade -- --backup <新绝对路径.sqlite> --confirm SYNTHETIC_DEMO_DATA_IS_DISPOSABLE
 pnpm verify:g2
 pnpm test:load
 pnpm verify:g4
@@ -38,4 +39,4 @@ G2 之后的验证状态与剩余范围：
 - D-021 记录的提交前工作树根级 `pnpm verify:g4` 以退出码 0、观察总耗时约 463.2 秒完成，Vitest 20 个文件/119 条、共享契约/后端/前端构建及三浏览器 Playwright 27/27 全部通过；`tests/reports/g4-load.json` 为被忽略的脱敏本地证据。该结果不绑定任何提交。G0～G4 冻结候选提交形成后，必须在该提交的干净工作树复验，并由 D-022 记录被验收提交的完整 SHA、命令结果与工作树状态；D-022 落地前只能称为冻结候选，不能称为可复现冻结版本。该结果也不是 30 分钟 soak、分布式局域网、场馆或正式上线验收；
 - 最终视觉与动效润色、实体入口、公网 HTTPS 和正式数据方案。
 
-运行数据库与本地凭据存放在被 Git 忽略的 `backend/.data/`。如果已有数据库但 manifest 丢失或指纹不匹配，服务会保持未就绪而不会静默生成另一套凭据。不得提交真实名单、运行数据库、口令、会话、完整邀请令牌、密钥或可识别个人的测试数据。Demo v0 不接云服务、外部 AI、正式备份或真实数据导出。
+运行数据库与本地凭据存放在被 Git 忽略的 `backend/.data/`。如果已有数据库但 manifest 丢失、指纹不匹配或 v2 schema 未升级，服务会保持未就绪，不会静默生成另一套凭据或退回 v1 初始化。不得提交真实名单、运行数据库、口令、会话、完整邀请令牌、密钥或可识别个人的测试数据。Demo v0 不接云服务、外部 AI、正式备份或真实数据导出。

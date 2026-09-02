@@ -1,16 +1,16 @@
 # 测试计划（v2 现行）
 
-> 状态：协议 v2 现行；自动门证据以 D-032（2026-08-15）时点为准。v1 G0～G4 的历史证据已归档至 [`archive/v1-test-plan.md`](./archive/v1-test-plan.md)。人工验收的唯一入口是 [`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md)。
+> 状态：D-037 现行。D-036/D-032（2026-08-15）的自动与人工结果是变更前历史基线；D-037 改变入场、奖励、后台和大屏，必须取得本次自动证据并重新执行受影响的 vivo X300、三端局域网与 OBS 人工复验。v1 G0～G4 历史证据见 [`archive/v1-test-plan.md`](./archive/v1-test-plan.md)。
 
 ## 1. 目标
 
 协议 v2 必须证明，而不只是"页面能打开"：
 
-1. 个人入场时钟与全场运行时钟独立；核验即激活 → 锁色入星系 → 胶囊决定 → 进入当前场景。
+1. 个人入场时钟与全场运行时钟独立；核验即激活 → 锁色、成星并直接准入 → 进入当前场景；三端不再提供寄语/胶囊入口。
 2. 全场只有 `ASSEMBLY`、`PROGRAM_SUPPORT`、`COOPERATIVE_LIGHT` 三场景；`COMPLETED` 是终态。
 3. `READY`/`RUNNING` 接受新到与晚到者；`PAUSED`/`COMPLETED` 拒绝写入但允许只读恢复。
 4. 三端共享服务端权威状态；重复/重试/多设备/重连/重启不重复建号、发奖、扣款、负余额或倒退终态。
-5. 公共星系最多 300 颗真实恒星；胶囊仅后台人工插入；隐私字段零泄漏。
+5. 公共星系最多 300 颗真实恒星；节目支持阶段抽奖无放回、可恢复，后台才可见中奖者合成姓名，大屏只见公开星号；隐私字段零泄漏。
 6. 手机首次镜头遵守 D-030 金标：稳定 `visible` 后开播、同一持久恒星贯穿、无跳过、中断即静态、reduced-motion 直接静态。
 
 ## 2. 原则
@@ -23,28 +23,40 @@
 
 ## 3. 现行自动门（v2）
 
-> 2026-08-15 起：CI（`.github/workflows/ci.yml`）在 push/PR 时执行 frozen install → 契约/类型/测试/构建/`docs:check` → chromium-ci 全量 E2E；本机收口仍用下表命令。`tests/e2e/v2-journey-visual.spec.ts` 是 D-030 金标旅程的视觉回归门（chromium-ci，实测 journey=6049ms、CLS=0.0147），截图在 `output/playwright/v2-journey-visual/`。
+> CI（`.github/workflows/ci.yml`）在 push/PR 时执行 frozen install → 契约/类型/测试/构建/`docs:check` → chromium-ci 全量 E2E；本机收口仍用下表命令。D-030 的视觉数据保留为历史比较点，D-037 当前旅程不得直接借用旧截图或旧时长结论。
 
-| 门 | 命令 | 当前证据（D-032 时点） |
+| 门 | 命令 | 证据口径 |
 |---|---|---|
-| 单元/集成/API | `pnpm test` | 根级 Vitest 39 文件/360 条，全部通过 |
-| 类型与构建 | `pnpm typecheck`、`pnpm build` | 全绿（前端 80 模块） |
-| 三浏览器三端闭环 | `pnpm test:v2:e2e` | `chromium-ci`/Chrome/Edge 3/3 |
-| 300 人协议负载 | `pnpm test:v2:load` | `passed`：300 人全旅程 + 1200 礼物；各类 p95 < 2s；重复/负余额/epoch 污染/隐私泄漏 = 0 |
-| 30 分钟渲染 soak | `pnpm test:v2:soak` | `passed`：1,800,056.8ms；星系 27.7～28.6fps；堆 ≤34.1MB；DOM 峰值 59；异常 0 |
-| 首次镜头自动门 | D-027～D-032 聚焦用例 | normal-motion 时长/可见性/连续性/中断静态全部通过；D-028 历史 `2783ms` 仅保留原范围 |
+| 单元/集成/API | `pnpm test` | D-037 必须覆盖锁色直接准入、旧命令拒绝、抽奖权限/无放回/恢复、schema 12→13 备份与回滚 |
+| 类型与构建 | `pnpm typecheck`、`pnpm build` | 当前工作树必须全绿 |
+| 三浏览器三端闭环 | `pnpm test:v2:e2e` | `chromium-ci`/Chrome/Edge 当前流程全部通过 |
+| 300 人协议负载 | `pnpm test:v2:load` | 300 人当前旅程、p95 < 2s、不变量为 0，并实际通过重置/重启恢复段 |
+| 渲染 soak | `pnpm test:v2:soak:smoke`，必要时 `pnpm test:v2:soak` | 抽奖层、三场景和静态降级无异常；30 分钟旧结果只作基线 |
+| 首次镜头自动门 | v2 journey 聚焦用例 | 锁色后直接衔接入轨；normal-motion、隐藏/中断、刷新与 reduced-motion 同构 |
 
 不变量清单：重复奖励/扣减/幂等记录、负余额、旧 epoch 污染、协议错误、公开事件携带私密字段、横纵溢出、外部网络请求——全部必须为 0。
 
-## 4. 视觉自动门（D-030～D-032）
+### 3.1 2026-09-02 D-037 本机收口证据
 
-- D-030 金标：正式页与 `motion-previsual-personal-star` 预演共用同一生产渲染器；参考时长约 5.4s 寻星 / 1.0s 锁色闪烁 / 4.2s 拉远入轨；同一恒星节点贯穿全程，禁 DOM 星换 Canvas 圆环冒充交接。
-- D-032：逐字大标题 + 光标、字体回退栈、微角操作坞、本人档案字段顺序、动力/星光解释触发器——聚焦 Vitest 5 文件/73 项与 Chrome 正式个人旅程通过。
+| 命令 | 结果 |
+|---|---|
+| `pnpm verify:g2` | `PASS`：Vitest 39 文件/363 项，类型检查、契约/后端/前端生产构建全绿 |
+| `pnpm test:v2:e2e` | `PASS`：`chromium-ci` / Chrome / Edge 三个配置项退出码均为 0 |
+| `pnpm test:v2:load` | `PASS`：300 人旅程、1200 次礼物全成功，最高 p95 `840.23ms`；301/301 连接在持久化重启后恢复，reset `6755.6ms / 30000ms`，协议/隐私/不变量错误为 0 |
+| `pnpm test:v2:soak:smoke` | `PASS`：6 阶段、计划渲染 46s，实测 `46037.39ms`，无顶层失败 |
+| `pnpm docs:check` + `V2_FIELD_PREVIEW_SMOKE=1 pnpm preview:v2:field` | `PASS`：38 份 Markdown、119 个相对链接、37 条决策顺序正确；现场预览临时栈通过 |
+
+证据边界：本轮未重跑 30 分钟完整渲染 soak，而是在 D-036 历史基线上运行 D-037 当前 46 秒六阶段冒烟；真机/局域网/OBS 仍以 [`D037_FIELD_ACCEPTANCE.md`](./D037_FIELD_ACCEPTANCE.md) 的 `PENDING` 为准。上述命令均使用临时合成数据，没有执行实际 `.data` 的 schema 12→13 升级。
+
+## 4. 视觉自动门（D-037 现行，D-030～D-032 为基线）
+
+- D-037 继承 D-030 的约 5.4s 寻星、约 1.0s 锁色确认与约 4.2s 入轨视觉语言，但锁色权威成功后直接衔接入轨，不再出现寄语输入或胶囊决定停留。
+- D-032 的逐字大标题、字体回退栈、微角操作坞与动力/星光解释仍生效；本人档案不再显示时光胶囊。
 - 静态同构：隐藏/中断/刷新/恢复/reduced-motion 直接呈现对应权威静态终态。
 
-## 5. 现场人工验收（已关闭，D-036）
+## 5. 现场人工验收（D-037 复验 `PENDING`）
 
-[`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md) 的三部分（vivo X300 新鲜邀请视觉签核、三端局域网旅程、OBS 实际合成）已由项目负责人于 2026-08-15 签核全部 `PASS`，V2-10 关闭。设备版本等元数据未单独记录，与 D-021 证据限制处理一致。桌面自动化与 AI 目检自始至终未代签。
+[`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md) 记录了项目负责人于 2026-08-15 对 D-036 基线的 `PASS`，不得改写。D-037 在 [`D037_FIELD_ACCEPTANCE.md`](./D037_FIELD_ACCEPTANCE.md) 另行记录：新鲜邀请锁色后直接入轨、后台开启/连续抽取/关闭/排练清空、Screen 只显示公开星号、刷新/重连恢复、OBS 透明中心、静态降级与断线处置。当前没有负责人新签核时一律保持 `PENDING`；桌面自动化与 AI 目检不能代签。
 
 ## 6. 缺陷分级
 

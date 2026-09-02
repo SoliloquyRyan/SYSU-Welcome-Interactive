@@ -23,6 +23,7 @@ import {
   readProtocolRuntime,
   resetSyntheticV2Database,
   switchSyntheticDemoToV2,
+  upgradeSyntheticV2DatabaseFrom12To13,
   V2_DESTRUCTIVE_CONFIRMATION,
   V2_REWARD_RULE_VERSION,
   V2MaintenanceError,
@@ -68,6 +69,95 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
     )
     markV1ServiceListening(database, 'test-v1-service', generation, NOW)
     completeV1ServiceShutdown(database, 'test-v1-service', generation, NOW)
+  }
+
+  function seedV2Schema12Baseline(): void {
+    migrateDatabase(database, MIGRATIONS_PATH, () => NOW, 12)
+    seedDemoDatabase(database, {
+      manifestPath,
+      participantCount: 300,
+      now: () => NOW,
+    })
+    const timestamp = NOW.toISOString()
+    database
+      .prepare(
+        `UPDATE protocol_runtime
+         SET v1_service_registered_at = ?, v1_service_generation = 1,
+             v1_service_listen_generation = 1, v1_service_listened_at = ?,
+             v1_service_clean_shutdown_generation = 1,
+             v1_service_clean_shutdown_at = ?, updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(timestamp, timestamp, timestamp, timestamp)
+    database
+      .prepare(
+        `INSERT INTO v2_identity_slots (
+           identity_id, seed_index, public_star_id, formation_slot,
+           reserved_reset_epoch, reserved_at
+         )
+         SELECT id, seed_index, public_star_id, 'slot:' || visual_seed, NULL, NULL
+         FROM synthetic_identities
+         WHERE enabled = 1
+         ORDER BY seed_index`,
+      )
+      .run()
+    database
+      .prepare(
+        `INSERT INTO v2_runtime_state (
+           id, reset_epoch, mode, status, current_scene, run_revision,
+           presentation_type, presentation_revision,
+           public_aggregate_revision, admin_aggregate_revision,
+           reward_rule_version, public_seq, admin_seq, completed_at, updated_at
+         ) VALUES (
+           1, 2, 'REHEARSAL', 'READY', NULL, 0, 'NONE', 0,
+           0, 0, 'v2-rewards-2026-08-13', 0, 0, NULL, ?
+         )`,
+      )
+      .run(timestamp)
+    database
+      .prepare(
+        `INSERT INTO v2_screen_interaction_state (
+           id, reset_epoch, interaction_revision, barrage_paused,
+           display_batch, next_display_seq, updated_at
+         ) VALUES (1, 2, 0, 0, 0, 1, ?)`,
+      )
+      .run(timestamp)
+    database
+      .prepare(
+        `INSERT INTO v2_stream_cursors (reset_epoch, stream_id, stream_seq)
+         VALUES (2, 'public', 0), (2, 'admin', 0)`,
+      )
+      .run()
+    database
+      .prepare(
+        `UPDATE app_state
+         SET reset_epoch = 2, event_seq = 0, is_resetting = 0, updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(timestamp)
+    database
+      .prepare(
+        `UPDATE protocol_runtime
+         SET active_protocol_version = '2', activation_state = 'V2_ACTIVE',
+             data_classification = 'SYNTHETIC_DEMO',
+             cutover_backup_sha256 = ?, cutover_at = ?, updated_at = ?
+         WHERE id = 1`,
+      )
+      .run('a'.repeat(64), timestamp, timestamp)
+  }
+
+  function upgradeOptions(
+    overrides: Partial<Parameters<typeof upgradeSyntheticV2DatabaseFrom12To13>[1]> = {},
+  ): Parameters<typeof upgradeSyntheticV2DatabaseFrom12To13>[1] {
+    return {
+      migrationsPath: MIGRATIONS_PATH,
+      manifestPath,
+      participantCount: 300,
+      backupPath,
+      confirmation: V2_DESTRUCTIVE_CONFIRMATION,
+      now: () => NOW,
+      ...overrides,
+    }
   }
 
   function cutoverOptions(
@@ -476,6 +566,89 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
     expect(
       database.prepare('SELECT count(*) FROM v2_identity_slots').pluck().get(),
     ).toBe(300)
+  })
+
+  it('requires explicit confirmation before upgrading an active schema-12 database', async () => {
+    seedV2Schema12Baseline()
+
+    await expect(
+      upgradeSyntheticV2DatabaseFrom12To13(
+        database,
+        upgradeOptions({ confirmation: 'missing-confirmation' }),
+      ),
+    ).rejects.toMatchObject({ code: 'V2_DESTRUCTIVE_CONFIRMATION_REQUIRED' })
+
+    expect(fs.existsSync(backupPath)).toBe(false)
+    expect(
+      database.prepare('SELECT max(version) FROM _schema_migrations').pluck().get(),
+    ).toBe(12)
+  })
+
+  it('upgrades an active synthetic schema-12 database only after creating a verified backup', async () => {
+    seedV2Schema12Baseline()
+
+    const result = await upgradeSyntheticV2DatabaseFrom12To13(
+      database,
+      upgradeOptions(),
+    )
+
+    expect(result).toMatchObject({
+      previousSchemaVersion: 12,
+      schemaVersion: 13,
+      resetEpoch: 2,
+      participantCount: 300,
+    })
+    expect(result.backupSha256).toMatch(/^[a-f0-9]{64}$/)
+    const backup = openDatabase(backupPath)
+    try {
+      expect(
+        backup.prepare('SELECT max(version) FROM _schema_migrations').pluck().get(),
+      ).toBe(12)
+      expect(readProtocolRuntime(backup)?.activeProtocolVersion).toBe('2')
+      expect(backup.pragma('integrity_check', { simple: true })).toBe('ok')
+    } finally {
+      backup.close()
+    }
+    expect(
+      database.prepare('SELECT max(version) FROM _schema_migrations').pluck().get(),
+    ).toBe(13)
+    expect(
+      database.prepare('SELECT count(*) FROM v2_raffle_state').pluck().get(),
+    ).toBe(1)
+    expect(
+      verifyV2Foundation(database, {
+        migrationsPath: MIGRATIONS_PATH,
+        manifestPath,
+        participantCount: 300,
+      }),
+    ).toMatchObject({ ready: true, schemaVersion: 13, resetEpoch: 2, issues: [] })
+  })
+
+  it('rolls schema 12→13 back while retaining the verified v2 backup', async () => {
+    seedV2Schema12Baseline()
+
+    await expect(
+      upgradeSyntheticV2DatabaseFrom12To13(
+        database,
+        upgradeOptions({
+          beforeCommit() {
+            throw new Error('synthetic upgrade failure')
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'V2_UPGRADE_ROLLED_BACK' })
+
+    expect(fs.existsSync(backupPath)).toBe(true)
+    expect(
+      database.prepare('SELECT max(version) FROM _schema_migrations').pluck().get(),
+    ).toBe(12)
+    expect(
+      database.prepare(
+        `SELECT count(*) FROM sqlite_master
+         WHERE type = 'table' AND name = 'v2_raffle_state'`,
+      ).pluck().get(),
+    ).toBe(0)
+    expect(readProtocolRuntime(database)?.activeProtocolVersion).toBe('2')
   })
 
   it('rolls the cutover transaction back while retaining the verified backup', async () => {

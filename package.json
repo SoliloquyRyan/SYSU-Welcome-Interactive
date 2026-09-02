@@ -38,6 +38,7 @@
     "db:setup": "tsx backend/src/cli/setup.ts",
     "db:verify": "tsx backend/src/cli/verify.ts",
     "db:reset": "tsx backend/src/cli/reset.ts",
+    "db:v2:upgrade": "tsx backend/src/cli/v2-upgrade.ts",
     "docs:check": "node scripts/check-docs.mjs"
   },
   "devDependencies": {

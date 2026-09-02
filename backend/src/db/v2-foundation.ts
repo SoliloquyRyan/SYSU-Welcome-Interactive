@@ -5,7 +5,12 @@ import path from 'node:path'
 import Database from 'better-sqlite3'
 import { V2RealtimeEventEnvelopeSchema } from '@sysu-welcome/contracts'
 
-import { migrateDatabase, verifyMigrations } from './migrate.js'
+import {
+  migrateActiveV2DatabaseFrom12To13,
+  migrateDatabase,
+  verifyMigrationHistoryAtVersion,
+  verifyMigrations,
+} from './migrate.js'
 import {
   databaseTableExists,
   type SqliteDatabase,
@@ -31,7 +36,9 @@ export type V2MaintenanceErrorCode =
   | 'V2_BACKUP_EXISTS'
   | 'V2_BACKUP_FAILED'
   | 'V2_DATA_CHANGED_DURING_CUTOVER'
+  | 'V2_DATA_CHANGED_DURING_UPGRADE'
   | 'V2_CUTOVER_ROLLED_BACK'
+  | 'V2_UPGRADE_ROLLED_BACK'
   | 'V2_SERVICE_ACTIVE'
   | 'V2_SERVICE_REGISTRATION_REQUIRED'
 
@@ -102,6 +109,23 @@ export interface V2ResetOptions extends Omit<SeedOptions, 'now'> {
 export interface V2ResetResult {
   previousResetEpoch: number
   resetEpoch: number
+}
+
+export interface V2UpgradeOptions extends Omit<SeedOptions, 'now'> {
+  migrationsPath: string
+  backupPath: string
+  confirmation: string
+  now?: () => Date
+  beforeCommit?: () => void
+}
+
+export interface V2UpgradeResult {
+  previousSchemaVersion: 12
+  schemaVersion: 13
+  resetEpoch: number
+  backupPath: string
+  backupSha256: string
+  participantCount: number
 }
 
 export interface V2FoundationVerification {
@@ -480,6 +504,7 @@ function schemaDefinition(database: SqliteDatabase): string {
 function schemaMatchesMigrations(
   database: SqliteDatabase,
   migrationsPath: string,
+  throughVersion = 13,
 ): boolean {
   const pristine = new Database(':memory:')
   try {
@@ -488,6 +513,7 @@ function schemaMatchesMigrations(
       pristine,
       migrationsPath,
       () => new Date('2000-01-01T00:00:00.000Z'),
+      throughVersion,
     )
     return schemaDefinition(database) === schemaDefinition(pristine)
   } finally {
@@ -924,6 +950,126 @@ function assessSyntheticDemoData(
   }
 }
 
+function assessSyntheticV2UpgradeSource(
+  database: SqliteDatabase,
+  options: V2UpgradeOptions,
+): { participantCount: number; resetEpoch: number } {
+  const migrations = verifyMigrationHistoryAtVersion(
+    database,
+    options.migrationsPath,
+    12,
+  )
+  if (!migrations.ready || migrations.availableVersion !== 13) {
+    maintenanceError(
+      'V2_MIGRATIONS_NOT_READY',
+      `V2 upgrade requires an exact schema-12 database and migration 0013 as the repository tip: ${migrations.issues.join('; ')}`,
+    )
+  }
+
+  const runtime = readProtocolRuntime(database)
+  if (
+    !runtime ||
+    runtime.activeProtocolVersion !== '2' ||
+    runtime.activationState !== 'V2_ACTIVE'
+  ) {
+    maintenanceError(
+      'V2_PROTOCOL_STATE_INVALID',
+      'V2 schema upgrade requires an active protocol v2 database',
+    )
+  }
+  if (runtime.dataClassification !== 'SYNTHETIC_DEMO') {
+    maintenanceError(
+      'V2_DATA_CLASSIFICATION_UNSAFE',
+      'V2 schema upgrade only accepts the explicitly classified synthetic Demo database',
+    )
+  }
+  if (!runtime.cutoverBackupSha256 || !runtime.cutoverAt) {
+    maintenanceError(
+      'V2_PROTOCOL_STATE_INVALID',
+      'V2 schema upgrade requires the original cutover backup evidence',
+    )
+  }
+  if (runtime.v1ServiceInstanceId !== null) {
+    maintenanceError(
+      'V2_SERVICE_ACTIVE',
+      'A registered legacy service still owns the database',
+    )
+  }
+  if (options.participantCount !== 300) {
+    maintenanceError(
+      'V2_DATA_CLASSIFICATION_UNSAFE',
+      'V2 schema upgrade requires the exact frozen 300-identity synthetic directory',
+    )
+  }
+
+  const seed = verifyDemoSeed(database, options)
+  if (!seed.ready || seed.participantCount !== 300) {
+    maintenanceError(
+      'V2_SEED_VERIFICATION_FAILED',
+      `The fixed synthetic seed could not be verified: ${seed.issues.join('; ')}`,
+    )
+  }
+  const integrityIssues = sqliteIntegrityIssues(database)
+  if (integrityIssues.length > 0) {
+    maintenanceError(
+      'V2_DATA_CLASSIFICATION_UNSAFE',
+      `SQLite integrity checks failed before upgrade: ${integrityIssues.join('; ')}`,
+    )
+  }
+  const extraTables = unknownTables(database)
+  if (extraTables.length > 0) {
+    maintenanceError(
+      'V2_DATA_CLASSIFICATION_UNSAFE',
+      `Unknown tables prevent a controlled upgrade: ${extraTables.join(', ')}`,
+    )
+  }
+  if (!schemaMatchesMigrations(database, options.migrationsPath, 12)) {
+    maintenanceError(
+      'V2_DATA_CLASSIFICATION_UNSAFE',
+      'The live SQLite schema does not exactly match migrations 0001-0012',
+    )
+  }
+  const v1MutableFacts = nonzeroCounts(tableCounts(database, V1_MUTABLE_TABLES))
+  if (v1MutableFacts) {
+    maintenanceError(
+      'V2_DATA_CLASSIFICATION_UNSAFE',
+      `Protocol v1 mutable state remains in the v2 database: ${v1MutableFacts}`,
+    )
+  }
+
+  const state = database
+    .prepare(
+      `SELECT app.reset_epoch AS appResetEpoch,
+              app.is_resetting AS isResetting,
+              runtime.reset_epoch AS runtimeResetEpoch,
+              (SELECT count(*) FROM v2_identity_slots) AS slotCount
+       FROM app_state app
+       CROSS JOIN v2_runtime_state runtime
+       WHERE app.id = 1 AND runtime.id = 1`,
+    )
+    .get() as
+    | {
+        appResetEpoch: number
+        isResetting: number
+        runtimeResetEpoch: number
+        slotCount: number
+      }
+    | undefined
+  if (
+    !state ||
+    state.isResetting !== 0 ||
+    state.appResetEpoch !== state.runtimeResetEpoch ||
+    state.slotCount !== 300
+  ) {
+    maintenanceError(
+      'V2_PROTOCOL_STATE_INVALID',
+      'The schema-12 protocol v2 runtime is not at a stable synthetic maintenance boundary',
+    )
+  }
+
+  return { participantCount: seed.participantCount, resetEpoch: state.runtimeResetEpoch }
+}
+
 function sha256File(filePath: string): string {
   return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex')
 }
@@ -931,6 +1077,7 @@ function sha256File(filePath: string): string {
 async function createVerifiedBackup(
   database: SqliteDatabase,
   backupPath: string,
+  expectedProtocol: '1' | '2',
 ): Promise<{ backupPath: string; sha256: string; dataVersion: number }> {
   const resolvedBackupPath = path.resolve(backupPath)
   if (!resolvedBackupPath) {
@@ -945,14 +1092,14 @@ async function createVerifiedBackup(
   if (fs.existsSync(resolvedBackupPath)) {
     maintenanceError(
       'V2_BACKUP_EXISTS',
-      'The cutover backup path already exists and will not be overwritten',
+      'The maintenance backup path already exists and will not be overwritten',
     )
   }
   const parentPath = path.dirname(resolvedBackupPath)
   if (!fs.existsSync(parentPath)) {
     maintenanceError(
       'V2_BACKUP_REQUIRED',
-      'The cutover backup parent directory must already exist',
+      'The maintenance backup parent directory must already exist',
     )
   }
 
@@ -972,12 +1119,13 @@ async function createVerifiedBackup(
     try {
       const runtime = readProtocolRuntime(backup)
       if (
-        runtime?.activeProtocolVersion !== '1' ||
-        runtime.activationState !== 'V1_ACTIVE'
+        runtime?.activeProtocolVersion !== expectedProtocol ||
+        runtime.activationState !==
+          (expectedProtocol === '1' ? 'V1_ACTIVE' : 'V2_ACTIVE')
       ) {
         maintenanceError(
           'V2_BACKUP_FAILED',
-          'The backup is not a readable protocol v1 snapshot',
+          `The backup is not a readable protocol v${expectedProtocol} snapshot`,
         )
       }
       const integrity = backup.pragma('integrity_check', {
@@ -996,8 +1144,10 @@ async function createVerifiedBackup(
       Number(database.pragma('data_version', { simple: true })) !== dataVersion
     ) {
       maintenanceError(
-        'V2_DATA_CHANGED_DURING_CUTOVER',
-        'The database changed while the cutover backup was being created',
+        expectedProtocol === '1'
+          ? 'V2_DATA_CHANGED_DURING_CUTOVER'
+          : 'V2_DATA_CHANGED_DURING_UPGRADE',
+        'The database changed while the maintenance backup was being created',
       )
     }
     const sha256 = sha256File(partialBackupPath)
@@ -1007,7 +1157,7 @@ async function createVerifiedBackup(
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
         maintenanceError(
           'V2_BACKUP_EXISTS',
-          'The cutover backup path was claimed concurrently and was not overwritten',
+          'The maintenance backup path was claimed concurrently and was not overwritten',
         )
       }
       throw error
@@ -1140,7 +1290,7 @@ export async function switchSyntheticDemoToV2(
   assertNoActiveV1ServiceLease(database)
   assertV1ServiceRegistrationObserved(database)
   const assessment = assessSyntheticDemoData(database, options, '1')
-  const backup = await createVerifiedBackup(database, options.backupPath)
+  const backup = await createVerifiedBackup(database, options.backupPath, '1')
 
   database.exec('BEGIN IMMEDIATE')
   try {
@@ -1233,6 +1383,58 @@ export async function switchSyntheticDemoToV2(
     throw new V2MaintenanceError(
       'V2_CUTOVER_ROLLED_BACK',
       `V2 cutover transaction rolled back; the verified v1 backup was retained at ${backup.backupPath}. Cause: ${error instanceof Error ? error.message : 'unknown failure'}`,
+    )
+  }
+}
+
+export async function upgradeSyntheticV2DatabaseFrom12To13(
+  database: SqliteDatabase,
+  options: V2UpgradeOptions,
+): Promise<V2UpgradeResult> {
+  assertDestructiveConfirmation(options.confirmation)
+  const assessment = assessSyntheticV2UpgradeSource(database, options)
+  const backup = await createVerifiedBackup(database, options.backupPath, '2')
+
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    if (
+      Number(database.pragma('data_version', { simple: true })) !==
+      backup.dataVersion
+    ) {
+      maintenanceError(
+        'V2_DATA_CHANGED_DURING_UPGRADE',
+        'The database changed after backup and before the upgrade lock',
+      )
+    }
+    assessSyntheticV2UpgradeSource(database, options)
+    const migration = migrateActiveV2DatabaseFrom12To13(
+      database,
+      options.migrationsPath,
+      options.now,
+    )
+    const verification = verifyV2Foundation(database, options)
+    if (!verification.ready) {
+      maintenanceError(
+        'V2_PROTOCOL_STATE_INVALID',
+        `V2 schema upgrade verification failed: ${verification.issues.join('; ')}`,
+      )
+    }
+    options.beforeCommit?.()
+    database.exec('COMMIT')
+
+    return {
+      previousSchemaVersion: migration.previousVersion as 12,
+      schemaVersion: migration.currentVersion as 13,
+      resetEpoch: assessment.resetEpoch,
+      backupPath: backup.backupPath,
+      backupSha256: backup.sha256,
+      participantCount: assessment.participantCount,
+    }
+  } catch (error) {
+    if (database.inTransaction) database.exec('ROLLBACK')
+    throw new V2MaintenanceError(
+      'V2_UPGRADE_ROLLED_BACK',
+      `V2 schema upgrade rolled back; the verified schema-12 backup was retained at ${backup.backupPath}. Cause: ${error instanceof Error ? error.message : 'unknown failure'}`,
     )
   }
 }

@@ -12,12 +12,12 @@
 
 ```bash
 pnpm install --frozen-lockfile   # 首次
-pnpm dev                         # 一条命令：迁移 + 种子 + 后端 + 三端，输出 URL/二维码/后台提示
+pnpm dev                         # 一条命令：检查数据基础 + 后端 + 三端，输出 URL/二维码/后台提示
 ```
 
 启动器输出三端同源地址（手机入口含二维码、`/admin`、`/screen`）与共用 Demo 账号提示。客户端只用相对 `/api` 与同源 `/ws`，不得硬编码 `localhost`。
 
-启动器为协议感知：`V2_ACTIVE` 合成库直接启动 v2 三端（迁移由一次性切换完成）；v1 库走原 `db:setup` 路径。`.data` 已于 2026-08-15 切换为 v2（D-034）。
+启动器为协议感知：只有完整验证通过的 `V2_ACTIVE` 合成库才启动 v2 三端；只有明确的空库或 `V1_ACTIVE` 库才可走原 `db:setup` 路径。其他任何未通过完整验证的状态（包括 schema 12 尚未升级的 v2 库或探测异常）都会令启动器停止并保留原库，绝不自动迁移、清空或回退到 v1 初始化。`.data` 已于 2026-08-15 切换为 v2（D-034），D-037 的 schema 12→13 仍须按 §7.2 显式执行。
 
 ## 3. 开发与自动验证门
 
@@ -35,7 +35,7 @@ pnpm dev                         # 一条命令：迁移 + 种子 + 后端 + 三
 
 所有 v2 测试与负载只使用 OS 临时合成库，退出即清理；脱敏报告在 Git 忽略的 `tests/reports/`。
 
-## 4. 现场预览（V2-10 人工验收用）
+## 4. 现场预览（D-037 人工复验用）
 
 ```powershell
 $env:DEMO_HOST = '本机可信局域网 IPv4'   # 只接受显式私网 IPv4，不接受泛绑定
@@ -44,10 +44,10 @@ pnpm preview:v2:field
 
 - 建立隔离临时 v2 栈（后端留回环、统一 Vite 入口供三端/OBS），自动打开后台、大屏与手机验收二维码页；`Ctrl+C` 或关闭预览浏览器后临时库与端口清理，`backend/.data/` 不变。
 - 手机扫码后地址栏 token 立即清除；任何界面不显示令牌文本、姓名、学号或后台密码。
-- **终端检查单模式**：`$env:DEMO_FIELD_CHECKLIST='1'` 后运行同一命令，按 V2-10 验收表逐项交互作答（P/F/B/S），生成被忽略的 `output/field-check/` 记录文件；最终签核仍以 [`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md) 为准。
+- **终端检查单模式**：`$env:DEMO_FIELD_CHECKLIST='1'` 后运行同一命令，按 D-037 验收表逐项交互作答（P/F/B/S），生成被忽略的 `output/field-check/` 记录文件；最终签核仍以 [`D037_FIELD_ACCEPTANCE.md`](./D037_FIELD_ACCEPTANCE.md) 为准。
 - 后端延迟 metrics：`pnpm dev` 已默认开启（`DEMO_METRICS=1`），每 60 秒向日志输出一次路由级 p50/p95/max 直方图（仅路径模式，无查询串与正文），用于现场排障。
 - 真机预检脚手架：见 [`FIELD_AUTOMATION.md`](./FIELD_AUTOMATION.md)（adb + Chrome DevTools 自动采集视口/reduced-motion 实际值与阶段截图；只读不写入，不代签）。
-- 按 [`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md) 逐项签核（vivo X300 新鲜邀请、三端局域网、OBS 合成）。**该人工门已于 2026-08-15 由项目负责人签核关闭（D-036）**；后续复验（代码/设备变化后）仍按本表口径执行。
+- 按 [`D037_FIELD_ACCEPTANCE.md`](./D037_FIELD_ACCEPTANCE.md) 逐项签核 vivo X300 当前新鲜邀请、三端局域网抽奖与 OBS 合成；当前保持 `PENDING`。[`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md) 的 D-036 `PASS` 只是变更前历史基线。
 
 ## 5. 现场流程速查
 
@@ -90,7 +90,20 @@ pnpm exec tsx backend/src/cli/v2-verify.ts
 
 **回滚 WAL 卫生（2026-08-15 演练教训）**：SQLite 以 WAL 模式运行，服务被强杀后会留下 `demo.sqlite-wal/-shm`。恢复备份前必须：停干净所有后端进程 → **删除 `backend/.data/demo.sqlite-wal` 与 `-shm`** → 再覆盖主文件，最后 `pnpm db:verify` 复核；否则残留 WAL 可能与备份同盐而被重放，把旧 v2 事务并进恢复后的 v1 库。2026-08-15 已实际演练"恢复 v1 → v1 验证 → 再次切换 v2"并成功（D-034/D-035）。
 
-### 7.2 v2 维护级合成重置（仅 `V2_ACTIVE` 库）
+### 7.2 D-037 schema 12→13 升级（尚未对实际 `.data` 执行）
+
+这是一次显式维护操作，不是 `pnpm dev` 的自动步骤。先停止所有 Demo 后端并人工核验端口、PID 与数据库文件句柄，再选择一个**父目录已存在、目标文件尚不存在、且与活动库不同**的绝对备份路径：
+
+```powershell
+pnpm db:v2:upgrade -- --backup 'D:\path\to\demo-before-schema-13.sqlite' --confirm SYNTHETIC_DEMO_DATA_IS_DISPOSABLE
+pnpm exec tsx backend/src/cli/v2-verify.ts
+```
+
+升级入口只接受：`V2_ACTIVE + SYNTHETIC_DEMO`、固定 300 身份种子、完整性通过、无未知表或 v1 可变事实、schema 与迁移 `0001`～`0012` 精确一致、仓库迁移顶端恰为 `0013`。它先创建并校验 schema-12 SQLite 备份与 SHA-256，再取得写锁，只应用 `0013`，最后在同一事务内执行完整 v2 验证；任一步失败都回滚活动库并保留备份。禁止对真实、受保护、不可重建或有保留价值的数据执行。
+
+升级完成后记录：活动数据库绝对路径、备份绝对路径与 SHA-256、升级前后 schema 版本、`resetEpoch`、验证命令结果。恢复备份时同样遵守 §7.1 的 WAL 卫生，且必须配套恢复 schema-12 代码；不得把 schema-12 备份交给 schema-13 服务继续写入。
+
+### 7.3 v2 维护级合成重置（仅验证通过的 `V2_ACTIVE` 库）
 
 ```bash
 pnpm exec tsx backend/src/cli/v2-reset.ts --confirm SYNTHETIC_DEMO_DATA_IS_DISPOSABLE
@@ -102,7 +115,7 @@ pnpm exec tsx backend/src/cli/v2-verify.ts
 ## 8. 安全红线
 
 - 只在可信本地网络运行合成 Demo；不输入/导入/截图真实姓名、学号、令牌、口令或活动数据。
-- 日志不记录完整令牌、学号、Cookie、密码、胶囊或弹幕正文。
+- 日志不记录完整令牌、学号、Cookie、密码、抽奖身份映射或弹幕正文。
 - 测试、预览与截图只用 OS 临时库；`backend/.data/` 只由 `pnpm dev` 与显式维护命令接触。
 - 局域网 HTTP 不提供传输机密性；正式公网必须 HTTPS + `Secure` Cookie。
 - 未授权不提交、不推送。

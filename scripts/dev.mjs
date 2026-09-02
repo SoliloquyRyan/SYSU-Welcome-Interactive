@@ -571,6 +571,15 @@ async function main() {
   if (v2Verified) {
     console.log('检测到 V2_ACTIVE 合成库，将启动协议 v2 三端（迁移已由一次性切换完成）。')
   } else {
+    const v1SetupSafe = await runPnpmStatus(
+      ['exec', 'tsx', 'backend/src/cli/v1-setup-safe-probe.ts'],
+      { label: '旧版数据库初始化安全探测', environment },
+    )
+    if (!v1SetupSafe) {
+      throw new Error(
+        '当前数据库既未通过协议 v2 完整验证，也不是可安全初始化的空库或 V1_ACTIVE 库；为保护已有状态，启动器已停止。请先停止所有 Demo 服务并运行 v2-verify；若提示 schema 12，请按 RUNBOOK 使用 db:v2:upgrade 创建独立备份后升级。',
+      )
+    }
     await runPnpm(['run', 'db:setup'], {
       label: '数据库迁移与固定种子初始化',
       environment,

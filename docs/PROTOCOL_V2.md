@@ -1,8 +1,8 @@
 # 协议 v2：身份激活、星系与现场运行契约
 
-> **D-037 现行覆盖（2026-08-30）**：时光胶囊/寄语已经从产品流程下线；锁定星色后直接 `ADMITTED`，旧胶囊字段只作数据库迁移兼容且旧命令必须拒绝。原胶囊 20 星光并入 `STAR_STARTED`（40）。活动 presentation 现行为 `NONE | RAFFLE | FINALE_PREVIEW`；`RAFFLE` 只允许在 `RUNNING + PROGRAM_SUPPORT`，由服务端从已准入参与者中无放回抽取，后台可见姓名+公开星号，大屏仅见公开星号。本文后续仍出现的胶囊章节仅保留为 D-025～D-036 历史协议说明，均由 D-037 覆盖。
+> **D-037 现行覆盖（2026-08-30）**：时光胶囊/寄语已经从产品流程下线；锁定星色后直接 `ADMITTED`，旧胶囊字段只作数据库前向迁移兼容且旧命令必须稳定拒绝。原胶囊 20 星光并入 `STAR_STARTED`（40）。对外 presentation 现行为 `NONE | RAFFLE | FINALE_PREVIEW`；`RAFFLE` 只允许在 `RUNNING + PROGRAM_SUPPORT`，由服务端从已准入参与者中无放回抽取，后台可见合成姓名+公开星号，大屏仅见公开星号。
 
-> 状态：协议 v2 唯一权威（决策 D-025～D-036）。手机动效以 D-030 视觉金标为现行（约 5.4s/1.0s/4.2s 参考时长），D-027/D-028/D-029 的历史时长与自动证据仅保留原范围。§1 是实现历程速览（只读）；现行契约从 §2 开始。实际 `backend/.data` 已于 2026-08-15 切换 v2（D-034），V2-10 现场人工验收已关闭（D-036）。
+> 状态：协议 v2 唯一权威（决策 D-025～D-037）。D-030 的约 5.4s/1.0s/4.2s 视觉语言继续作为参考，但 D-037 已移除寄语停留，锁色确认后直接衔接入轨。§1 是实现历程速览（只读）；现行契约从 §2 开始。实际 `backend/.data` 已于 2026-08-15 切换 v2（D-034），但 D-037 的 schema 12→13 显式升级和受影响现场复验仍未执行；D-036 签核只属于变更前基线。
 
 ## 1. 权威与基本原则
 
@@ -11,7 +11,7 @@
 3. 服务端持久化状态是唯一权威。动画结束、前端定时器、浏览器本地状态和 WebSocket 到达顺序都不能推进业务状态。
 4. 参与者入场进度与全场运行进度是两只独立时钟。任何页面不得把两者重新拼成一条“六阶段”进度线。
 
-5. 本项目仍遵守 D-002、D-005、D-009、D-013～D-017 及 D-023 的不冲突边界：NFC 为主入口，二维码/短链接携带同一随机令牌；Demo 人工协助可用合成姓名和合成学号定位同一身份，但必须恢复同一参与者状态，不得新建第二账号。系统只用合成身份；胶囊不由 AI 自动公开；不接真实名单、公网、实体写卡或抽奖核销。
+5. 本项目仍遵守 D-002、D-005、D-009、D-013～D-017 及 D-023 的不冲突边界：NFC 为主入口，二维码/短链接携带同一随机令牌；Demo 人工协助可用合成姓名和合成学号定位同一身份，但必须恢复同一参与者状态，不得新建第二账号。系统只用合成身份；抽奖不接 AI、不按星光加权、不含兑奖/核销；不接真实名单、公网或实体写卡。
 
 ### 1.1 实现历程速览（只读参考）
 
@@ -26,11 +26,12 @@
 | V2-07 | 大屏与公共互动：单 Canvas 300 星、OBS 透明节目层、匿名弹幕/礼物、视觉优先级、终章 | 已实现 |
 | V2-08 | 手机入场与三场景：双时钟、双流订阅、单操作坞、D-027 可见性门；2026-08-14 可靠性加固 | 已实现 |
 | V2-09 | 三浏览器三端闭环 36/36、300 人协议负载（p95 < 2s、不变量 0） | 通过 |
-| V2-10 | 30 分钟渲染 soak `passed`；`preview:v2:field` 现场预览入口就绪 | 自动门通过；OBS/局域网/vivo 人工 `PENDING` |
+| V2-10 / D-036 | 30 分钟渲染 soak 与 2026-08-15 的 OBS/局域网/vivo 人工签核 | 历史基线 `PASS` |
 | D-027～D-029 | 首次寻星 2.8s 可见性门与连续性自动子门、个人旅程连续镜头（2.8s/1.2s/3.2s） | 自动 `PASS`，已被 D-030 覆盖 |
-| D-030～D-032 | 视觉金标（motion-previsual 共用渲染器，参考 5.4s/1.0s/4.2s）、稳定流动星系、学院入口、字体回退、逐字标题、微角操作坞、本人档案边界 | 自动子门 `PASS`；真机待签核 |
+| D-030～D-032 | 视觉金标（motion-previsual 共用渲染器，参考 5.4s/1.0s/4.2s）、稳定流动星系、学院入口、字体回退、逐字标题、微角操作坞、本人档案边界 | D-036 变更前基线 `PASS` |
+| D-037 | 锁色直接准入、寄语/胶囊退役、`START_STAR` 40 星光、节目中场无放回个人抽奖、schema 13 | 2026-09-02 本机自动收口 `PASS`；实际库升级与现场复验 `PENDING` |
 
-> 说明：v1 六阶段实现及 D-022 验收证据只作历史基线。仓库实际 `.data` 已于 2026-08-15 完成一次性切换并进入 `V2_ACTIVE`（D-034），日常 `pnpm dev` 即 v2 三端；回退按 §10.2 恢复 v1 备份。
+> 说明：v1 六阶段实现及 D-022 验收证据只作历史基线。仓库实际 `.data` 已于 2026-08-15 完成一次性切换并进入 `V2_ACTIVE`（D-034）；D-037 代码要求 schema 13，schema 12 活动库必须按 §10.3 先备份后升级。验证失败时 `pnpm dev` 必须停下，不能自动迁移或回退 v1。
 
 ### 1.2 实现历程说明
 
@@ -46,28 +47,23 @@
 |---|---|---|---|
 | 未建立会话 | NFC 个性令牌、携带同令牌的二维码/短链接，或映射到同一合成身份的人工协助信息尚未核验 | 无 | 核验身份 |
 | `NEEDS_COLOR` | 身份在当前 `resetEpoch` 首次核验成功，且服务端已在同一事务中预留一个不透明稳定 formation slot | 建立会话和唯一参与者状态；写入 `activatedAt`；动力值初始化为 100；按当前规则版本发放“激活”星光 20，且只发一次 | 必须选择并锁定星色 |
-| `NEEDS_CAPSULE_DECISION` | 服务端成功锁定星色 | 写入不可变的本场星色与 `colorLockedAt`；把已预留 slot 对应的恒星变为公共实体并发布 `star.node.upserted`；不得再创建或移动另一颗星 | 提交或跳过时光胶囊 |
-| `ADMITTED` | 胶囊首次有效提交，或服务端持久化 `SKIPPED` 决定 | 首次写入 `admittedAt`；提交路径按规则发放胶囊星光，跳过路径不发放 | 进入全场当前场景 |
+| `ADMITTED` | 服务端成功锁定星色 | 同一事务写入不可变星色、`colorLockedAt`、`admittedAt` 和准入时运行事实；把已预留 slot 对应恒星变为公共实体并发布 `star.node.upserted`；不得创建或移动另一颗星 | 进入全场当前场景 |
 
 核验成功就是“身份激活”，不得再设置另一个重复的“激活阶段”。首次激活必须先原子预留 300 个稳定 formation slot 之一；容量已满时整笔激活以 `STAR_CAPACITY_REACHED` 拒绝，不建立参与者状态、不创建会话、不发动力值或星光。恒星只有在星色锁定成功后才成为公共星系实体；仅核验、未锁色的参与者不出现在公共星系中。
 
-### 2.2 胶囊决定
+### 2.2 退役字段与现行参与者命令
 
-- `SUBMITTED`：正文最多 80 个可见字符；参与者必须先明确确认“内容可能经人工筛选后，以星号和星色在现场大屏展示”的候选范围，服务端才可原子持久化正文、候选同意和提交时间。不存在“已提交但不进入候选池”的私密提交；第一次实际有效提交发放 20 星光，重复请求、后续修改和并发不得重复发放。
-- `SKIPPED`：持久化跳过状态并准入，发放 0 星光。跳过不是临时前端选择，刷新、换设备和重连后必须保持。
-- 已跳过者可在全场 `READY` 或 `RUNNING` 时补填。第一次实际有效补填将 `SKIPPED` 更新为 `SUBMITTED` 并发放 20 星光一次；原 `admittedAt` 不改变，不重新播放首次入场动画，也不改变全场场景。
-- 已提交者可在 `READY` 或 `RUNNING` 修改本人胶囊；修改后的内容重新进入 `SUBMITTED` 人工审核状态。若旧版本正在活动投影中，服务端必须在同一事务中把旧版本从活动投影撤下并递增 `presentationRevision`，不得让旧正文继续公开，也不得把修改视为第二次奖励。
-- `PAUSED` 或 `COMPLETED` 时不得新提交或补填胶囊。
-- 不接受候选范围的参与者只能选择 `SKIPPED`。胶囊正文仍是受限候选内容；只有后台人工选中且未被删除/屏蔽的候选才允许进入大屏插入投影。
-
-参与者写命令稳定命名为 `LOCK_COLOR`、`UPSERT_CAPSULE`、`SKIP_CAPSULE`、`START_STAR`、`SEND_GIFT`、`POST_BARRAGE`、`COOPERATIVE_LIGHT`。`UPSERT_CAPSULE` 同时覆盖首次提交、`SKIPPED` 后补填及已提交内容修改；服务端按胶囊决定、运行状态、revision、同意范围和幂等键区分其效果。
+- 新写入路径不会产生 `NEEDS_CAPSULE_DECISION`、`SUBMITTED` 或胶囊正文；锁色后直接 `ADMITTED`。
+- schema 12→13 迁移会删除 `v2_capsules` 与终章胶囊副本，把所有已锁色参与者收敛到 `ADMITTED`，并保留旧列/表结构用于前向迁移兼容。兼容字段不构成产品入口、保留承诺或公开授权。
+- 共享请求 schema 暂时仍能解析 `UPSERT_CAPSULE`/`SKIP_CAPSULE`，只为让旧客户端获得稳定 `ONBOARDING_STATE_INVALID`；服务端不得写入正文，三端不得发送这些命令。
+- 现行参与者写命令只有 `LOCK_COLOR`、`START_STAR`、`SEND_GIFT`、`POST_BARRAGE`、`COOPERATIVE_LIGHT`。
 
 ### 2.3 晚到者与恢复者
 
 - 全场处于 `READY` 或 `RUNNING` 时均允许新参与者按完整入场时钟进入；`PAUSED` 和 `COMPLETED` 均拒绝首次激活及全部参与者业务变更。
-- 晚到者完成提交或跳过后，直接进入全场“当前场景”，不从集结场景补播，也不推动或回退全场时钟。
+- 晚到者锁色并准入后，直接进入全场“当前场景”，不从集结场景补播，也不推动或回退全场时钟。
 - 已激活身份在 `PAUSED` 或 `COMPLETED` 仍可重新核验并建立只读会话，再从权威快照恢复；不得仅凭本地存储重建业务事实。
-- `COMPLETED` 后，“已有参与者”指当前 `resetEpoch` 内任何已经写入 `activatedAt` 的身份，包括仍停在 `NEEDS_COLOR` 或 `NEEDS_CAPSULE_DECISION` 的未完成人员。其只能读取终局/个人现有事实，不能继续选色、提交/跳过胶囊或完成入场；从未激活的身份不得建立新参与者状态。
+- `COMPLETED` 后，“已有参与者”指当前 `resetEpoch` 内任何已经写入 `activatedAt` 的身份，包括仍停在 `NEEDS_COLOR` 的未完成人员。其只能读取终局/个人现有事实，不能继续选色或完成入场；从未激活的身份不得建立新参与者状态。
 
 ## 3. 全场运行时钟
 
@@ -80,7 +76,7 @@
 
 运行状态只有：
 
-- `READY`：尚未正式运行，但允许参与者入场、补填胶囊和读取快照。
+- `READY`：尚未正式运行，但允许参与者入场和读取快照。
 - `RUNNING`：按当前场景开放对应参与者操作。
 - `PAUSED`：保留当前场景并继续提供读取与重连快照；拒绝全部参与者写入。
 - `COMPLETED`：不可逆终态；不是场景，也不是“第六阶段”。
@@ -91,7 +87,7 @@
 2. `PROGRAM_SUPPORT`（节目支持）
 3. `COOPERATIVE_LIGHT`（协同点亮）
 
-不得新增 `IDENTITY_ACTIVATION`、`CAPSULE` 或 `ARCHIVE` 全场场景。身份激活和胶囊决定属于个人入场时钟；档案/祝福是终局读取界面，不是运行阶段。
+不得新增 `IDENTITY_ACTIVATION`、`CAPSULE` 或 `ARCHIVE` 全场场景。身份激活与锁色属于个人入场时钟；档案/祝福是终局读取界面，不是运行阶段。
 
 ### 3.2 合法组合与写入边界
 
@@ -108,8 +104,8 @@
 
 | status | 入场/档案写入 | 当前场景业务写入 | 读取/重连 | 后台安全处置 |
 |---|---|---|---|---|
-| `READY` | 允许首次入场与已跳过者补填 | 不允许任何场景业务写入 | 允许 | 可切换模式、启动、清除公开内容或重置 Demo |
-| `RUNNING` | 允许首次入场与已跳过者补填 | 仅允许下表与当前场景匹配的操作 | 允许 | 可执行合法运行命令、人工插入/清除投影或重置 Demo |
+| `READY` | 允许首次入场 | 不允许任何场景业务写入 | 允许 | 可切换模式、启动、清除公开内容或重置 Demo |
+| `RUNNING` | 允许首次入场 | 仅允许下表与当前场景匹配的操作 | 允许 | 可执行合法运行命令、抽奖/投影控制或重置 Demo |
 | `PAUSED` | 拒绝；已激活身份只能建立只读会话 | 拒绝 | 允许 | 可恢复、紧急清屏、删除/屏蔽/撤下公开内容或重置 Demo |
 | `COMPLETED` | 拒绝；已激活身份只能建立只读会话 | 拒绝 | 允许，只读 | 不得恢复或重新开场；只可删除、屏蔽、清屏或撤下公开内容，或按重置门执行 Demo 重置 |
 
@@ -127,31 +123,33 @@
 | `ADVANCE` | `LIVE + RUNNING + ASSEMBLY` 或 `LIVE + RUNNING + PROGRAM_SUPPORT` | 依次进入 `PROGRAM_SUPPORT` 或 `COOPERATIVE_LIGHT` | 现场只向前；最后场景不能再 ADVANCE；场景变化清除活动投影 |
 | `PAUSE` | 任一 mode 的 `RUNNING + 任一场景` | 保留 mode/currentScene，进入 `PAUSED` | 清除活动投影 |
 | `RESUME` | 任一 mode 的 `PAUSED + 任一场景` | 保留 mode/currentScene，回到 `RUNNING` | 只恢复原场景，不补场景事件 |
-| `COMPLETE` | `LIVE + RUNNING + COOPERATIVE_LIGHT` | 一次事务写入 `LIVE + COMPLETED + COOPERATIVE_LIGHT`、`completedAt`、终局 recap、revision、事件和审计 | 仅一次确认；先捕获当前插入中最多 6 条胶囊到只读 recap，再把活动投影清为 `NONE`；重复命令幂等返回同一终局 |
+| `COMPLETE` | `LIVE + RUNNING + COOPERATIVE_LIGHT` | 一次事务写入 `LIVE + COMPLETED + COOPERATIVE_LIGHT`、`completedAt`、revision、事件和审计 | 仅一次确认；自动关闭活动抽奖/投影但保留本 epoch 抽奖记录；重复命令幂等返回同一终局 |
 | `PREVIEW_FINALE` | `REHEARSAL + RUNNING + COOPERATIVE_LIGHT` 且 presentation=`NONE` | 不改运行 tuple；把 presentation 设为 `FINALE_PREVIEW` | 持续显示“排练预览”；服务端权威、可手动清除；不写 `COMPLETED`/`completedAt`/现场完成审计 |
-| `SELECT_CAPSULE` | 候选为 `SUBMITTED` | 把候选标成 `SELECTED` 并递增该参与者 revision | 要求 `REVIEWER` 或 `ALL`；不改变 presentation；同一活动插入集合最多 6 条 |
-| `SHOW_CAPSULE_INSERT` | 任一 mode 的 `RUNNING + 任一场景`、presentation=`NONE`，且请求含 1～6 条 `SELECTED` 候选 | 不改运行 tuple；把 presentation 设为 `CAPSULE_INSERT`，所含候选标为 `DISPLAYED` | 要求 `REVIEWER` 或 `ALL`；无自动轮播；空集合非法 |
-| `REMOVE_CAPSULE` | 候选为 `SUBMITTED|SELECTED|DISPLAYED` | 把候选标成 `REMOVED`；若正在活动投影则从集合撤下 | 要求 `REVIEWER` 或 `ALL`、原因和审计；若撤下后集合为空则原子把 presentation 清为 `NONE` |
-| `CLEAR_PRESENTATION` | presentation 不是 `NONE` | 不改运行 tuple；把 presentation 设为 `NONE` | 胶囊投影要求 `REVIEWER`/`ALL`，结尾预览要求 `STAGE_CONTROLLER`/`ALL` |
+| `OPEN_RAFFLE` | `RUNNING + PROGRAM_SUPPORT + presentation NONE` | 开启抽奖公开层并递增 `presentationRevision`/抽奖 revision | `STAGE_CONTROLLER` 或 `ALL`；不改变运行 tuple |
+| `DRAW_RAFFLE` | 抽奖公开层已开启，且仍有未中奖的 `ADMITTED` 参与者 | 服务端随机选择一位未中奖参与者，持久化顺序和时间，递增 revision 并广播安全投影 | `STAGE_CONTROLLER` 或 `ALL`；同一身份本 epoch 最多一次；候选耗尽稳定拒绝 |
+| `CLOSE_RAFFLE` | 抽奖公开层已开启 | presentation 回到 `NONE` | `STAGE_CONTROLLER` 或 `ALL`；只收屏，保留中奖记录 |
+| `CLEAR_RAFFLE` | `REHEARSAL` | 删除本 epoch 中奖记录并关闭抽奖公开层 | `DEMO_ADMIN` 或 `ALL`；LIVE 禁止清空 |
+| `CLEAR_PRESENTATION` | presentation 不是 `NONE` | 不改运行 tuple；把 presentation 设为 `NONE` | 用于安全收屏/终章预览清除；不删除抽奖记录 |
+| 旧胶囊命令 | 任意 | 无写入 | `SELECT_CAPSULE`/`SHOW_CAPSULE_INSERT`/`REMOVE_CAPSULE` 仅保留解析兼容并稳定拒绝 |
 | `RESET_DEMO` | 任意合法 tuple | 按第 10.1 节建立新 `resetEpoch` 和初始状态 | 要求 `DEMO_ADMIN` 或 `ALL`、确认对话框及合成数据硬门 |
 
 ### 3.4 当前场景参与者操作
 
 | 场景 | 合法操作 | 权威事实与奖励 |
 |---|---|---|
-| `ASSEMBLY` | `ADMITTED` 参与者执行一次 `START_STAR` | 写入私有 `started=true`、`startedAt`，并把公共恒星的 `started` 更新为 `true`、递增 `starRevision`、发布完整 `star.node.upserted`；首次成功发放 20 星光，不创建或移动恒星 |
+| `ASSEMBLY` | `ADMITTED` 参与者执行一次 `START_STAR` | 写入私有 `started=true`、`startedAt`，并把公共恒星的 `started` 更新为 `true`、递增 `starRevision`、发布完整 `star.node.upserted`；首次成功发放 40 星光，不创建或移动恒星 |
 | `PROGRAM_SUPPORT` | `ADMITTED` 参与者送礼或发送弹幕 | 礼物按每次明确操作扣动力；只有首次有效送礼发 10 星光。只有首次服务端接受的合规弹幕发 10 星光 |
 | `COOPERATIVE_LIGHT` | `ADMITTED` 参与者执行一次协同点亮 | 首次服务端接受时写入完成事实并发 20 星光 |
 
-晚到者只获得到达后当前场景的操作资格；若其在 `ASSEMBLY` 结束后才 `ADMITTED`，不得补做 `START_STAR` 或补领 20 星光。同理，已经离开的节目支持或协同点亮操作与奖励均不补做。动画、返回页面或档案入口不得绕过当前场景校验。
+晚到者只获得到达后当前场景的操作资格；若其在 `ASSEMBLY` 结束后才 `ADMITTED`，不得补做 `START_STAR` 或补领 40 星光。同理，已经离开的节目支持或协同点亮操作与奖励均不补做。动画、返回页面或档案入口不得绕过当前场景校验。
 
 ### 3.5 现场完成与排练结尾
 
 - `LIVE` 只有在 `RUNNING + COOPERATIVE_LIGHT` 时显示最终操作。
-- 项目负责人一次确认后，服务端按 `COMPLETE` 定义在一个事务中写入终态、终局 recap、revision、事件和审计；不得由动画回调触发。
+- 项目负责人一次确认后，服务端按 `COMPLETE` 定义在一个事务中写入终态、关闭活动抽奖层、revision、事件和审计；不得由动画回调触发。
 - 不得再出现第二个“Stage 6”“结束阶段”或第二次完成命令。
 - `REHEARSAL` 只通过 `PREVIEW_FINALE` 建立服务端权威演示投影；刷新与重连从快照恢复同一预览，直到手动清除、场景变化、暂停或重置。预览操作本身写管理审计，但不得伪装成现场完成审计。
-- 终局读取可显示祝福、个人档案、最终星系以及完成瞬间捕获的最多 6 条胶囊；它们是 `COMPLETED` 的只读投影，不构成新状态。
+- 终局读取可显示祝福、个人档案与最终星系；抽奖结果仍作为本 epoch 后台记录保留，但不进入终章个人内容。
 
 ## 4. 公共星系与事件同步
 
@@ -172,8 +170,8 @@
 ### 4.2 revision 与事件序列
 
 - `resetEpoch`：确定性重置代际。普通 v2 重置使其加 1；跨 epoch 的命令、会话和事件不得映射或合并。
-- `runRevision`：mode/status/currentScene 每次有效变化递增；胶囊插入和结尾预览不改变它。
-- `presentationRevision`：活动投影在 `NONE|CAPSULE_INSERT|FINALE_PREVIEW` 之间变化，或终局 recap 因完成捕获/安全撤下发生变化时递增。
+- `runRevision`：mode/status/currentScene 每次有效变化递增；抽奖和结尾预览不改变它。
+- `presentationRevision`：对外活动投影在 `NONE|RAFFLE|FINALE_PREVIEW` 之间变化，或抽奖结果在展示中新增/清空时递增。
 - `participantRevision`：单个参与者的入场状态、颜色、场景参与事实、数值摘要或档案事实每次有效变化时递增。
 - `interactionRevision`：公开弹幕发布/撤下/清屏/暂停及礼物公共事件每次有效变化时递增；它只版本化大屏互动投影，不改变 `runRevision` 或 `presentationRevision`。
 - `streamSeq`：某个 `streamId` 内的连续序号；不是所有受众共享的全局序号。合法逻辑流只有 `public`、`admin` 和 `participant:<participantId>`。服务端只在事件实际追加到该流时递增该流序号；任何其他流中的私有或受限事件不得制造本流缺口，重置后各流均从 0 开始。
@@ -185,7 +183,7 @@
 
 1. 首次进入、刷新、重连和任一授权流的 `streamSeq` 缺口恢复时，客户端必须先取得权威快照。
 2. 所有角色快照的公共信封至少包含 `protocolVersion`、`resetEpoch`、mode/status/currentScene、`runRevision`、活动 presentation 及 `presentationRevision`、当前客户端获授权的流游标与 `rewardRuleVersion`；`/screen` 返回 `publicSeq`，`/welcome` 返回 `publicSeq+participantSeq`，`/admin` 返回 `publicSeq+adminSeq`。角色专属字段以第 4.4 节为准。
-3. 活动 presentation 是服务端权威互斥字段：`NONE`、`CAPSULE_INSERT` 或 `FINALE_PREVIEW`。`CAPSULE_INSERT` 最多携带 6 条已人工选中、可公开的胶囊投影；刷新与重连必须恢复快照中的活动投影。
+3. 活动 presentation 是服务端权威互斥字段：`NONE`、`RAFFLE` 或 `FINALE_PREVIEW`。`RAFFLE` 的公共视图只携带抽奖状态与中奖公开星号；后台快照另含中奖者合成姓名。刷新与重连必须恢复当前展示状态和已持久化结果。
 4. 稳定事件名及职责固定为：
 
    | 事件名 | 触发与最小内容 |
@@ -194,7 +192,7 @@
    | `presentation.changed` | `public`；presentation 或 `presentationRevision` 变化，携带完整活动投影的安全公共视图 |
    | `star.node.upserted` | `public`；锁色事务把预留恒星变为公共实体，或 `START_STAR` 原位更新公共 `started`，每次携带完整公共恒星投影与 `starRevision` |
    | `aggregate.changed` | `public` 或 `admin`；必须携带 `projection=PUBLIC_AGGREGATE|ADMIN_AGGREGATE`、相应完整安全聚合与独立 `aggregateRevision`，只在对应投影真实变化时追加到该流 |
-   | `participant.snapshot.changed` | `participant:<id>`；携带 `projection=SELF`、新 `participantRevision` 与 `requiresSnapshot=true`，只发本人授权会话，不得夹带正文到其他流 |
+   | `participant.snapshot.changed` | `participant:<id>`；携带 `projection=SELF`、新 `participantRevision` 与 `requiresSnapshot=true`，只发本人授权会话，不得夹带私有身份到其他流 |
    | `barrage.published` | `public`；携带完整匿名弹幕投影及 `interactionRevision`，不得包含来源、身份、会话或客户端地址 |
    | `barrage.removed` | `public`；携带本次从公开层撤下的最多 8 个 barrage ID 及 `interactionRevision` |
    | `barrage.cleared` | `public`；携带新 `displayBatch` 与 `interactionRevision`，使全部旧批次内容立即失效 |
@@ -210,11 +208,11 @@
 `ParticipantSnapshot` 必须在公共信封之外返回以下私有、服务端权威字段：
 
 - 当前合成身份的 `displayName`，以及在首次激活预留 formation slot 时确定的稳定 `personalStarCode`；
-- `participantRevision`、`onboardingState=NEEDS_COLOR|NEEDS_CAPSULE_DECISION|ADMITTED`、`activatedAt`、锁色 Kelvin/`colorLockedAt`、`ownPublicStarId` 与本人 `formationSlot`（如已锁色）；
-- `capsuleDecision=NONE|SKIPPED|SUBMITTED`，以及本人可编辑的胶囊正文、候选范围确认时间、`submittedAt`/`skippedAt` 和 `capsuleModerationStatus=null|SUBMITTED|SELECTED|DISPLAYED|REMOVED`；
+- `participantRevision`、现行 `onboardingState=NEEDS_COLOR|ADMITTED`、`activatedAt`、锁色 Kelvin/`colorLockedAt`、`ownPublicStarId` 与本人 `formationSlot`（如已锁色）；
+- 为 schema 前向兼容保留的旧胶囊字段必须为空或固定退役值，客户端不得据此显示入口、正文或状态；
 - `admittedAt`、准入时的 `admittedScene`/`admittedRunRevision`，以及 `started/startedAt`、首次送礼奖励、首次合规弹幕奖励和协同点亮等本人场景事实；
 - 当前动力、星光、`rewardRuleVersion` 与可审计的本人奖励摘要；
-- `allowedActions`：从 `LOCK_COLOR|UPSERT_CAPSULE|SKIP_CAPSULE|START_STAR|SEND_GIFT|POST_BARRAGE|COOPERATIVE_LIGHT` 中由服务端计算出的有序去重集合。
+- `allowedActions`：从 `LOCK_COLOR|START_STAR|SEND_GIFT|POST_BARRAGE|COOPERATIVE_LIGHT` 中由服务端计算出的有序去重集合。
 
 `displayName` 与 `personalStarCode` 这两个字段只属于已认证参与者本人的私有投影，不得进入 `ScreenSnapshot`、`AdminSnapshot`、公共事件或聚合。`personalStarCode` 是预分配星号：在 `NEEDS_COLOR` 时可以已经存在，但此时 `ownPublicStarId`、锁色和成星事实仍为空，不得建立 `publicStars` 行、发布 `star.node.upserted` 或增加 `publicStarCount`。只有锁色事务成功才建立公共恒星，随后必须满足 `ownPublicStarId === personalStarCode`；同一值此后仅按第 4.1 节既有 `publicStarId` 规则进入公共恒星 payload，不能扩张为姓名或其他身份字段。
 
@@ -225,17 +223,15 @@
 | 动作 | 必要条件 |
 |---|---|
 | `LOCK_COLOR` | `NEEDS_COLOR` 且 status 为 `READY` 或 `RUNNING` |
-| `UPSERT_CAPSULE` | status 为 `READY` 或 `RUNNING`，且处于 `NEEDS_CAPSULE_DECISION`，或已 `ADMITTED` 且胶囊决定为 `SKIPPED`/`SUBMITTED` |
-| `SKIP_CAPSULE` | `NEEDS_CAPSULE_DECISION`、胶囊决定为 `NONE`，且 status 为 `READY` 或 `RUNNING` |
 | `START_STAR` | `ADMITTED + RUNNING + ASSEMBLY` 且本人尚未启动 |
 | `SEND_GIFT`、`POST_BARRAGE` | `ADMITTED + RUNNING + PROGRAM_SUPPORT`；服务端仍按动力余额、内容规则、频率和屏蔽状态逐次校验 |
 | `COOPERATIVE_LIGHT` | `ADMITTED + RUNNING + COOPERATIVE_LIGHT` 且本人尚未完成点亮 |
 
 `PAUSED` 与 `COMPLETED` 的 `allowedActions` 必须为空。该集合用于三端一致地展示可操作项，但不是绕过服务端校验的授权令牌；每次命令仍须在事务中重查最新状态。命令成功响应必须返回更新后的参与者投影与当前运行 tuple；客户端收到 `runtime.changed`、`participant.snapshot.changed`、epoch 变化或序列缺口后，必须先刷新 `ParticipantSnapshot`，再重新启用写操作。
 
-`ScreenSnapshot` 只返回公共恒星完整数组（包含 `started`）、安全聚合及 `aggregateRevision`、当前节目及匿名礼物目录、`interactionRevision`/弹幕暂停/当前显示批次、最多 8 条仍公开的匿名弹幕、活动 presentation 与终局 recap；不得返回来源标识或参与者私有字段。安全聚合至少区分 `activatedCount`、`publicStarCount`、`admittedCount`、`starStartedCount`、`cooperativeLightCount` 与星光总量。
+`ScreenSnapshot` 只返回公共恒星完整数组（包含 `started`）、安全聚合及 `aggregateRevision`、当前节目及匿名礼物目录、`interactionRevision`/弹幕暂停/当前显示批次、最多 8 条仍公开的匿名弹幕、抽奖公共视图、活动 presentation 与终章聚合；不得返回来源标识、中奖者姓名或参与者私有字段。安全聚合至少区分 `activatedCount`、`publicStarCount`、`admittedCount`、`starStartedCount`、`cooperativeLightCount` 与星光总量。
 
-`AdminSnapshot` 在公共信封之外返回权限、运行/投影控制收据、`aggregateRevision`、公开弹幕及其匿名 `sourceId`、互动暂停状态，以及匿名入场漏斗：`activatedCount`、`publicStarCount`、`admittedCount`、`onboardingPendingCount`、`capsuleSubmittedCount`、`capsuleSkippedCount`、`starStartedCount`、`cooperativeLightCount`。`sourceId` 只用于审核会话的来源屏蔽，不得展示、导出或映射为参与者身份。漏斗计数以唯一参与者事实聚合，在线会话数只能单列为辅助值，不能作为人数分母；后台不得为漏斗增加姓名、学号或逐人列表。
+`AdminSnapshot` 在公共信封之外返回权限、运行/投影控制收据、`aggregateRevision`、公开弹幕及其匿名 `sourceId`、互动暂停状态、抽奖状态与中奖者合成姓名+公开星号，以及匿名入场漏斗：`activatedCount`、`publicStarCount`、`admittedCount`、`onboardingPendingCount`、`starStartedCount`、`cooperativeLightCount`。旧 `capsuleSubmittedCount/capsuleSkippedCount` 如仍在契约中，只是 schema 兼容计数（现行提交数为 0），不得在产品界面解释为胶囊功能。`sourceId` 只用于审核会话的来源屏蔽，不得展示、导出或映射为参与者身份。漏斗计数以唯一参与者事实聚合，在线会话数只能单列为辅助值，不能作为人数分母；除中奖结果外，后台不得增加姓名、学号或逐人列表。
 
 `ADVANCE` 与 `COMPLETE` 的确认界面必须把最新匿名漏斗与适用警告合并到原有一次确认中。警告谓词固定为：
 
@@ -245,40 +241,23 @@
 
 警告不是人数硬门；有权限的操作者可在同一确认中明确选择继续。服务端执行事务时重新计算警告：若仍有警告而请求没有 `overrideReadinessWarnings=true`，以 `READINESS_CONFIRMATION_REQUIRED` 返回最新匿名摘要且不改变状态；显式 override 后可继续，并把分母/未完成人数、当时摘要、警告和操作者写入审计。权限、旧 revision/epoch、错误 tuple、离线或结果未知仍是不可 override 的硬门。
 
-## 5. 时光胶囊插入子场景
+## 5. 中场个人抽奖
 
-- 胶囊展示是后台审核者通过 `SHOW_CAPSULE_INSERT` 触发的大屏投影，不是全场场景；它只把互斥 presentation 从 `NONE` 改为 `CAPSULE_INSERT`，递增 `presentationRevision`，不修改 mode、status、currentScene 或 `runRevision`。
-- 每次插入最多包含 6 条已确认候选范围、未被删除/屏蔽且由人工明确选中的胶囊。禁止 AI 自动公开、自动轮播、按时间自动切换以及超过 6 条的隐式截断。
-- 插入时大屏可以覆盖或压暗当前主场景；`CLEAR_PRESENTATION` 后回到同一运行 tuple，并通过 `presentation.changed` 同步，不发布伪造的场景切换事件。
-- `CAPSULE_INSERT` 与 `FINALE_PREVIEW` 互斥；已有任一活动投影时，必须先手动清为 `NONE` 才能建立另一投影。
-- `SET_SCENE`、`ADVANCE`、`PAUSE` 和 `RESET_DEMO` 自动按 `CLEAR_PRESENTATION` 的同一规则清除活动投影；若清除的是 `CAPSULE_INSERT`，其中 `DISPLAYED` 候选回到 `SELECTED` 并递增相应 participant revision。`COMPLETE` 在同一事务中先把完成瞬间正在展示的最多 6 条胶囊捕获到终局 recap，再清除活动投影，但候选保持 `DISPLAYED`。
-- `COMPLETED` 后禁止新发起胶囊插入。后台仍可按权限、确认和审计删除/屏蔽/撤下终局 recap 中的公开内容；这只改变公共投影与 `presentationRevision`，不改变运行终态、奖励或动力值。
-- 展示、清除及完成后的安全撤下都必须幂等并写管理审计；参与者端不获得后台选择能力。
+- 抽奖是 `PROGRAM_SUPPORT` 中的服务端权威 presentation，不是全场场景；`OPEN_RAFFLE` 只把对外 presentation 从 `NONE` 改为 `RAFFLE`，递增 `presentationRevision` 与抽奖 revision，不修改 mode、status、currentScene 或 `runRevision`。
+- `DRAW_RAFFLE` 由服务端在当前 `resetEpoch` 的 `ADMITTED` 且尚未中奖参与者中随机选择一人；选择与持久化在同一事务完成，`(resetEpoch, identityId)` 和抽取顺序均唯一。客户端不得预选、加权或伪造结果。
+- 大屏中奖项只含 `publicStarId`；后台中奖项可额外包含固定合成 `displayName`。任何公共事件、Screen 快照、日志或报告不得出现姓名、学号、令牌、会话或内部身份映射。
+- `CLOSE_RAFFLE` 只把 presentation 收回 `NONE`，不删除已抽结果；再次开启、刷新、断线与服务重启必须恢复同一结果和剩余候选数。
+- `SET_SCENE`、`ADVANCE`、`PAUSE`、`COMPLETE` 与 `RESET_DEMO` 会自动关闭活动抽奖层；除重置外均保留本 epoch 中奖记录。只有 `REHEARSAL` 下的 `DEMO_ADMIN|ALL` 可通过 `CLEAR_RAFFLE` 删除记录；LIVE 禁止清空。
+- 抽奖不使用星光概率、不含奖项配置、兑奖或领奖核销；这些需要后续独立决策。现行三端不得出现胶囊候选、审核或插播入口。
 
-### 5.1 审核状态迁移
+### 5.1 大屏投影、OBS 与实时互动优先级
 
-胶囊审核状态只有 `SUBMITTED|SELECTED|DISPLAYED|REMOVED`；没有正文/未提交时为 `null`。唯一合法迁移为：
-
-| 命令/事实 | 前置 | 结果 | revision 与事件 |
-|---|---|---|---|
-| `UPSERT_CAPSULE` 首次提交/补填 | `null`/`SKIPPED` | `SUBMITTED` | 递增本人 `participantRevision`；私有失效通知；安全聚合变化另发 `aggregate.changed` |
-| `UPSERT_CAPSULE` 修改 | `SUBMITTED|SELECTED|DISPLAYED` | 新版本回 `SUBMITTED` | 递增本人 revision；旧版本若在活动投影中则同事务撤下并递增 `presentationRevision`；集合变空时 presentation=`NONE` |
-| `SELECT_CAPSULE` | `SUBMITTED` | `SELECTED` | 递增本人 revision，写审核审计；不改变 presentation |
-| `SHOW_CAPSULE_INSERT` | 1～6 条 `SELECTED` | 所含候选为 `DISPLAYED` | 同一事务递增各本人 revision 与 `presentationRevision`，发布私有失效及 `presentation.changed` |
-| `CLEAR_PRESENTATION` | 活动 `CAPSULE_INSERT` | 所含 `DISPLAYED` 回 `SELECTED`，presentation=`NONE` | 同一事务递增各本人 revision 与 `presentationRevision` |
-| `REMOVE_CAPSULE` | `SUBMITTED|SELECTED|DISPLAYED` | `REMOVED` | 递增本人 revision；如正在展示则同时撤下并递增 `presentationRevision`；集合为空时 presentation=`NONE` |
-| `COMPLETE` 捕获终局 recap | 活动 `DISPLAYED` | 候选保持 `DISPLAYED`，活动 presentation 清为 `NONE`，只读副本进入 recap | 递增 `presentationRevision`；参与者审核状态不因捕获而回退 |
-
-`REMOVED` 是本次提交版本的终态；参与者在 `READY`/`RUNNING` 再次 `UPSERT_CAPSULE` 时产生新的正文版本并回到 `SUBMITTED`，但仍不重复奖励。`SHOW_CAPSULE_INSERT` 不承担选择职责，不能直接消费 `SUBMITTED`。任何集合变化后都禁止保存空的 `CAPSULE_INSERT`。
-
-### 5.2 大屏投影、OBS 与实时互动优先级
-
-1. 大屏视觉优先级固定为：`COMPLETED` > `FINALE_PREVIEW` > `CAPSULE_INSERT` > 持久故障/断线提示 > 当前运行场景 > 实时弹幕/礼物。高优先级层出现时必须立即停止和清理低优先级临时动画，但不得删除已提交业务事实。
+1. 大屏视觉优先级固定为：`COMPLETED` > `FINALE_PREVIEW` > `RAFFLE` > 持久故障/断线提示 > 当前运行场景 > 实时弹幕/礼物。高优先级层出现时必须立即停止和清理低优先级临时动画，但不得删除已提交业务事实。
 2. `PROGRAM_SUPPORT` 是 OBS 透明浏览器源：`html/body/app/screen` 背景必须透明，中心区域不绘制节目占位视频；弱星系只保留在左右边缘约 15%～20% 安全区。网页始终静音，不上传、解码、播放或控制节目视频/音频。
 3. 合规弹幕正文最多 40 个用户感知字符。单参与者最多 3 条/10 秒，全场最多 12 条/秒；敏感词、链接、联系方式、已屏蔽来源和暂停状态均由服务端事务重查。大屏不显示作者、星号、来源 ID、排行或头像。
 4. 后台命令固定为 `SET_BARRAGE_PAUSED`、`REMOVE_BARRAGE`、`BLOCK_BARRAGE_SOURCE`、`CLEAR_BARRAGES`；全部要求角色、当前 revision、确认、原因与幂等门，并写独立审核记录。`COMPLETED` 后只允许撤下、来源屏蔽与清屏等安全减法，不允许重新公开内容。
-5. 礼物事件只表示已经提交的服务端事实；1.5 秒同类事件可合并为视觉计数，但不能合并账本或扣减。大屏最多同时保留一个主礼物和一个次礼物；星舰允许更突出但有限时的覆层，不得遮挡终章、胶囊或故障信息。
-6. `CAPSULE_INSERT` 活动时不显示弹幕/礼物；期间新事件只更新权威游标/快照，不进入视觉回放队列。清除插入后直接呈现当前场景，不能补演被遮挡的互动。
+5. 礼物事件只表示已经提交的服务端事实；1.5 秒同类事件可合并为视觉计数，但不能合并账本或扣减。大屏最多同时保留一个主礼物和一个次礼物；星舰允许更突出但有限时的覆层，不得遮挡终章、抽奖或故障信息。
+6. `RAFFLE` 活动时不显示弹幕/礼物；期间新事件只更新权威游标/快照，不进入视觉回放队列。关闭抽奖后直接呈现当前场景，不能补演被遮挡的互动。
 
 ## 6. 手机端信息架构与反馈
 
@@ -307,10 +286,10 @@
 
 1. NFC/备用令牌由服务端核验成功，响应明确表示首次新建身份并返回 `NEEDS_COLOR` 后，客户端先等待页面处于稳定 `visible`；开始前暂不可见时不得在后台悄悄消耗镜头。
 2. 可见性门满足后，以 Vue、CSS 和低 DOM SVG 播放约 5.4 秒“沉入、接近并捕获中性恒星”序列（D-030 视觉金标参考时长；正式页与认可预演共用同一生产渲染器，可组合经压缩验收的原创星云纹理与分层 Canvas）。全屏径向速度线只使用 `transform`/`opacity`，手机端不得为此加载 GSAP。
-3. 寻星、选色、寄语与入轨必须共用同一颗持久恒星节点与同一坐标系（D-030 金标）；镜头末帧与静态首帧的中心、尺寸和颜色不得跳变。恒星由同心白核、中性光晕和默认 `5800K` 色温光晕构成，色温层在交接末段连续显现。D-028 的 `50% / 42vh` 统一视觉轴只保留为历史方案细节。
+3. 寻星、选色、锁色确认与入轨必须共用同一颗持久恒星节点与同一坐标系（继承 D-030 视觉语言）；镜头末帧与静态首帧的中心、尺寸和颜色不得跳变。恒星由同心白核、中性光晕和默认 `5800K` 色温光晕构成，色温层在交接末段连续显现。D-028 的 `50% / 42vh` 统一视觉轴只保留为历史方案细节。
 4. 选色文案与控件在镜头中提前渲染，但在交接完成前必须保持 `inert`、不可聚焦和不可操作；镜头结束只解除交互隔离，不得替换恒星节点或触发布局重排。正常完成监听主动画 `animationend`，定时器只作缺失事件时的有界兜底。
 5. 星色选择不设自动倒计时；参与者必须主动选色并提交，星色不得跳过。
-6. 服务端锁色成功且客户端已获得包含本人恒星的权威确认后，同一持久星播放约 1.0 秒色温闪烁并平滑上移到寄语画面（用户输入不限时）；提交或持久化跳过胶囊并得到 `ADMITTED` 权威快照后，再以约 4.2 秒缩远到 Canvas 本人轨道并展开星系。以上为 D-030 金标参考时长；D-028/D-029 的 2.8s/1.2s/3.2s 仅保留为历史自动证据数字。
+6. 服务端锁色成功且客户端获得包含本人恒星及 `ADMITTED` 的权威确认后，同一持久星先播放约 1.0 秒色温闪烁，再直接衔接约 4.2 秒缩远到 Canvas 本人轨道并展开星系；中间不得出现寄语输入、胶囊决定或等待页。时长继承 D-030 视觉参考，D-037 当前连续性必须重新验证；D-028/D-029 的 2.8s/1.2s/3.2s 只作历史证据。
 7. 动画只解释已经确认的状态，不得在时间轴结束时替服务端推进状态或发放奖励；身份响应、权威快照、实时连接和允许动作不得等待表现层完成。
 
 正常首次路径不提供跳过按钮；这一点明确覆盖 D-024 的首帧可跳过与约 0.9 秒约束。为避免把动画变成阻塞器，下列路径不强制重播，直接进入对应静态权威状态：
@@ -324,20 +303,19 @@
 
 ## 8. 星光与动力规则
 
-当前 `rewardRuleVersion` 的星光上限为 100，当前六个奖励事件合计满额 100；服务端只按事件首次有效发生发放：
+当前 `rewardRuleVersion=v2-rewards-2026-08-30-raffle` 的星光上限为 100，五个奖励事件合计满额 100；服务端只按事件首次有效发生发放：
 
 | 奖励事件 | 默认星光 | 唯一性与边界 |
 |---|---:|---|
 | 首次成功激活 | 20 | 当前 `resetEpoch` 每位参与者一次；先成功预留 formation slot，再与初始动力值 100 同一激活事务写入 |
-| 首次实际提交时光胶囊 | 20 | `SKIPPED` 为 0；跳过后首次补填仍可获得一次 |
-| 首次有效启动星星 | 20 | 仅 `ADMITTED + RUNNING + ASSEMBLY` 的 `START_STAR` 成功事实发放一次；错过场景不补领 |
+| 首次有效启动星星 | 40 | 仅 `ADMITTED + RUNNING + ASSEMBLY` 的 `START_STAR` 成功事实发放一次；错过场景不补领 |
 | 首次有效送礼 | 10 | 重复送礼仍消耗动力，但不重复发放该星光 |
 | 首次合规弹幕 | 10 | 只有服务端接受的合规弹幕计入 |
 | 首次协同点亮 | 20 | 只有服务端接受的协同点亮计入 |
 
 - 每笔星光使用 `(resetEpoch, participantId, rewardEventKey)` 唯一账本约束；每行同时持久化实际 `delta` 和 `rewardRuleVersion`。重试、重连、重复事件和跨设备操作不得重复奖励。
-- 一个 `resetEpoch` 从建立到完成固定使用同一个 `rewardRuleVersion`，运行中不得热切换权重。以后调整奖励事件权重必须建立新的规则集并从新的 `resetEpoch` 生效；旧账本的版本、实际增量和累计值不改写、不回算。
-- 星光与未来抽奖概率成正比只是后续产品方向；v2 本阶段不实现抽奖、兑奖、概率公式或领奖核销。
+- schema 12→13 是 D-037 唯一获准的旧合成库规则转换：删除 `CAPSULE_SUBMITTED` 行、把既有 `STAR_STARTED` 调整为 40、校正累计星光并统一规则版本。升级完成后，同一 `resetEpoch` 不得再热切换权重；未来调整仍须新决策与迁移策略。
+- 当前抽奖在所有已准入且未中奖参与者中等候选无放回选择，不读取星光作为概率；不实现奖项配置、兑奖、概率公式或领奖核销。
 - 本协议不授权后台在终局前后扣减/补发动力值或星光。完成后的安全处理仅限删除、屏蔽、清屏或撤下公开内容，不改变任何数值账本。
 
 ## 9. 幂等、错误、事件名与隐私
@@ -356,28 +334,28 @@
   | `RUNTIME_PAUSED` | `PAUSED` 下尝试参与者业务写入 |
   | `RUNTIME_COMPLETED` | `COMPLETED` 下尝试参与者业务写入、重新开场或新建公开投影 |
   | `STAR_CAPACITY_REACHED` | 300 个 formation slot 已预留，首次激活无法原子取得名额 |
-  | `ONBOARDING_STATE_INVALID` | 参与者状态不满足激活、锁色、胶囊或补填命令前置条件 |
+  | `ONBOARDING_STATE_INVALID` | 参与者状态不满足激活/锁色前置，或旧客户端尝试已退役的胶囊命令 |
   | `SCENE_TRANSITION_INVALID` | mode/status/currentScene 或目标场景不符合第 3.3 节 |
   | `SCENE_ACTION_INVALID` | 参与者命令不属于当前运行场景，或该参与者不具备此场景动作资格 |
-  | `PRESENTATION_STATE_INVALID` | 胶囊选择/展示/清除/撤下或结尾预览不满足当前 presentation 与审核状态迁移 |
+  | `PRESENTATION_STATE_INVALID` | 抽奖开启/抽取/关闭/清空、投影清除或结尾预览不满足当前 presentation、场景、模式或权限边界；旧胶囊后台命令也以此稳定拒绝 |
   | `RESOURCE_NOT_FOUND` | 格式合法且调用者有权引用的候选、节目或其他命令资源不存在；响应不得泄露无权资源是否存在 |
   | `REVISION_CONFLICT` | 请求携带的期望 run/presentation revision 已过期 |
   | `READINESS_CONFIRMATION_REQUIRED` | `ADVANCE`/`COMPLETE` 存在匿名就绪警告，但请求未明确确认 override |
   | `IDEMPOTENCY_CONFLICT` | 同一幂等键被用于不同规范化请求体 |
   | `INSUFFICIENT_BALANCE` | 礼物命令通过其他校验但动力余额不足 |
-  | `CONTENT_REJECTED` | 胶囊或弹幕违反内容、长度以外的公开规则 |
+  | `CONTENT_REJECTED` | 弹幕违反内容、长度以外的公开规则 |
   | `SOURCE_BLOCKED` | 当前参与者来源已被后台屏蔽，不能发布公共内容 |
   | `RATE_LIMITED` | 命令超过冻结的频率限制；响应携带可重试提示，不得伪装幂等成功 |
   | `SERVICE_UNAVAILABLE` | 服务端暂时不能安全完成或确认事务；客户端必须按未知结果/安全重试流程处理 |
   | `RESYNC_REQUIRED` | 指定逻辑流的历史保留窗口不足，无法从请求游标连续补发；响应指明需重拉的 `streamId` |
 
 - 错误响应必须携带稳定错误码、当前 `resetEpoch` 和可用于拉取最新快照的提示；不能只显示通用失败。离线是客户端条件，不是服务端错误码；客户端离线时禁止排队伪成功。
-- 事件不得泄露邀请令牌、真实姓名、学号、会话凭据、私密胶囊或后台账号信息。日志、截图与测试证据只使用固定合成身份。
+- 事件不得泄露邀请令牌、真实姓名、学号、会话凭据、抽奖身份映射或后台账号信息。日志、截图与测试证据只使用固定合成身份；公开抽奖事件只含公开星号。
 - 旧会话在 v2 切换或 `RESET_DEMO` 后必须失效；`resetEpoch` 不匹配的事件和命令一律拒绝，不能尝试映射到新状态。
 
-## 10. 普通 Demo 重置与一次性切换
+## 10. 普通 Demo 重置、一次性切换与 schema 升级
 
-V2-02 已新增 `0008_protocol_v2_foundation.sql`、`backend/src/db/v2-foundation.ts` 和维护 CLI。迁移只追加 `protocol_runtime` 与 v2 表/约束，保持 `active_protocol_version='1'`、`activation_state='V1_ACTIVE'`，不会在启动或迁移时清空数据或自动激活 v2。协议元数据明确区分 `V1_ACTIVE|V2_ACTIVE` 与 `UNVERIFIED|SYNTHETIC_DEMO|PROTECTED`；当前 v1 服务遇到已激活 v2 或任何 v2 运行事实会硬拒绝启动，防止混跑。V2-02 未增加 package 脚本别名；实际入口是 `pnpm exec tsx backend/src/cli/v2-switch.ts`、`pnpm exec tsx backend/src/cli/v2-reset.ts` 与 `pnpm exec tsx backend/src/cli/v2-verify.ts`。仓库实际 `.data` 已于 2026-08-15 完成切换（D-034，备份见该决策记录）。
+V2-02 建立了 `protocol_runtime`、v2 表和维护 CLI；D-037 新增迁移 `0013_raffle_and_capsule_retirement.sql` 及 `pnpm db:v2:upgrade`。协议元数据明确区分 `V1_ACTIVE|V2_ACTIVE` 与 `UNVERIFIED|SYNTHETIC_DEMO|PROTECTED`；v1 服务遇到已激活 v2 或任何 v2 运行事实会硬拒绝，完整验证未通过的 v2 库也不得由启动器送入 v1 初始化。仓库实际 `.data` 于 2026-08-15 完成 v1→v2 切换（D-034），D-037 的 schema 12→13 升级另按 §10.3 执行。
 
 ### 10.1 v2 运行期 `RESET_DEMO`
 
@@ -387,7 +365,7 @@ V2-02 只提供维护窗口使用的 `pnpm exec tsx backend/src/cli/v2-reset.ts`
 
 1. 可从任意合法运行 tuple 发起，但必须由 `DEMO_ADMIN` 或 `ALL` 当前角色操作、完成确认，并在执行前验证数据库全部为可丢弃的合成/Demo 数据。发现任何真实、个人、不可重建或有保留价值的数据时立即停止。
 2. 服务端在一个事务中把 `resetEpoch` 加 1，并建立 `protocolVersion=2`、`mode=REHEARSAL`、`status=READY`、`currentScene=null`、presentation=`NONE`；新 epoch 的 `runRevision`、`presentationRevision`、各实体 revision 与每条授权流的 `streamSeq` 从 0 开始。
-3. 重置清除参与者可变状态、slot 预留/公共恒星成员关系、胶囊正文与候选/展示、奖励和动力账本、节目互动、弹幕与其他公共内容、幂等记录、运行事件及全部参与者/后台会话。
+3. 重置清除参与者可变状态、slot 预留/公共恒星成员关系、抽奖记录与展示状态、遗留胶囊表内容、奖励和动力账本、节目互动、弹幕与其他公共内容、幂等记录、运行事件及全部参与者/后台会话。
 4. 重置保留固定合成身份目录、邀请令牌映射、每个合成身份的 `publicStarId` 以及确定性、不透明 formation-slot 目录；这些目录只用于新 epoch 重新预留，不表示恒星已公开加入。
 5. 重置不得在服务启动、迁移失败、客户端版本错误或快照读取失败时自动执行。命令失败不得留下半清空状态；旧 epoch 会话和事件只能得到 `STALE_RESET_EPOCH`。
 
@@ -396,13 +374,28 @@ V2-02 只提供维护窗口使用的 `pnpm exec tsx backend/src/cli/v2-reset.ts`
 v1→v2 只允许在确认数据库全部为可丢弃的合成/Demo 数据后执行破坏性切换。V2-02 的实现入口固定为 `pnpm exec tsx backend/src/cli/v2-switch.ts`，必须同时传入 `--backup <尚不存在的 SQLite 路径>` 与 `--confirm SYNTHETIC_DEMO_DATA_IS_DISPOSABLE`：
 
 1. 切换前检查数据来源、数量、备份和当前 `resetEpoch`；如果发现任何真实、个人、不可重建或有保留价值的参与者历史，立即停止并由项目负责人重新决定迁移方案。
-2. 独立迁移固定为 `0008_protocol_v2_foundation.sql`；`0001`～`0007` 不得改写。仅应用迁移不会激活 v2。
+2. v2 基础从 `0008_protocol_v2_foundation.sql` 开始，当前新切换必须先完整应用到仓库迁移顶端 `0013`；`0001`～`0012` 不得改写。仅应用迁移不会激活 v2。
 3. 切换前必须完成当前 v1 服务同一 generation 的真实 `listen` 与干净关闭；构建失败、监听失败、心跳过期或上一代回执均不能满足切换资格。数据库门无法自动发现 `0008` 应用前已启动的旧二进制，因此操作员仍必须人工核验旧 PID、端口和数据库写入进程全部退出。
 4. 切换门只接受迁移完整、schema 精确匹配、SQLite 完整性通过、固定 300 身份 seed/manifest 可验证、无未知表/结构漂移、无 v1 可变历史、无部分 v2 事实且运行状态为确定性干净基线的数据库。任何真实、受保护、不可重建、有价值或无法证明为合成的数据均以稳定维护错误停止，不创建备份或清空数据。
 5. 备份父目录必须已存在，目标路径必须与活动数据库不同且尚不存在；命令不会覆盖已有文件。切换前先建立可读、完整性通过的 v1 SQLite 备份，计算 SHA-256，并在创建备份期间或取得事务锁前检测数据变化。
 6. 通过二次 preflight 后，单个 `BEGIN IMMEDIATE` 事务清除 v1 可变事实、建立空白 v2 epoch、固定 slot 目录和初始游标，把协议元数据原子改为 `2 + V2_ACTIVE + SYNTHETIC_DEMO`，持久化备份摘要与切换时间，再执行完整 v2 基础验证。失败则回滚整个数据库事务并保留已验证备份，不留下半切换状态。
-7. 切换后当前 v1 服务会硬拒绝该数据库；V2-03～V2-09 已具备同版实现与自动证据，但只有在 V2-10 的目标证据和维护窗口前置条件完成后，才能对实际数据库授权启用。不得保留双写、v1 兼容 API、状态翻译或“检测失败就回到六阶段”的旁路。
+7. 切换后当前 v1 服务会硬拒绝该数据库；不得保留双写、v1 兼容 API、状态翻译或“检测失败就回到六阶段”的旁路。D-036 的启用/验收结论只属于其当时版本，后续 D-037 仍须自己的升级和复验证据。
 8. 若验收失败，只能停止服务并整体恢复到保存的 v1 备份与同一套 v1 版本，不能手工拼接 v1/v2 表。恢复或再次切换均需新的明确授权与证据。
+
+### 10.3 D-037 schema 12→13 显式升级门
+
+已处于 `V2_ACTIVE` 的 schema-12 库不得通过 legacy `migrateDatabase`、`db:setup` 或 `pnpm dev` 自动升级。维护入口固定为：
+
+```powershell
+pnpm db:v2:upgrade -- --backup '<尚不存在的绝对路径.sqlite>' --confirm SYNTHETIC_DEMO_DATA_IS_DISPOSABLE
+pnpm exec tsx backend/src/cli/v2-verify.ts
+```
+
+1. 执行前停止全部 Demo 服务并人工核验 PID、端口和数据库文件句柄；代码会取得 SQLite 写锁，但不能把“暂时没有写事务”误当作旧服务已经退出。
+2. 只接受 `V2_ACTIVE + SYNTHETIC_DEMO`、固定 300 身份 seed、原切换备份证据存在、SQLite 完整性通过、无未知表/结构漂移/遗留 v1 可变事实、schema 精确匹配 `0001`～`0012`，且仓库唯一待应用迁移为 `0013`。其他数据一律停止。
+3. 备份父目录必须存在，目标必须与活动库不同且尚不存在；先生成可读、完整性通过的 v2 schema-12 SQLite 快照和 SHA-256，并检测并发数据变化。
+4. 二次 preflight 后在一个 `BEGIN IMMEDIATE` 事务中只应用 `0013`：清除遗留胶囊正文/终章副本，收敛已锁色参与者为直接准入，重算 D-037 奖励规则，建立抽奖表与初始状态；随后执行完整 schema-13 v2 验证。失败回滚活动库并保留备份。
+5. 回退必须停止服务、按 RUNBOOK 的 WAL 卫生整体恢复 schema-12 备份，并配套恢复 schema-12 代码；禁止手工拼表或让 schema-13 代码继续写 schema-12 库。
 
 ## 11. V2-00 后的实施验收
 
@@ -411,23 +404,23 @@ v1→v2 只允许在确认数据库全部为可丢弃的合成/Demo 数据后执
 ### 11.1 契约与数据库
 
 - 三端和服务端共享同一 v2 枚举、合法 tuple、命令迁移、revision、稳定事件名和第 9 节错误码；不存在仍作为当前逻辑使用的 `stage=1..6`。
-- 新迁移可从固定合成 v1 基线执行一次性重建；重复启动不重复奖励或建星；`0001`～`0007` 未被改写。
+- 新迁移可从固定合成 v1 基线执行一次性切换；schema 12→13 只经备份优先入口执行并可整体回滚；重复启动不重复奖励、建星或抽奖；既有迁移未被改写。
 - 真实/有价值数据探测会硬停止，不允许静默清空；普通 `RESET_DEMO` 只能显式确认执行，从任意合法 tuple 原子回到新 `resetEpoch` 的 `REHEARSAL + READY + null`，且不会在启动时自动发生。
 
 ### 11.2 参与者入场
 
 - NFC、同令牌二维码/短链接及合成姓名/学号人工协助均映射同一身份。首次核验先原子预留稳定 slot，再得到会话、动力 100、激活星光 20 和 `NEEDS_COLOR`；重复核验不重复发放。
-- 未锁色者不出现在星系，且不能跳过选色；锁色后只产生一个稳定公共恒星并进入 `NEEDS_CAPSULE_DECISION`。
-- 最多 80 个可见字符且明确确认候选范围的胶囊提交，与持久化跳过都能准入；不存在私密但不入候选池的提交。跳过为 0 星光且跨刷新保持；READY/RUNNING 补填只奖励一次且不改 `admittedAt`。
+- 未锁色者不出现在星系，且不能跳过选色；锁色事务只产生一个稳定公共恒星并直接进入 `ADMITTED`，三端没有寄语/胶囊停留。
+- 旧胶囊命令稳定拒绝，遗留正文迁移后为空；激活 20 + 启动星星 40 + 首次送礼 10 + 首次合规弹幕 10 + 协同点亮 20 的账本与累计值一致。
 - READY/RUNNING 晚到者完成个人流程后进入当前场景；PAUSED 拒绝写入但允许已激活身份只读恢复；COMPLETED 允许任何本 epoch 已激活身份只读重认证，但未完成者不能继续入场。
 
-### 11.3 全场与胶囊插入
+### 11.3 全场与中场抽奖
 
 - 所有 mode/status/currentScene 只形成第 3.2 节合法 tuple；`SET_MODE`、`START`、`SET_SCENE`、`ADVANCE`、`PAUSE`、`RESUME` 和 `COMPLETE` 的非法来源、目标及过期 revision 均被拒绝。
 - LIVE 只能按三个场景向前运行；最终一次确认原子进入 `COMPLETED`，重复命令幂等，不存在第二个结束阶段。
 - `START_STAR` 只在 `ADMITTED + RUNNING + ASSEMBLY` 成功一次，不创建或移动恒星；其公共 `started`、`starRevision`、`star.node.upserted`、本人事实与奖励在同一事务收敛，大屏可由快照或增量恢复。晚到错过 ASSEMBLY 者不能补做或补领。礼物/弹幕仅 PROGRAM_SUPPORT，协同点亮仅 COOPERATIVE_LIGHT，均无跨场景补奖励。
 - REHEARSAL 只在 `RUNNING + COOPERATIVE_LIGHT + presentation NONE` 建立服务端权威结尾预览，刷新/重连恢复且始终显示排练标记；它可手动清除，数据库没有现场完成事实。
-- 最多 6 条胶囊的人工插入不改变主场景/运行状态；presentation 三态互斥并由 `presentationRevision` 同步；无 AI、无自动轮播。COMPLETED 后不能新展示，但可安全撤下终局 recap 内容。
+- 抽奖只在 `RUNNING + PROGRAM_SUPPORT` 开启；服务端从已准入且未中奖者中无放回选择，刷新/重连/重启恢复；后台显示合成姓名+公开星号，大屏只显示公开星号。暂停、换场、完成或手动关闭只收屏并保留结果，只有 REHEARSAL Demo 管理员可清空。
 - Participant/Admin/Screen 三类快照符合第 4.4 节；参与者 `allowedActions` 与服务端状态一致，runtime/private 事件后先刷新再写；后台匿名漏斗不泄露逐人身份，就绪警告可明确 override，但任何安全硬门不可 override。
 
 ### 11.4 星系同步、恢复与容量
@@ -440,7 +433,7 @@ v1→v2 只允许在确认数据库全部为可丢弃的合成/Demo 数据后执
 ### 11.5 手机端、动效与无障碍
 
 - 390×844、短视口与软键盘场景无关键操作遮挡；下半页只有一个主要操作坞，模糊不支持时仍清晰可读。
-- 正常首次路径在新身份权威激活后先等待页面稳定 `visible`，再按 D-030 金标“约 5.4 秒沉入/接近/捕获寻星 → 不限时选色 → 权威锁色后约 1.0 秒闪烁并进入寄语 → 胶囊决定权威完成后约 4.2 秒拉远入轨”执行；寻星、选色、寄语与入轨共用同一持久恒星，动画不触发或延迟业务推进与实时连接。D-028/D-029 的 2.8s/1.2s/3.2s 仅为历史自动证据数字。
+- 正常首次路径在新身份权威激活后先等待页面稳定 `visible`，再按 D-037 当前路径“约 5.4 秒沉入/接近/捕获寻星 → 不限时选色 → 权威锁色并直接准入 → 约 1.0 秒闪烁后衔接约 4.2 秒拉远入轨”执行；全程共用同一持久恒星，不出现寄语/胶囊页，动画不触发或延迟业务推进与实时连接。
 - 首次正常路径不出现跳过控件；开播后的真正后台中断立即收束且返回不重播，reduced-motion、返回、刷新、断线和失败路径直接落到可操作静态状态。
 - 成功提示约 3.5 秒收回，错误/离线/暂停/完成保持；退出每次确认，草稿按约定清空。
 - 键盘、焦点、触控目标、对比度、屏幕阅读器语义和 `prefers-reduced-motion` 通过自动与人工检查。
@@ -451,13 +444,12 @@ v1→v2 只允许在确认数据库全部为可丢弃的合成/Demo 数据后执
 - 300 个固定合成参与者的运行/投影、礼物、弹幕、协同点亮和恒星 upsert 传播延迟 p95 均不超过 2 秒；业务失败、重复奖励、重复恒星、负动力和旧 epoch 污染为 0。
 - 同一 `resetEpoch` 只使用一个 `rewardRuleVersion`；每行账本保留实际增量和版本，运行中切换规则被拒绝，新规则只从新 epoch 生效且不改写历史。系统不存在未授权的后台数值扣减/补发入口。
 - D-027/D-028 的历史自动门（新鲜合成邀请、normal-motion、生产 Vue 页面）只保留原范围：它证明可见性门、约 2.8 秒时长、无跳过、后台中断静态与恢复不重播（D-027），以及同一恒星节点与 F6→F7 中心/尺寸差 `0px`、CLS `0` 的连续性（D-028），但不得扩张为当前视觉通过；当前视觉以 D-030 金标为准。
-- D-030～D-032 当前视觉门要求：正式页与 `motion-previsual-personal-star` 预演共用同一生产渲染器；参考时长约 5.4s/1.0s/4.2s；同一恒星贯穿寻星/选色/寄语/入轨；逐字大标题与字体回退栈、微角操作坞、本人档案边界按 D-032；隐藏/中断/刷新/恢复/reduced-motion 直接呈现同一权威静态结构。人工必须按金标目检镜头连续性。
-- 自动化浏览器通过不等于真机通过；仍需在 vivo X300 默认浏览器用新鲜邀请对当前版本完成首次视觉签核、软键盘、断线恢复、退出确认和终局只读的人工证据（见 [`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md)）。
+- D-037 当前视觉门要求：参考 D-030 的 5.4s/1.0s/4.2s 视觉语言，同一恒星贯穿寻星/选色/锁色/入轨；逐字标题、字体回退栈、微角操作坞与本人档案边界继续生效；隐藏/中断/刷新/恢复/reduced-motion 直接呈现同一权威静态结构。D-030～D-032 的既有通过只作变更前基线。
+- 自动化浏览器通过不等于真机通过；仍需在 vivo X300 默认浏览器用新鲜邀请对 D-037 当前版本完成首次视觉签核，并复验三端抽奖、OBS、软键盘、断线恢复、退出确认和终局只读，结果写入 [`D037_FIELD_ACCEPTANCE.md`](./D037_FIELD_ACCEPTANCE.md)。[`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md) 的 D-036 `PASS` 不代签本次变更。
 
 ## 12. 明确不在 v2 当前范围
 
 - 真实参与者数据迁移、公网部署、实体 NFC 写卡、场馆硬件和正式品牌授权；
-- AI 胶囊审核、自动公开、自动轮播；
-- 抽奖概率、兑奖和领奖核销；
+- 抽奖概率加权、奖项配置、兑奖和领奖核销；
 - 重型 3D 场景、GSAP 插件、逐星 GSAP 或除 D-026 `/screen` core 例外之外的新增大型动画运行时；
 - 用 AI 生成预览图替代真实项目页面、浏览器证据或真机验收。

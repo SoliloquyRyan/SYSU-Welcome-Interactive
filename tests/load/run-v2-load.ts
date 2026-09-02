@@ -120,7 +120,12 @@ function recordFailure(
   operation: string,
   error: unknown,
 ): void {
-  failures.push({ operation, code: failureCode(error) })
+  failures.push({
+    operation: error instanceof SanitizedV2ProtocolError
+      ? error.operation
+      : operation,
+    code: failureCode(error),
+  })
 }
 
 function waitForCondition(
@@ -475,6 +480,7 @@ async function run(): Promise<void> {
   let staleParticipantSessionRejected = false
   let oldEpochRejected = false
   let fixedCredentialReactivation = false
+  let resetDurationMs: number | null = null
   const failures: LoadFailure[] = []
   const sockets: V2WebSocketLike[] = []
   const participants: LoadParticipant[] = []
@@ -1022,15 +1028,19 @@ async function run(): Promise<void> {
       type: 'SUBSCRIBE', protocolVersion: '2', resetEpoch: initialEpoch,
       streams: [{ streamId: 'public', streamSeq: screen.publicSeq }],
     }))
+    await waitForCondition('old-epoch-subscribed', () => rawFrames.some((frame) =>
+      Boolean(frame && typeof frame === 'object' && (frame as { type?: unknown }).type === 'SUBSCRIBED')))
 
+    const resetStarted = performance.now()
     const resetResponse = V2AdminCommandResponseSchema.parse((await client.request(
       'reset-demo', 'POST', '/api/v2/admin/commands',
-      { cookie: adminCookie, body: {
+      { cookie: adminCookie, timeoutMs: RESTART_TIMEOUT_MS, body: {
         protocolVersion: '2', resetEpoch: initialEpoch,
         idempotencyKey: idempotencyKey('reset', 0), command: 'RESET_DEMO',
         confirmation: 'RESET DEMO', syntheticDataConfirmed: true,
       } },
     )).body)
+    resetDurationMs = Math.round((performance.now() - resetStarted) * 100) / 100
     adminCookie = (await client.request(
       'admin-login-after-reset', 'POST', '/api/v2/admin/login',
       { body: stack.credentials.admin },
@@ -1145,6 +1155,8 @@ async function run(): Promise<void> {
       recovery: {
         persistedDatabaseRestarted: restartDisconnects === 301,
         socketsRecovered: recoveredOpened === 301,
+        resetDurationMs,
+        resetTimeoutMs: RESTART_TIMEOUT_MS,
         staleParticipantSessionRejected,
         oldEpochRejected,
         fixedCredentialReactivation,

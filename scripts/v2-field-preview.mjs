@@ -13,41 +13,45 @@ const smokeMode = process.env.V2_FIELD_PREVIEW_SMOKE === '1'
 const checklistMode = process.env.DEMO_FIELD_CHECKLIST === '1'
 const FRONTEND_PORT = Number.parseInt(process.env.V2_FIELD_FRONTEND_PORT ?? '5173', 10)
 
-// Terminal-driven checklist mirroring docs/V2_10_FIELD_ACCEPTANCE.md.
+// Terminal-driven checklist mirroring docs/D037_FIELD_ACCEPTANCE.md.
 // Answers are evidence for the operator, not a substitute for the signed table.
 const FIELD_CHECKLIST = [
   ['F01', 'normal-motion 新鲜邀请：稳定可见后按 D-030 金标约 5.4 秒寻星，无跳过按钮'],
-  ['F02', '穿越方向/速度连续，电影、选色、寄语与入轨是同一颗恒星，交接无闪断'],
+  ['F02', '穿越方向/速度连续，电影、选色与入轨是同一颗恒星，交接无闪断'],
   ['F03', '选色控件交接前不可操作、交接后立即可用'],
   ['F04', '开播前隐藏则等待；开播后切后台立即静态，返回不重播'],
   ['F05', 'reduced-motion/刷新/已激活返回直接静态，不闪播'],
-  ['F06', '权威锁色后约 1.0 秒闪烁进入寄语；胶囊决定后约 4.2 秒拉远入轨'],
-  ['F07', '胶囊提交或持久跳过后才进入当前全场场景'],
+  ['F06', '权威锁色后约 1.0 秒闪烁，直接衔接约 4.2 秒拉远入轨'],
+  ['F07', '手机、后台和大屏均无寄语/时光胶囊入口、正文或待决定页'],
   ['F08', 'READY 等待页无旧六阶段任务'],
   ['F09', '后台推进 ASSEMBLY，手机与大屏自动收敛'],
-  ['F10', '晚到手机完成入场后直接进入当前场景，不补旧奖励'],
+  ['F10', '首次启动恒星发放 40 星光；晚到入场直接进入当前场景，不补旧奖励'],
   ['F11', 'PROGRAM_SUPPORT 节目选择三端一致'],
-  ['F12', '软键盘打开时弹幕输入与主提交可达，无整页横向溢出'],
-  ['F13', '礼物面板可开关、焦点/返回正常，不与软键盘重叠'],
-  ['F14', '合规弹幕与礼物匿名上屏；暂停/撤下/清屏实时收敛'],
-  ['F15', 'Wi-Fi 短暂断开禁写并提示；恢复后先取权威状态且不自动补交'],
-  ['F16', '刷新/返回不重播首次电影，不恢复未提交草稿'],
-  ['F17', '协同点亮与一次确认终章三端一致'],
-  ['F18', 'COMPLETED 后手机只读，错误操作不会重开写入'],
-  ['F19', '顶部退出每次确认；确认后需重新扫码且旧草稿不残留'],
-  ['F20', '手机连续操作无掉帧、过热、白屏或崩溃'],
+  ['F12', '抽奖仅在 RUNNING + PROGRAM_SUPPORT 可开启；其他状态稳定拒绝'],
+  ['F13', '连续抽取无重复；后台见合成姓名+公开星号，大屏只见公开星号'],
+  ['F14', '抽奖结果在刷新/重连后恢复；暂停/换场/完成自动收屏但保留记录'],
+  ['F15', '仅排练模式 Demo 管理员可清空抽奖；LIVE 或不合格条件均拒绝'],
+  ['F16', '软键盘打开时弹幕输入与主提交可达，无整页横向溢出'],
+  ['F17', '礼物面板可开关、焦点/返回正常，不与软键盘重叠'],
+  ['F18', '合规弹幕与礼物匿名上屏；暂停/撤下/清屏实时收敛'],
+  ['F19', 'Wi-Fi 短暂断开禁写并提示；恢复后先取权威状态且不自动补交'],
+  ['F20', '刷新/返回不重播首次电影，不恢复未提交草稿'],
+  ['F21', '协同点亮与一次确认终章三端一致'],
+  ['F22', 'COMPLETED 后手机只读，错误操作不会重开写入'],
+  ['F23', '顶部退出每次确认；确认后需重新扫码且旧草稿不残留'],
+  ['F24', '手机连续操作无掉帧、过热、白屏或崩溃'],
   ['O01', 'OBS：Browser Source 透明 alpha 与节目视频真实合成正确'],
-  ['O02', 'OBS：中心安全区、边缘星点、标题、弹幕、礼物实际显示链可读'],
+  ['O02', 'OBS：中心安全区、边缘星点、标题、弹幕、礼物与抽奖实际显示链可读'],
   ['O03', 'OBS：浏览器源无网页音频，节目音视频只由 OBS 控制'],
-  ['O04', 'OBS：胶囊/故障/场景/互动/终章优先级符合协议'],
+  ['O04', 'OBS：抽奖/故障/场景/互动/终章优先级符合协议，且无合成姓名或私密字段'],
   ['O05', 'OBS：连续切场、隐藏/显示源、全屏预览无黑底闪烁或残帧'],
 ]
 
 async function runFieldChecklist(invitationQr, invitationQrImage, baseURL) {
   const results = []
-  console.log('\n=== V2-10 现场验收逐项检查（终端模式）===')
+  console.log('\n=== D-037 现场验收逐项检查（终端模式）===')
   console.log('回答 P=通过 / F=失败 / B=受阻 / S=跳过，直接回车默认 P。')
-  console.log('此清单只辅助现场记录，最终签核仍以 docs/V2_10_FIELD_ACCEPTANCE.md 为准。\n')
+  console.log('此清单只辅助现场记录，最终签核仍以 docs/D037_FIELD_ACCEPTANCE.md 为准。\n')
   if (process.stdin.isTTY) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
     try {
@@ -80,10 +84,10 @@ async function runFieldChecklist(invitationQr, invitationQrImage, baseURL) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
   const reportPath = path.join(outputDirectory, `field-checklist-${timestamp}.md`)
   const lines = [
-    '# V2-10 现场检查单记录（终端模式）',
+    '# D-037 现场检查单记录（终端模式）',
     '',
     `> 时间：${new Date().toISOString()}；入口：${baseURL}`,
-    '> 说明：本文件是被 Git 忽略的现场记录；最终签核以 docs/V2_10_FIELD_ACCEPTANCE.md 为准。',
+    '> 说明：本文件是被 Git 忽略的现场记录；最终签核以 docs/D037_FIELD_ACCEPTANCE.md 为准。',
     '',
     `| 编号 | 检查项 | 结果 |`,
     '|---|---|---|',
@@ -94,7 +98,7 @@ async function runFieldChecklist(invitationQr, invitationQrImage, baseURL) {
   ]
   await fs.writeFile(reportPath, lines.join('\n'), 'utf8')
   console.log(`检查记录已写入：${reportPath}`)
-  console.log('请把未通过项与备注手工回填到 docs/V2_10_FIELD_ACCEPTANCE.md。')
+  console.log('请把未通过项与备注手工回填到 docs/D037_FIELD_ACCEPTANCE.md。')
   console.log(invitationQr)
   console.log(`二维码图片：${invitationQrImage.slice(0, 40)}…（仅终端模式预览）`)
 }

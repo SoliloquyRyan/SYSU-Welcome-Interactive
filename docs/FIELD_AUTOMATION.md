@@ -2,11 +2,11 @@
 
 > 状态：`脚手架就绪`——只做脚手架与文档，不代跑任何验收结论。
 > 配套脚本：[`scripts/vivo-field-automation.mjs`](../scripts/vivo-field-automation.mjs)。
-> 相关文档：[`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md)（唯一人工签核门）、[`RUNBOOK.md`](./RUNBOOK.md) §4（现场预览）、[`DECISIONS.md`](./DECISIONS.md)（决策记录）。
+> 相关文档：[`D037_FIELD_ACCEPTANCE.md`](./D037_FIELD_ACCEPTANCE.md)（当前人工复验门）、[`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md)（D-036 历史签核）、[`RUNBOOK.md`](./RUNBOOK.md) §4（现场预览）、[`DECISIONS.md`](./DECISIONS.md)（决策记录）。
 
 ## 1. 目的与边界
 
-**目的**：在 V2-10 现场人工验收前，对项目负责人的 vivo X300 真机做一次**只读自动化预检**：
+**目的**：在 D-037 现场人工复验前，对项目负责人的 vivo X300 真机做一次**只读自动化预检**：
 
 - 经 `adb forward` + Chrome DevTools（CDP）连接真机 Chrome；
 - 用 `preview:v2:field` 的临时合成栈与一次性合成邀请打开 `/welcome`，断言地址栏令牌被立即清除；
@@ -17,8 +17,8 @@
 **边界（不可妥协）**：
 
 - **真机预检 ≠ 人工签核**。桌面自动化、截图或 AI 观察都不能代签真机/现场验收；最终以
-  [`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md) 的人工 `PASS` / `FAIL` 为准。本脚本产出只是线索。
-- **只读**：不点击选色 / 胶囊 / 场景按钮，不提交任何业务命令，不写业务数据，不读取、切换或重置 `backend/.data/`。
+  [`D037_FIELD_ACCEPTANCE.md`](./D037_FIELD_ACCEPTANCE.md) 的人工 `PASS` / `FAIL` 为准。本脚本产出只是线索。
+- **只读**：不点击选色 / 抽奖 / 场景按钮，不提交任何业务命令，不写业务数据，不读取、升级、切换或重置 `backend/.data/`。
 - **令牌纪律**：令牌只在地址栏存在到 SPA 接管为止；脚本断言清除成功后才拍第一张截图，报告与日志不出现令牌原文
   （日志打印为 `<redacted>`）。
 
@@ -65,7 +65,7 @@
 
    可选：`$env:ADB_PATH = 'C:\path\to\adb.exe'`。
 4. 阅读控制台 `[PASS]` / `[FAIL]` 与结尾一行 JSON；打开报告与截图目录核对。
-5. 预检完成后，按 [`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md) 在真机人工走完整旅程并填表；
+5. 预检完成后，按 [`D037_FIELD_ACCEPTANCE.md`](./D037_FIELD_ACCEPTANCE.md) 在真机人工走完整旅程并填表；
    脚本发现的问题只是线索，不构成签核结论。
 
 ## 4. 输出说明
@@ -113,7 +113,7 @@
 
 ## 6. 已知限制
 
-- **不做业务写入**：选色、胶囊、场景按钮一律不自动点击；完整旅程与业务写入必须在真机人工操作，
+- **不做业务写入**：选色、抽奖、场景按钮一律不自动点击；完整旅程与业务写入必须在真机人工操作，
   脚本只负责「连得上、打得开、看得见、留证据」。
 - **Chrome devtools 入口差异**：不同安卓系统 / Chrome 版本，`localabstract` 套接字名可能不同
   （`chrome_devtools_remote` 是常见默认）；个别设备需在 Chrome 内开启「Enable USB debugging」或以
