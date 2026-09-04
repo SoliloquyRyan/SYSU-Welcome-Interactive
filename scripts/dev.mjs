@@ -65,6 +65,7 @@ function spawnPnpm(args, { label, environment, quiet = false, persistent = false
   const child = spawn(process.execPath, [pnpmCliPath(), ...args], {
     cwd: REPOSITORY_ROOT,
     env: environment,
+    detached: process.platform !== 'win32',
     shell: false,
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -493,6 +494,22 @@ async function waitForChildExit(child, timeoutMs) {
   ])
 }
 
+function signalProcessTree(child, signal) {
+  if (!child.pid) return
+
+  try {
+    process.kill(-child.pid, signal)
+  } catch (error) {
+    if (error?.code === 'ESRCH') return
+
+    try {
+      child.kill(signal)
+    } catch (fallbackError) {
+      if (fallbackError?.code !== 'ESRCH') throw fallbackError
+    }
+  }
+}
+
 async function stopChild(metadata) {
   const { child } = metadata
   metadata.expectedExit = true
@@ -504,7 +521,7 @@ async function stopChild(metadata) {
       windowsHide: true,
     })
   } else {
-    child.kill('SIGTERM')
+    signalProcessTree(child, 'SIGTERM')
   }
 
   if (await waitForChildExit(child, 2_000)) return
@@ -515,7 +532,7 @@ async function stopChild(metadata) {
       windowsHide: true,
     })
   } else {
-    child.kill('SIGKILL')
+    signalProcessTree(child, 'SIGKILL')
   }
   await waitForChildExit(child, 1_000)
 }

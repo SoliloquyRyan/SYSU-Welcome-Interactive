@@ -17,6 +17,7 @@ const service = read('deploy/sysu-welcome.service')
 const runtimeEnvironment = read('deploy/runtime.env.example')
 const caddyEnvironment = read('deploy/caddy.env.example')
 const ignore = read('.gitignore')
+const devOrchestrator = read('scripts/dev.mjs')
 
 requireText(caddy, /^\{\$SYSU_WELCOME_DOMAIN\} \{/m, 'Caddy domain must come from an environment variable')
 requireText(caddy, /handle \/api\/\*/, 'Caddy must proxy API requests')
@@ -54,6 +55,16 @@ for (const required of [
 requireText(caddyEnvironment, /^SYSU_WELCOME_DOMAIN=[A-Za-z0-9.-]+$/m, 'Caddy domain example is missing')
 requireText(ignore, /^backend\/\.private\/$/m, 'protected runtime ignore rule is missing')
 requireText(ignore, /^backend\/\.rehearsal\/$/m, 'rehearsal runtime ignore rule is missing')
+requireText(
+  devOrchestrator,
+  /detached: process\.platform !== 'win32'/,
+  'POSIX development services must run in an isolated process group',
+)
+requireText(
+  devOrchestrator,
+  /process\.kill\(-child\.pid, signal\)/,
+  'POSIX development shutdown must signal the complete process group',
+)
 
 for (const forbidden of [
   /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
@@ -65,4 +76,6 @@ for (const forbidden of [
   }
 }
 
-console.log('deployment-check OK: HTTPS proxy, loopback backend, persistent runtime, hardening and secret boundaries')
+console.log(
+  'deployment-check OK: HTTPS proxy, loopback backend, persistent runtime, hardening, process cleanup and secret boundaries',
+)
