@@ -32,8 +32,11 @@ import {
 } from '../load/v2-protocol-client.js'
 
 const PARTICIPANT_COUNT = 300
-const TYPICAL_PARTICIPANT_COUNT = 24
+const FORMAL_VISUAL_REFERENCE_COUNT = 220
+const VISUAL_ACCEPTANCE_COUNTS = [40, 80, 120, 160, FORMAL_VISUAL_REFERENCE_COUNT] as const
 const PRIMARY_CONCURRENCY = 24
+const ARRIVAL_SETTLE_MS = 1_800
+const PROGRAM_TRANSITION_EXPECTED_MS = 8_400
 const FORMAL_RENDER_DURATION_MS = 30 * 60 * 1_000
 const SMOKE_RENDER_DURATION_MS = 46_000
 const REPORT_SCHEMA_VERSION = 1
@@ -52,8 +55,13 @@ const artifactMode = !smokeMode || process.argv.includes('--artifacts')
 
 type SoakStageName =
   | 'empty-ready'
-  | 'typical-ready'
+  | 'sparse-40'
+  | 'settling-80'
+  | 'balanced-120'
+  | 'dense-160'
+  | 'formal-ready'
   | 'dense-assembly'
+  | 'program-transition'
   | 'program-overlay'
   | 'cooperative-light'
   | 'completed-finale'
@@ -142,17 +150,28 @@ function stageDurations(): Array<{
   expectedStars: number
 }> {
   const durations = smokeMode
-    ? [4_000, 6_000, 8_000, 10_000, 10_000, 8_000]
-    : [120_000, 180_000, 420_000, 420_000, 420_000, 240_000]
+    ? [3_000, 3_500, 3_500, 3_500, 3_500, 5_000, 6_000, 6_500, 6_000, 5_500]
+    : [90_000, 120_000, 120_000, 150_000, 180_000, 240_000, 240_000, 240_000, 240_000, 180_000]
   const names: SoakStageName[] = [
     'empty-ready',
-    'typical-ready',
+    'sparse-40',
+    'settling-80',
+    'balanced-120',
+    'dense-160',
+    'formal-ready',
     'dense-assembly',
     'program-overlay',
     'cooperative-light',
     'completed-finale',
   ]
-  const starCounts = [0, TYPICAL_PARTICIPANT_COUNT, 300, 300, 300, 300]
+  const starCounts = [
+    0,
+    ...VISUAL_ACCEPTANCE_COUNTS,
+    PARTICIPANT_COUNT,
+    PARTICIPANT_COUNT,
+    PARTICIPANT_COUNT,
+    PARTICIPANT_COUNT,
+  ]
   return names.map((name, index) => ({
     name,
     durationMs: durations[index]!,
@@ -362,26 +381,28 @@ async function canvasHash(page: Page): Promise<number> {
 
 async function inspectProgramTransparency(page: Page): Promise<{
   backgroundsTransparent: boolean
-  centerMaxAlpha: number
+  canvasMaxAlpha: number
+  giftVisuals: number
+  headings: number
   mediaElements: number
+  barrageItems: number
+  barragePanels: number
+  barrageStreams: number
+  sceneCopies: number
 }> {
   return await page.evaluate(`(() => {
     const canvas = document.querySelector('canvas.v2-galaxy');
-    let centerMaxAlpha = 255;
+    let canvasMaxAlpha = 255;
     if (canvas instanceof HTMLCanvasElement) {
       const context = canvas.getContext('2d', { willReadFrequently: true });
       if (context) {
-        centerMaxAlpha = 0;
-        const left = Math.floor(canvas.width * 0.2);
-        const right = Math.ceil(canvas.width * 0.8);
-        const top = Math.floor(canvas.height * 0.2);
-        const bottom = Math.ceil(canvas.height * 0.8);
+        canvasMaxAlpha = 0;
         const stepX = Math.max(1, Math.floor(canvas.width / 80));
         const stepY = Math.max(1, Math.floor(canvas.height / 45));
-        for (let y = top; y < bottom; y += stepY) {
-          for (let x = left; x < right; x += stepX) {
-            centerMaxAlpha = Math.max(
-              centerMaxAlpha,
+        for (let y = 0; y < canvas.height; y += stepY) {
+          for (let x = 0; x < canvas.width; x += stepX) {
+            canvasMaxAlpha = Math.max(
+              canvasMaxAlpha,
               context.getImageData(x, y, 1, 1).data[3] ?? 0,
             );
           }
@@ -399,13 +420,25 @@ async function inspectProgramTransparency(page: Page): Promise<{
     return {
       backgroundsTransparent: backgrounds.every((value) =>
         value === 'transparent' || /^rgba\\(0,\\s*0,\\s*0,\\s*0\\)$/.test(value)),
-      centerMaxAlpha,
+      canvasMaxAlpha,
+      giftVisuals: document.querySelectorAll('.v2-gifts,[data-gift-visual]').length,
+      headings: document.querySelectorAll('.v2-screen h1,.v2-screen h2').length,
       mediaElements: document.querySelectorAll('video,audio,iframe').length,
+      barrageItems: document.querySelectorAll('.v2-barrage-stream__item').length,
+      barragePanels: document.querySelectorAll('.v2-barrage-panel').length,
+      barrageStreams: document.querySelectorAll('.v2-barrage-stream').length,
+      sceneCopies: document.querySelectorAll('.v2-scene-copy').length,
     };
   })()`) as {
     backgroundsTransparent: boolean
-    centerMaxAlpha: number
+    canvasMaxAlpha: number
+    giftVisuals: number
+    headings: number
     mediaElements: number
+    barrageItems: number
+    barragePanels: number
+    barrageStreams: number
+    sceneCopies: number
   }
 }
 
@@ -432,7 +465,7 @@ async function assertPublicPrivacy(
 async function waitForScreenState(
   client: V2HttpClient,
   pages: readonly Page[],
-  input: { heading: string; stars: number },
+  input: { heading?: string; programOverlay?: boolean; stars: number },
 ): Promise<void> {
   const deadline = Date.now() + 20_000
   while (Date.now() < deadline) {
@@ -441,8 +474,26 @@ async function waitForScreenState(
       'GET',
       '/api/v2/screen/snapshot',
     )).body)
-    const pagesReady = await Promise.all(pages.map(async (page) =>
-      page.getByRole('heading', { name: input.heading }).isVisible().catch(() => false)))
+    const pagesReady = await Promise.all(pages.map(async (page) => {
+      if (input.heading) {
+        return page.getByRole('heading', { name: input.heading }).isVisible().catch(() => false)
+      }
+      if (input.programOverlay) {
+        // Read one DOM snapshot atomically. Sequential locator calls can straddle
+        // the realtime ASSEMBLY -> PROGRAM_SUPPORT patch and briefly combine the
+        // old `idle` attribute with the new scene's missing copy.
+        return page.evaluate(() => {
+          const root = document.querySelector('.v2-screen')
+          return root?.classList.contains('scene-program_support') === true
+            && root.getAttribute('data-scene-transition') === 'idle'
+            && document.querySelectorAll('.v2-scene-transition').length === 0
+            && document.querySelectorAll('.v2-scene-copy').length === 0
+            && document.querySelectorAll('.v2-gifts,[data-gift-visual]').length === 0
+            && document.querySelectorAll('.v2-barrage-panel,.v2-barrage-stream').length === 0
+        })
+      }
+      return false
+    }))
     if (
       snapshot.success &&
       snapshot.data.aggregate.publicStarCount === input.stars &&
@@ -509,6 +560,17 @@ async function captureStage(
   })))
 }
 
+async function captureArrivalFrame(
+  surfaces: readonly BrowserSurface[],
+  label: 'arrival-meteor' | 'arrival-orbit-capture',
+): Promise<void> {
+  if (!artifactMode) return
+  fs.mkdirSync(ARTIFACT_ROOT, { recursive: true })
+  await Promise.all(surfaces.map((surface, index) => surface.page.screenshot({
+    path: path.join(ARTIFACT_ROOT, `${label}-${index === 0 ? 'normal' : 'reduced'}.png`),
+  })))
+}
+
 function pageStageEvidence(
   instrumentation: InstrumentationSnapshot,
   samples: readonly SurfaceSample[],
@@ -561,6 +623,9 @@ async function holdStage(input: {
   const initialHashes = await Promise.all(surfaces.map((surface) => canvasHash(surface.page)))
   await sleep(hashDelay)
   const nextHashes = await Promise.all(surfaces.map((surface) => canvasHash(surface.page)))
+  // getImageData() is an intentionally expensive test probe. Exclude its own
+  // long tasks from the stage budget so the metric represents application work.
+  await Promise.all(surfaces.map((surface) => resetInstrumentation(surface.page)))
   const samples: [SurfaceSample[], SurfaceSample[]] = [[], []]
   const started = performance.now()
   const intervalMs = smokeMode ? 1_000 : 30_000
@@ -604,6 +669,60 @@ async function holdStage(input: {
   }
 }
 
+async function measureProgramTransition(input: {
+  expectedStars: number
+  normal: BrowserSurface
+  reduced: BrowserSurface
+  onStart: () => Promise<void>
+}): Promise<StageEvidence> {
+  const surfaces = [input.normal, input.reduced]
+  await Promise.all(surfaces.map((surface) => resetInstrumentation(surface.page)))
+  const samples: [SurfaceSample[], SurfaceSample[]] = [[], []]
+  const started = performance.now()
+  await input.onStart()
+  let sawNormalTransition = false
+  let normalSettled = false
+  const deadline = Date.now() + 12_000
+
+  while (Date.now() < deadline) {
+    const [transitionState, nextSamples] = await Promise.all([
+      input.normal.page.locator('.v2-screen').getAttribute('data-scene-transition'),
+      Promise.all(surfaces.map((surface) => sampleSurface(surface.page))),
+    ])
+    samples[0].push(nextSamples[0]!)
+    samples[1].push(nextSamples[1]!)
+    if (transitionState === 'ASSEMBLY->PROGRAM_SUPPORT') sawNormalTransition = true
+    if (sawNormalTransition && transitionState === 'idle') {
+      normalSettled = true
+      break
+    }
+    await sleep(250)
+  }
+  assertCondition(sawNormalTransition, 'The normal-motion program transition never became visible')
+  assertCondition(normalSettled, 'The normal-motion program transition did not settle within 12 seconds')
+  const measuredDurationMs = performance.now() - started
+  const instrumentation = await Promise.all(
+    surfaces.map((surface) => readInstrumentation(surface.page)),
+  )
+  return {
+    durationMs: round(measuredDurationMs),
+    expectedStars: input.expectedStars,
+    name: 'program-transition',
+    normal: pageStageEvidence(
+      instrumentation[0]!,
+      samples[0],
+      null,
+      measuredDurationMs,
+    ),
+    reduced: pageStageEvidence(
+      instrumentation[1]!,
+      samples[1],
+      null,
+      measuredDurationMs,
+    ),
+  }
+}
+
 function assertStageEvidence(stage: StageEvidence): void {
   for (const evidence of [stage.normal, stage.reduced]) {
     assertCondition(evidence.samples > 0, 'A render soak stage produced no samples')
@@ -626,18 +745,54 @@ function assertStageEvidence(stage: StageEvidence): void {
     )
   }
   assertCondition(stage.reduced.paintCount <= 4, 'Reduced motion retained a continuous Canvas paint loop')
-  if (['typical-ready', 'dense-assembly', 'cooperative-light'].includes(stage.name)) {
+  if ([
+    'empty-ready',
+    'sparse-40',
+    'settling-80',
+    'balanced-120',
+    'dense-160',
+    'formal-ready',
+    'dense-assembly',
+    'cooperative-light',
+  ].includes(stage.name)) {
     assertCondition(
       stage.normal.paintFps !== null && stage.normal.paintFps >= 20 && stage.normal.paintFps <= 35,
-      'The active galaxy paint cadence left its 20–35 FPS envelope',
+      'The ambient galaxy paint cadence left its 20–35 FPS envelope',
     )
     assertCondition(
       stage.normal.paintIntervalP95Ms !== null && stage.normal.paintIntervalP95Ms <= 80,
       'The active galaxy paint cadence p95 exceeded 80 ms',
     )
+    assertCondition(
+      stage.normal.canvasHashChanged === true,
+      'The normal-motion galaxy did not visibly change between sampled frames',
+    )
+    assertCondition(
+      stage.reduced.canvasHashChanged === false,
+      'The reduced-motion galaxy changed between sampled static frames',
+    )
+  }
+  if (stage.name === 'program-transition') {
+    assertCondition(
+      stage.durationMs >= PROGRAM_TRANSITION_EXPECTED_MS - 500
+        && stage.durationMs <= PROGRAM_TRANSITION_EXPECTED_MS + 1_800,
+      'The program transition left its 8.4-second timing envelope',
+    )
+    assertCondition(
+      stage.normal.paintFps !== null
+        && stage.normal.paintFps >= 50
+        && stage.normal.paintFps <= 70,
+      'The high-speed program transition left its 50–70 FPS envelope',
+    )
+    assertCondition(
+      stage.normal.paintIntervalP95Ms !== null
+        && stage.normal.paintIntervalP95Ms <= 35,
+      'The high-speed program transition paint cadence p95 exceeded 35 ms',
+    )
   }
   if (stage.name === 'program-overlay') {
-    assertCondition(stage.normal.paintCount <= 4, 'The OBS edge galaxy retained a continuous paint loop')
+    assertCondition(stage.normal.paintCount <= 4, 'The transparent program Canvas retained a continuous paint loop')
+    assertCondition(stage.normal.canvasHashChanged === false, 'The transparent program Canvas retained moving pixels')
   }
 }
 
@@ -660,6 +815,7 @@ async function run(): Promise<void> {
   const wallStarted = performance.now()
   const plannedStages = stageDurations()
   const plannedRenderDurationMs = plannedStages.reduce((sum, stage) => sum + stage.durationMs, 0)
+    + PROGRAM_TRANSITION_EXPECTED_MS
   let stack: DemoTestStack | null = null
   let browser: Browser | null = null
   let reducedBrowser: Browser | null = null
@@ -781,9 +937,38 @@ async function run(): Promise<void> {
       participants.push(...next)
     }
 
-    await onboardRange(0, TYPICAL_PARTICIPANT_COUNT)
-    await waitForScreenState(client, pages, { heading: '星海集结', stars: 24 })
-    await runStage(plannedStages[1]!)
+    let visualStart = 0
+    for (const [visualIndex, visualTarget] of VISUAL_ACCEPTANCE_COUNTS.entries()) {
+      const isolateArrivalEvidence = artifactMode && visualIndex === 0
+      const bulkTarget = isolateArrivalEvidence ? visualTarget - 1 : visualTarget
+      await onboardRange(visualStart, bulkTarget)
+      if (isolateArrivalEvidence) {
+        await waitForScreenState(client, pages, {
+          heading: '星海集结',
+          stars: bulkTarget,
+        })
+        await sleep(ARRIVAL_SETTLE_MS)
+        await onboardRange(bulkTarget, visualTarget)
+        await waitForScreenState(client, pages, {
+          heading: '星海集结',
+          stars: visualTarget,
+        })
+        await sleep(520)
+        await captureArrivalFrame(surfaces, 'arrival-meteor')
+        await sleep(660)
+        await captureArrivalFrame(surfaces, 'arrival-orbit-capture')
+      }
+      await waitForScreenState(client, pages, {
+        heading: '星海集结',
+        stars: visualTarget,
+      })
+      // Bulk synthetic activation is intentionally unlike the physical NFC
+      // cadence. Let those test-only concurrent meteors finish before taking
+      // the density reference screenshot for this attendance band.
+      await sleep(ARRIVAL_SETTLE_MS)
+      await runStage(plannedStages[visualIndex + 1]!)
+      visualStart = visualTarget
+    }
 
     const adminLogin = await client.request<V2AdminSnapshot>(
       'soak-admin-login',
@@ -821,7 +1006,7 @@ async function run(): Promise<void> {
       confirmed: true,
     })
 
-    await onboardRange(TYPICAL_PARTICIPANT_COUNT, PARTICIPANT_COUNT)
+    await onboardRange(FORMAL_VISUAL_REFERENCE_COUNT, PARTICIPANT_COUNT)
     await mapLimit(participants, PRIMARY_CONCURRENCY, async (participant) => {
       const response = V2ParticipantCommandResponseSchema.parse((await client.request(
         'soak-start-star',
@@ -837,15 +1022,30 @@ async function run(): Promise<void> {
       participant.snapshot = { ...participant.snapshot, participant: response.participant }
     })
     await waitForScreenState(client, pages, { heading: '星海集结', stars: 300 })
-    await runStage(plannedStages[2]!)
+    await sleep(ARRIVAL_SETTLE_MS)
+    await runStage(plannedStages[6]!)
 
-    await applyAdmin({
-      protocolVersion: '2', resetEpoch,
-      idempotencyKey: idempotencyKey('advance-program', 0),
-      command: 'ADVANCE', expectedRunRevision: admin.runtime.runRevision,
-      expectedPresentationRevision: admin.presentationRevision,
-      confirmed: true, overrideReadinessWarnings: false,
+    const transitionEvidence = await measureProgramTransition({
+      expectedStars: PARTICIPANT_COUNT,
+      normal: normal!,
+      reduced: reduced!,
+      onStart: () => applyAdmin({
+        protocolVersion: '2', resetEpoch,
+        idempotencyKey: idempotencyKey('advance-program', 0),
+        command: 'ADVANCE', expectedRunRevision: admin.runtime.runRevision,
+        expectedPresentationRevision: admin.presentationRevision,
+        confirmed: true, overrideReadinessWarnings: false,
+      }),
     })
+    stages.push(transitionEvidence)
+    assertStageEvidence(transitionEvidence)
+    const transitionSamples = await Promise.all(pages.map(sampleSurface))
+    allSamples.push(...transitionSamples)
+    assertSurfaceSamples(transitionSamples)
+    await assertPublicPrivacy(pages, stack!)
+    process.stdout.write(
+      `V2 render soak stage passed: program-transition (${Math.round(transitionEvidence.durationMs)}ms)\n`,
+    )
     const programId = admin.programs[0]?.id
     assertCondition(programId, 'No synthetic program is available for the OBS scene')
     await applyAdmin({
@@ -864,15 +1064,34 @@ async function run(): Promise<void> {
       )).body).currentProgram
     const giftId = programSnapshot?.giftCatalog[0]?.id
     assertCondition(giftId, 'No synthetic gift is available for the OBS scene')
-    const programTitle = admin.currentProgram?.title ?? admin.programs[0]!.title
-    await waitForScreenState(client, pages, { heading: programTitle, stars: 300 })
-    obsEvidence = await inspectProgramTransparency(normal.page)
-    assertCondition(obsEvidence.backgroundsTransparent, 'The OBS program scene has an opaque page background')
-    assertCondition(obsEvidence.centerMaxAlpha === 0, 'The OBS program scene paints into the center media safe area')
-    assertCondition(obsEvidence.mediaElements === 0, 'The web screen attempted to own program media')
+    await waitForScreenState(client, pages, { programOverlay: true, stars: 300 })
+    const transparencyEvidence = await Promise.all(pages.map(inspectProgramTransparency))
+    obsEvidence = transparencyEvidence[0]!
+    assertCondition(
+      transparencyEvidence.every((evidence) => evidence.backgroundsTransparent),
+      'The OBS program scene has an opaque page background',
+    )
+    assertCondition(
+      transparencyEvidence.every((evidence) => evidence.canvasMaxAlpha === 0),
+      'The OBS program scene retained visible Canvas pixels after the transition',
+    )
+    assertCondition(
+      transparencyEvidence.every((evidence) =>
+        evidence.barragePanels === 0
+        && evidence.barrageStreams === 0
+        && evidence.barrageItems === 0
+        && evidence.headings === 0
+        && evidence.sceneCopies === 0
+        && evidence.giftVisuals === 0),
+      'The OBS program scene retained a persistent web overlay before a live barrage event',
+    )
+    assertCondition(
+      transparencyEvidence.every((evidence) => evidence.mediaElements === 0),
+      'The web screen attempted to own program media',
+    )
 
     let interactionCursor = 0
-    await runStage(plannedStages[3]!, async () => {
+    await runStage(plannedStages[7]!, async () => {
       if (interactionCursor >= participants.length) return
       const participant = participants[interactionCursor]!
       const gift = V2ParticipantCommandResponseSchema.parse((await client.request(
@@ -899,6 +1118,13 @@ async function run(): Promise<void> {
         } },
       )).body)
       participant.snapshot = { ...participant.snapshot, participant: barrage.participant }
+      await normal!.page.locator('.v2-barrage-stream__item', {
+        hasText: `v2-soak-${String(interactionCursor).padStart(3, '0')}`,
+      }).waitFor({ state: 'visible', timeout: 2_000 })
+      assertCondition(
+        await reduced!.page.locator('.v2-barrage-stream__item').count() === 0,
+        'Reduced motion rendered a moving barrage node',
+      )
       interactionCursor += 1
       interactionsSent += 2
     })
@@ -930,7 +1156,7 @@ async function run(): Promise<void> {
       participant.snapshot = { ...participant.snapshot, participant: response.participant }
     })
     await waitForScreenState(client, pages, { heading: '协同点亮', stars: 300 })
-    await runStage(plannedStages[4]!)
+    await runStage(plannedStages[8]!)
 
     await applyAdmin({
       protocolVersion: '2', resetEpoch,
@@ -944,7 +1170,7 @@ async function run(): Promise<void> {
     await Promise.all(pages.map((page) => page.reload()))
     await waitForScreenState(client, pages, { heading: '今夜的星河，已经成形', stars: 300 })
     pageReloadRecovered = true
-    await runStage(plannedStages[5]!)
+    await runStage(plannedStages[9]!)
 
     for (const stage of stages) assertStageEvidence(stage)
     const diagnostics = surfaces.map((surface) => surface.monitor.diagnostics)
@@ -1066,7 +1292,7 @@ async function run(): Promise<void> {
       limitations: [
         'two desktop Chrome processes, not 300 simultaneous browser renderers',
         'headless loopback render evidence, not OBS compositor or venue display-chain evidence',
-        'desktop reduced-motion emulation, not vivo X300 or soft-keyboard evidence',
+        'desktop reduced-motion emulation, not physical-phone or soft-keyboard evidence',
       ],
       topLevelFailure,
       failureSummary,

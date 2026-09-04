@@ -2,7 +2,7 @@
 /**
  * scripts/vivo-field-automation.mjs
  *
- * vivo X300 真机自动化脚手架（B7）——只读预检，绝不代签真机验收。
+ * Android 实体手机自动化脚手架（兼容旧文件名）——只读预检，绝不代签真机验收。
  *
  * 用途：
  *   - 通过 adb forward + Chrome DevTools (CDP) 连接真机 Chrome；
@@ -317,7 +317,7 @@ async function main() {
     throw new Error('DEMO_INVITE_TOKEN is required (synthetic invite token of the running preview:v2:field session)')
   }
 
-  console.log('[INFO] vivo field automation (read-only scaffold; no business writes, no sign-off)')
+  console.log('[INFO] Android physical-phone automation (read-only scaffold; no business writes, no sign-off; legacy filename)')
   console.log(`[INFO] DEMO_HOST = ${demoHost}`)
 
   // 输出目录：读取根 .gitignore 判定忽略情况。

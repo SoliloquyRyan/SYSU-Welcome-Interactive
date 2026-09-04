@@ -16,9 +16,16 @@ const warningLabels = {
   COOPERATIVE_LIGHT_PENDING: '仍有准入者尚未完成协同点亮',
 }
 const statusLabels = { READY: '待开始', RUNNING: '运行中', PAUSED: '已暂停', COMPLETED: '已完成' }
+const presentationLabels = {
+  NONE: '无活动投影',
+  RAFFLE: '抽奖大屏',
+  FINALE_PREVIEW: '终章预演',
+}
+
+const protectedRuntime = import.meta.env.VITE_DATA_PROFILE === 'PROTECTED'
 
 const authState = ref('checking')
-const username = ref('demo-admin')
+const username = ref(protectedRuntime ? 'event-admin' : 'demo-admin')
 const password = ref('')
 const snapshot = ref(null)
 const busy = ref('')
@@ -29,6 +36,9 @@ const sessionGeneration = createAdminSessionGeneration()
 
 const runtime = computed(() => snapshot.value?.runtime)
 const presentation = computed(() => snapshot.value?.presentation)
+const presentationLabel = computed(() => (
+  presentationLabels[presentation.value?.type] ?? '状态未知'
+))
 const raffle = computed(() => snapshot.value?.raffle)
 const barrages = computed(() => snapshot.value?.publishedBarrages ?? [])
 const canWrite = computed(() => realtime.state.value === 'online' && !busy.value)
@@ -75,7 +85,10 @@ async function boot() {
 
 async function login() {
   if (!username.value.trim() || !password.value) {
-    errorMessage.value = '请输入共用 Demo 账号和密码。'; return
+    errorMessage.value = protectedRuntime
+      ? '请输入现场后台账号和密码。'
+      : '请输入共用 Demo 账号和密码。'
+    return
   }
   const ownGeneration = sessionGeneration.advance()
   realtime.stop()
@@ -270,7 +283,12 @@ void boot()
 </script>
 
 <template>
-  <section class="v2-admin" aria-labelledby="v2-admin-title">
+  <section
+    class="v2-admin"
+    aria-labelledby="v2-admin-title"
+    data-visual-palette="orbital-signal-spectrum"
+    data-surface-role="operations"
+  >
     <header class="v2-heading">
       <div><p>协议 v2 · 匿名现场运营</p><h1 id="v2-admin-title">三场景控制台</h1></div>
       <div class="v2-heading-actions">
@@ -281,9 +299,9 @@ void boot()
       </div>
     </header>
 
-    <BaseCard v-if="authState === 'checking'" padding="lg"><p>正在检查 v2 管理会话…</p></BaseCard>
+    <BaseCard v-if="authState === 'checking'" padding="md"><p>正在检查 v2 管理会话…</p></BaseCard>
     <BaseCard v-else-if="authState === 'login'" padding="lg" class="login-card">
-      <h2>共用 Demo 后台登录</h2>
+      <h2>{{ protectedRuntime ? '现场后台登录' : '共用 Demo 后台登录' }}</h2>
       <label>账号<input v-model="username" autocomplete="username"></label>
       <label>密码<input v-model="password" type="password" autocomplete="current-password" @keyup.enter="login"></label>
       <BaseButton :disabled="busy === 'login'" @click="login">{{ busy === 'login' ? '登录中…' : '登录' }}</BaseButton>
@@ -293,12 +311,12 @@ void boot()
       <p v-if="errorMessage || realtime.lastError.value" class="feedback error" role="alert">{{ errorMessage || realtime.lastError.value }}</p>
       <p v-if="successMessage" class="feedback success" role="status">{{ successMessage }}</p>
 
-      <BaseCard padding="lg" class="runtime-card">
+      <BaseCard padding="md" class="runtime-card">
         <div class="runtime-facts">
           <div><span>模式</span><strong>{{ runtime.mode === 'LIVE' ? '现场' : '排练' }}</strong></div>
-          <div><span>状态</span><strong>{{ statusLabels[runtime.status] }}</strong></div>
+          <div :data-status="runtime.status"><span>状态</span><strong>{{ statusLabels[runtime.status] }}</strong></div>
           <div><span>当前场景</span><strong>{{ runtime.currentScene ? sceneLabels[runtime.currentScene] : '尚未开始' }}</strong></div>
-          <div><span>活动投影</span><strong>{{ presentation.type }}</strong></div>
+          <div :data-presentation="presentation.type"><span>活动投影</span><strong>{{ presentationLabel }}</strong></div>
         </div>
         <div class="control-actions">
           <template v-if="runtime.status === 'READY'">
@@ -318,7 +336,7 @@ void boot()
       </BaseCard>
 
       <div class="v2-grid">
-        <BaseCard padding="lg">
+        <BaseCard padding="md">
           <h2>匿名入场漏斗</h2>
           <dl class="metrics">
             <div><dt>已激活</dt><dd>{{ snapshot.funnel.activatedCount }}</dd></div>
@@ -329,7 +347,7 @@ void boot()
             <div><dt>协同点亮完成</dt><dd>{{ snapshot.funnel.cooperativeLightCount }}</dd></div>
           </dl>
         </BaseCard>
-        <BaseCard padding="lg">
+        <BaseCard padding="md">
           <h2>推进前检查</h2>
           <p v-if="!snapshot.readinessWarnings.length" class="quiet">当前没有就绪警告。</p>
           <ul v-else class="warning-list"><li v-for="warning in snapshot.readinessWarnings" :key="warning">{{ warningLabels[warning] }}</li></ul>
@@ -337,7 +355,7 @@ void boot()
         </BaseCard>
       </div>
 
-      <BaseCard padding="lg" class="raffle-card">
+      <BaseCard padding="md" class="raffle-card">
         <div class="panel-heading">
           <div><h2>中场新生抽奖</h2><p>按已入场新生随机抽取；同一轮不会重复中奖。姓名仅在主控端显示，大屏只显示星星代号。</p></div>
           <div class="control-actions">
@@ -360,7 +378,7 @@ void boot()
         </ol>
       </BaseCard>
 
-      <BaseCard padding="lg">
+      <BaseCard padding="md">
         <div class="panel-heading">
           <div><h2>节目单与礼物</h2><p>只有节目支持场景的当前节目可接收礼物；节目媒体仍由 OBS/导播控制。</p></div>
           <div class="program-control">
@@ -379,7 +397,7 @@ void boot()
         </div>
       </BaseCard>
 
-      <BaseCard padding="lg">
+      <BaseCard padding="md">
         <div class="panel-heading">
           <div>
             <h2>直播互动安全控制</h2>
@@ -406,7 +424,7 @@ void boot()
           </li>
         </ul>
       </BaseCard>
-      <BaseCard padding="lg" class="danger-card">
+      <BaseCard v-if="!protectedRuntime" padding="md" class="danger-card">
         <h2>Demo 管理</h2>
         <p class="quiet">仅合成数据可重置；服务端会再次执行数据分类硬门并轮换当前会话。</p>
         <BaseButton variant="danger" :disabled="!canWrite" @click="resetDemo">重置合成 Demo</BaseButton>
@@ -416,19 +434,396 @@ void boot()
 </template>
 
 <style scoped>
-.v2-admin{display:grid;gap:var(--space-5);max-width:1240px;margin:0 auto;padding:var(--space-5)}
-.v2-heading,.v2-heading-actions,.panel-heading,.control-actions,.candidate-actions{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap}
-.v2-heading p,.panel-heading p,.quiet{color:var(--color-text-secondary)}
-.login-card{display:grid;gap:var(--space-4);max-width:480px}.login-card label{display:grid;gap:var(--space-2)}
-.login-card input{min-height:44px;padding:0 12px;border:1px solid var(--color-border-subtle);background:var(--color-paper-300);color:inherit}
-.feedback{padding:var(--space-3);border-radius:var(--radius-md)}.error{background:color-mix(in srgb,var(--color-danger) 16%,transparent)}.success{background:color-mix(in srgb,var(--color-success) 16%,transparent)}
-.runtime-card{display:grid;gap:var(--space-4)}.runtime-facts,.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-3)}
-.runtime-facts div,.metrics div{padding:var(--space-3);border:1px solid var(--color-border-subtle)}.runtime-facts span,.metrics dt{display:block;color:var(--color-text-secondary);font-size:var(--font-size-xs)}.metrics dd{margin:4px 0 0;font-size:var(--font-size-xl);font-weight:700}
-.v2-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)}.warning-list{display:grid;gap:var(--space-2);color:var(--color-warning)}
-.raffle-card{border-top:3px solid #e6b45f}.raffle-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-3);margin:var(--space-4) 0}.raffle-summary div{padding:var(--space-3);background:color-mix(in srgb,#e6b45f 9%,transparent);border:1px solid color-mix(in srgb,#e6b45f 28%,transparent)}.raffle-summary dt{color:var(--color-text-secondary);font-size:var(--font-size-xs)}.raffle-summary dd{margin:4px 0 0;font-size:var(--font-size-xl);font-weight:700}.winner-list{list-style:none;padding:0;display:grid;gap:var(--space-2)}.winner-list li{display:grid;grid-template-columns:90px minmax(0,1fr) auto;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid var(--color-border-subtle)}.winner-list span{color:var(--color-text-secondary)}.winner-list code{color:#f0c575;font-size:1rem}
-.barrage-list{list-style:none;padding:0;display:grid;gap:var(--space-2)}.barrage-list li{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-3);border:1px solid var(--color-border-subtle)}.barrage-list p{margin:0;white-space:pre-wrap}.barrage-list small{display:block;margin-top:5px;color:var(--color-text-secondary)}.pause-notice{padding:var(--space-3);background:color-mix(in srgb,var(--color-warning) 14%,transparent)}
-.danger-card{border-left:6px solid var(--color-danger)}
-.program-control{display:flex;align-items:end;gap:var(--space-3);flex-wrap:wrap}.program-control label{display:grid;gap:var(--space-2);color:var(--color-text-secondary);font-size:var(--font-size-xs)}.program-control select{min-height:44px;min-width:min(360px,72vw);padding:0 12px;border:1px solid var(--color-border-subtle);background:var(--color-paper-300);color:inherit}
-.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
-@media(max-width:760px){.v2-grid{grid-template-columns:1fr}.runtime-facts,.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.raffle-summary{grid-template-columns:1fr}.winner-list li{grid-template-columns:80px 1fr}.winner-list code{grid-column:2}.candidate-actions{grid-column:2;justify-content:flex-start}}
+.v2-admin {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.v2-admin :deep(.base-card) {
+  overflow: hidden;
+  backdrop-filter: none;
+}
+
+.v2-heading,
+.v2-heading-actions,
+.panel-heading,
+.control-actions,
+.candidate-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.v2-heading {
+  min-height: 112px;
+  align-items: end;
+  padding: var(--space-3) 0 var(--space-2);
+}
+
+.v2-heading p,
+.panel-heading p,
+.quiet {
+  color: var(--color-text-secondary);
+}
+
+.v2-heading p {
+  margin: 0;
+  color: var(--color-orbit-signal-soft);
+  font-family: var(--font-family-signal);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.1em;
+}
+
+.v2-heading h1 {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-display);
+  font-size: clamp(2.2rem, 4.2vw, 3.65rem);
+  font-weight: 600;
+  letter-spacing: 0.035em;
+  line-height: 1.05;
+}
+
+.v2-heading-actions {
+  justify-content: flex-end;
+}
+
+.login-card {
+  width: min(480px, 100%);
+  display: grid;
+  gap: var(--space-4);
+}
+
+.login-card h2,
+.v2-admin h2 {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  line-height: 1.3;
+}
+
+.login-card label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.login-card input,
+.program-control select {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  outline: 0;
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-orbit-surface-1) 88%, transparent);
+  font: inherit;
+}
+
+.login-card input:focus-visible,
+.program-control select:focus-visible {
+  border-color: var(--color-focus-ring);
+  outline: 3px solid color-mix(in srgb, var(--color-focus-ring) 28%, transparent);
+  outline-offset: 2px;
+}
+
+.feedback {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-md);
+}
+
+.error {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 11%, transparent);
+}
+
+.success {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 10%, transparent);
+}
+
+.runtime-card {
+  position: relative;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.runtime-card::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-orbit-signal), var(--color-orbit-cyan), transparent 82%);
+  content: "";
+}
+
+.runtime-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.runtime-facts div,
+.metrics div,
+.raffle-summary div {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-orbit-surface-3) 34%, transparent);
+}
+
+.runtime-facts span,
+.metrics dt,
+.raffle-summary dt {
+  display: block;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-family-signal);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.055em;
+}
+
+.runtime-facts strong {
+  display: block;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.runtime-facts [data-status="RUNNING"] strong { color: var(--color-success); }
+.runtime-facts [data-status="PAUSED"] strong { color: var(--color-warning); }
+.runtime-facts [data-status="COMPLETED"] strong { color: var(--color-orbit-star); }
+.runtime-facts [data-presentation="NONE"] strong { color: var(--color-text-secondary); }
+
+.runtime-card > .control-actions {
+  justify-content: flex-start;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.v2-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.metrics {
+  margin: var(--space-4) 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.metrics dd,
+.raffle-summary dd {
+  margin: 5px 0 0;
+  font-family: var(--font-family-data);
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.panel-heading {
+  align-items: start;
+}
+
+.panel-heading > div:first-child {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.panel-heading p {
+  max-width: 72ch;
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.warning-list {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--color-warning);
+}
+
+.raffle-card {
+  border-top-color: color-mix(in srgb, var(--color-orbit-warm) 70%, transparent);
+}
+
+.raffle-summary {
+  margin: var(--space-4) 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.raffle-summary div {
+  border-color: color-mix(in srgb, var(--color-orbit-warm) 24%, transparent);
+  background: color-mix(in srgb, var(--color-orbit-warm) 7%, transparent);
+}
+
+.winner-list,
+.barrage-list {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.winner-list li,
+.barrage-list li {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-orbit-surface-3) 26%, transparent);
+}
+
+.winner-list li {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.winner-list span,
+.barrage-list small {
+  color: var(--color-text-secondary);
+}
+
+.winner-list code {
+  color: var(--color-orbit-warm);
+  font-family: var(--font-family-data);
+  font-size: var(--font-size-md);
+}
+
+.barrage-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.barrage-list li > div:first-child {
+  min-width: 0;
+}
+
+.barrage-list p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.barrage-list small {
+  display: block;
+  margin-top: 5px;
+}
+
+.pause-notice {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3);
+  border-left: 3px solid var(--color-warning);
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+}
+
+.danger-card {
+  border-color: color-mix(in srgb, var(--color-danger) 36%, transparent);
+  border-left: 3px solid var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 5%, var(--color-surface-panel));
+}
+
+.program-control {
+  display: flex;
+  align-items: end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.program-control label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.program-control select {
+  min-width: min(360px, 72vw);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+@media (max-width: 900px) {
+  .v2-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px) {
+  .v2-heading {
+    min-height: 0;
+    align-items: start;
+    padding-top: var(--space-2);
+  }
+
+  .v2-heading-actions {
+    justify-content: flex-start;
+  }
+
+  .runtime-facts,
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .panel-heading {
+    display: grid;
+    justify-items: stretch;
+  }
+
+  .control-actions,
+  .candidate-actions {
+    justify-content: flex-start;
+  }
+
+  .program-control,
+  .program-control label,
+  .program-control select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .winner-list li {
+    grid-template-columns: 80px minmax(0, 1fr);
+  }
+
+  .winner-list code,
+  .candidate-actions {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 420px) {
+  .v2-admin { gap: var(--space-3); }
+  .v2-heading h1 { font-size: 2.15rem; }
+  .runtime-facts div,
+  .metrics div,
+  .raffle-summary div { padding: 10px; }
+  .raffle-summary { gap: var(--space-2); }
+  .barrage-list li { align-items: flex-start; flex-direction: column; }
+}
 </style>

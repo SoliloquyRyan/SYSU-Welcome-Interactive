@@ -1,0 +1,6 @@
+# 全仓文本一律按 LF 检出（与 D-034/D-036 验收环境一致）。
+# 仓库内 blobs 均为 LF；Windows core.autocrlf=true 会把文本检出为 CRLF，导致
+# 1) _schema_migrations 迁移校验和失配 → v2-verify 失败 → pnpm dev 错误回退 v1 路径；
+# 2) 读取源码做断言的 Vitest 用例（\n 正则）在本机失败。
+* text=auto eol=lf
+*.sql text eol=lf

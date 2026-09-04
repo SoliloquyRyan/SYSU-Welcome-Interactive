@@ -13,6 +13,7 @@ import { openDatabase } from '../../backend/src/db/open-database.js'
 import { createSession } from '../../backend/src/auth/session.js'
 import {
   fingerprintManifest,
+  readDemoCredentialContext,
   readSeedManifest,
   seedDemoDatabase,
 } from '../../backend/src/db/seed.js'
@@ -23,12 +24,16 @@ import {
   readProtocolRuntime,
   resetSyntheticV2Database,
   switchSyntheticDemoToV2,
-  upgradeSyntheticV2DatabaseFrom12To13,
+  upgradeSyntheticV2DatabaseFrom12To14,
   V2_DESTRUCTIVE_CONFIRMATION,
   V2_REWARD_RULE_VERSION,
   V2MaintenanceError,
   verifyV2Foundation,
 } from '../../backend/src/db/v2-foundation.js'
+import {
+  activateV2Participant,
+  executeV2ParticipantOnboardingCommand,
+} from '../../backend/src/services/v2-participant-onboarding.js'
 
 const NOW = new Date('2026-08-13T04:00:00.000Z')
 const MIGRATIONS_PATH = path.join(BACKEND_ROOT, 'migrations')
@@ -147,8 +152,8 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
   }
 
   function upgradeOptions(
-    overrides: Partial<Parameters<typeof upgradeSyntheticV2DatabaseFrom12To13>[1]> = {},
-  ): Parameters<typeof upgradeSyntheticV2DatabaseFrom12To13>[1] {
+    overrides: Partial<Parameters<typeof upgradeSyntheticV2DatabaseFrom12To14>[1]> = {},
+  ): Parameters<typeof upgradeSyntheticV2DatabaseFrom12To14>[1] {
     return {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
@@ -264,7 +269,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
 
     const result = migrateDatabase(database, MIGRATIONS_PATH, () => NOW)
 
-    expect(result.applied).toEqual([8, 9, 10, 11, 12, 13])
+    expect(result.applied).toEqual([8, 9, 10, 11, 12, 13, 14])
     expect(readProtocolRuntime(database)).toMatchObject({
       activeProtocolVersion: '1',
       activationState: 'V1_ACTIVE',
@@ -319,6 +324,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
       11,
       12,
       13,
+      14,
     ])
 
     await expect(
@@ -557,7 +563,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
       }),
     ).toMatchObject({
       ready: true,
-      schemaVersion: 13,
+      schemaVersion: 14,
       protocolVersion: '2',
       resetEpoch: 2,
       participantCount: 300,
@@ -572,7 +578,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
     seedV2Schema12Baseline()
 
     await expect(
-      upgradeSyntheticV2DatabaseFrom12To13(
+      upgradeSyntheticV2DatabaseFrom12To14(
         database,
         upgradeOptions({ confirmation: 'missing-confirmation' }),
       ),
@@ -587,14 +593,14 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
   it('upgrades an active synthetic schema-12 database only after creating a verified backup', async () => {
     seedV2Schema12Baseline()
 
-    const result = await upgradeSyntheticV2DatabaseFrom12To13(
+    const result = await upgradeSyntheticV2DatabaseFrom12To14(
       database,
       upgradeOptions(),
     )
 
     expect(result).toMatchObject({
       previousSchemaVersion: 12,
-      schemaVersion: 13,
+      schemaVersion: 14,
       resetEpoch: 2,
       participantCount: 300,
     })
@@ -611,7 +617,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
     }
     expect(
       database.prepare('SELECT max(version) FROM _schema_migrations').pluck().get(),
-    ).toBe(13)
+    ).toBe(14)
     expect(
       database.prepare('SELECT count(*) FROM v2_raffle_state').pluck().get(),
     ).toBe(1)
@@ -621,14 +627,103 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
         manifestPath,
         participantCount: 300,
       }),
-    ).toMatchObject({ ready: true, schemaVersion: 13, resetEpoch: 2, issues: [] })
+    ).toMatchObject({ ready: true, schemaVersion: 14, resetEpoch: 2, issues: [] })
   })
 
-  it('rolls schema 12→13 back while retaining the verified v2 backup', async () => {
+  it('reconciles an existing admitted participant projection during schema 12→14 upgrade', async () => {
+    seedV2Schema12Baseline()
+    const participant = readSeedManifest(manifestPath).participants[0]!
+    const activation = activateV2Participant(
+      database,
+      readDemoCredentialContext(manifestPath),
+      {
+        protocolVersion: '2',
+        resetEpoch: 2,
+        idempotencyKey: 'upgrade-existing-activation',
+        method: 'INVITATION_TOKEN',
+        token: participant.inviteToken,
+      },
+      NOW,
+    )
+    executeV2ParticipantOnboardingCommand(
+      database,
+      participant.id,
+      {
+        protocolVersion: '2',
+        resetEpoch: 2,
+        idempotencyKey: 'upgrade-existing-lock',
+        expectedParticipantRevision:
+          activation.snapshot.participant.participantRevision,
+        command: 'LOCK_COLOR',
+        colorTemperatureKelvin: 6500,
+      },
+      NOW,
+    )
+    const beforeRevision = Number(
+      database
+        .prepare(
+          `SELECT participant_revision FROM v2_participant_states
+           WHERE reset_epoch = 2 AND identity_id = ?`,
+        )
+        .pluck()
+        .get(participant.id),
+    )
+
+    await upgradeSyntheticV2DatabaseFrom12To14(database, upgradeOptions())
+
+    const afterRevision = Number(
+      database
+        .prepare(
+          `SELECT participant_revision FROM v2_participant_states
+           WHERE reset_epoch = 2 AND identity_id = ?`,
+        )
+        .pluck()
+        .get(participant.id),
+    )
+    const latestEventRevision = Number(
+      database
+        .prepare(
+          `SELECT revision FROM v2_domain_events
+           WHERE reset_epoch = 2 AND stream_id = ?
+             AND event_name = 'participant.snapshot.changed'
+           ORDER BY stream_seq DESC LIMIT 1`,
+        )
+        .pluck()
+        .get(`participant:${participant.id}`),
+    )
+    expect(afterRevision).toBe(beforeRevision + 1)
+    expect(latestEventRevision).toBe(afterRevision)
+    expect(
+      database
+        .prepare(
+          `SELECT count(*) FROM v2_sessions
+           WHERE reset_epoch = 2 AND revoked_at IS NULL`,
+        )
+        .pluck()
+        .get(),
+    ).toBe(0)
+    expect(
+      database
+        .prepare(
+          'SELECT count(*) FROM v2_idempotency_records WHERE reset_epoch = 2',
+        )
+        .pluck()
+        .get(),
+    ).toBe(0)
+    expect(
+      verifyV2Foundation(database, {
+        migrationsPath: MIGRATIONS_PATH,
+        manifestPath,
+        participantCount: 300,
+      }),
+    ).toMatchObject({ ready: true, schemaVersion: 14, issues: [] })
+  })
+
+  it('rolls schema 12→14 back while retaining the verified v2 backup', async () => {
     seedV2Schema12Baseline()
 
     await expect(
-      upgradeSyntheticV2DatabaseFrom12To13(
+      upgradeSyntheticV2DatabaseFrom12To14(
         database,
         upgradeOptions({
           beforeCommit() {

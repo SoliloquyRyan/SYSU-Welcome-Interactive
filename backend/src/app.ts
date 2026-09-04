@@ -46,8 +46,8 @@ import {
 } from './auth/session.js'
 import { loadConfig, type AppConfig } from './config.js'
 import {
-  readDemoCredentialContext,
-  type DemoCredentialContext,
+  readCredentialContext,
+  type CredentialContext,
   verifyAdminPasswordCredential,
 } from './db/seed.js'
 import { openDatabase } from './db/open-database.js'
@@ -299,9 +299,9 @@ export async function buildApp(
     }, 25)
     v2EventPoller.unref()
   }
-  let credentialContext: DemoCredentialContext | null = null
-  const credentials = (): DemoCredentialContext => {
-    credentialContext ??= readDemoCredentialContext(config.seedManifestPath)
+  let credentialContext: CredentialContext | null = null
+  const credentials = (): CredentialContext => {
+    credentialContext ??= readCredentialContext(config.seedManifestPath)
     return credentialContext
   }
   const loginRateLimiter =
@@ -1320,7 +1320,7 @@ export async function buildApp(
 	      return reply.code(404).send(V2ApiErrorResponseSchema.parse({
 	        status: 'error', protocolVersion: '2', resetEpoch: epoch,
 	        error: {
-	          code: 'RESOURCE_NOT_FOUND', message: '请求的 v2 本地 Demo 接口不存在。',
+	          code: 'RESOURCE_NOT_FOUND', message: '请求的 v2 现场接口不存在。',
 	          requestId: request.id, retryable: false,
 	        },
 	        recovery: { snapshotRequired: true, scope: 'ALL_AUTHORIZED' },
@@ -1330,7 +1330,7 @@ export async function buildApp(
       status: 'error',
       error: {
         code: 'VALIDATION_FAILED',
-        message: '请求的本地 Demo 接口不存在。',
+        message: '请求的现场接口不存在。',
         requestId: request.id,
       },
     })
@@ -1399,7 +1399,7 @@ export async function buildApp(
 	          code: v2Code,
 	          message: known || v2DomainError ? error.message : validation
 	            ? '请求格式或字段无效，请检查后重试。'
-	            : 'v2 本地 Demo 服务暂时不可用。',
+	            : 'v2 现场服务暂时不可用。',
 	          requestId: request.id,
 	          retryable: v2Code === 'RATE_LIMITED' || v2Code === 'SERVICE_UNAVAILABLE',
 	          ...(error instanceof V2RuntimeCommandError && error.details
@@ -1459,7 +1459,7 @@ export async function buildApp(
           ? error.message
           : validation
             ? '请求格式或字段无效，请检查后重试。'
-            : '本地 Demo 服务暂时不可用。',
+            : '现场服务暂时不可用。',
         requestId: request.id,
       },
       ...(known && error.resetEpoch !== undefined

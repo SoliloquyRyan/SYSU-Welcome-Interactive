@@ -105,7 +105,7 @@ a:focus-visible {
   padding: 9px 13px;
   border-right: 1px solid var(--color-border-strong);
   color: var(--color-text-secondary);
-  background: var(--color-paper-100);
+  background: var(--color-control-secondary-bg);
   text-decoration: none;
   transition:
     color var(--motion-duration-fast) var(--motion-ease-standard),
@@ -118,7 +118,7 @@ a:focus-visible {
 
 .dev-nav a:hover,
 .dev-nav a.router-link-active {
-  color: var(--color-on-dark);
+  color: var(--color-control-primary-text);
   background: var(--color-brand-primary);
 }
 
@@ -138,7 +138,7 @@ a:focus-visible {
   border-top: 1px solid var(--color-border-strong);
   color: var(--color-text-secondary);
   font-family: var(--font-family-mono);
-  font-size: 0.7rem;
+  font-size: var(--font-size-xs);
   letter-spacing: 0.03em;
 }
 
@@ -304,6 +304,91 @@ h1 {
 .route-screen {
   color-scheme: dark;
   color: var(--color-on-dark);
+}
+
+.app-shell.route-admin {
+  --color-bg-canvas: var(--color-orbit-midnight);
+  --color-bg-deep: var(--color-orbit-midnight);
+  --color-surface-panel: color-mix(in srgb, var(--color-orbit-surface-2) 88%, transparent);
+  --color-surface-panel-strong: var(--color-orbit-surface-3);
+  --color-surface-raised: var(--color-orbit-surface-2);
+  --color-surface-soft: color-mix(in srgb, var(--color-orbit-signal) 12%, transparent);
+  --color-text-primary: var(--color-orbit-text-primary);
+  --color-text-secondary: var(--color-orbit-text-secondary);
+  --color-text-tertiary: var(--color-orbit-text-tertiary);
+  --color-border-subtle: var(--color-orbit-border-subtle);
+  --color-border-strong: var(--color-orbit-border-strong);
+  --color-brand-primary: var(--color-orbit-signal-soft);
+  --color-brand-primary-strong: var(--color-orbit-signal);
+  --color-brand-cyan: var(--color-orbit-cyan);
+  --color-accent-warm: var(--color-orbit-warm);
+  --color-success: var(--color-orbit-success);
+  --color-warning: var(--color-orbit-warning);
+  --color-danger: var(--color-orbit-danger);
+  --color-info: var(--color-orbit-signal-soft);
+  --color-neutral: var(--color-orbit-text-tertiary);
+  --color-focus-ring: var(--color-orbit-focus);
+  --color-control-primary-bg: var(--color-orbit-signal);
+  --color-control-primary-text: var(--color-orbit-midnight);
+  --color-control-primary-accent: var(--color-orbit-cyan);
+  --color-control-secondary-bg: color-mix(in srgb, var(--color-orbit-surface-3) 68%, transparent);
+  --color-control-secondary-text: var(--color-orbit-text-primary);
+  --color-control-disabled-bg: var(--color-orbit-disabled-surface);
+  --color-control-disabled-text: var(--color-orbit-disabled-text);
+  --color-control-danger-bg: var(--color-orbit-danger);
+  --color-control-danger-text: var(--color-orbit-midnight);
+  --control-primary-accent-width: 2px;
+  --card-background: color-mix(in srgb, var(--color-orbit-surface-2) 88%, transparent);
+  --card-border-color: var(--color-orbit-border-subtle);
+  --card-border-top: 1px solid var(--color-orbit-border-strong);
+  --card-shadow: 0 18px 56px rgba(0, 2, 10, 0.24);
+  --shadow-focus: 0 0 0 4px color-mix(in srgb, var(--color-orbit-focus) 22%, transparent);
+  width: min(90rem, 100%);
+  color-scheme: dark;
+  color: var(--color-text-primary);
+  background: var(--color-bg-canvas);
+}
+
+.route-admin .site-header {
+  min-height: 72px;
+  border-bottom-width: 1px;
+  border-color: var(--color-border-subtle);
+}
+
+.route-admin .site-kicker {
+  color: var(--color-orbit-signal-soft);
+  font-family: var(--font-family-signal);
+  letter-spacing: 0.1em;
+}
+
+.route-admin .site-title {
+  color: var(--color-text-primary);
+}
+
+.route-admin .dev-nav {
+  border-color: var(--color-border-strong);
+}
+
+.route-admin .dev-nav a {
+  min-height: 42px;
+  border-color: var(--color-border-subtle);
+}
+
+.route-admin .dev-nav a:hover,
+.route-admin .dev-nav a.router-link-active {
+  color: var(--color-orbit-midnight);
+  background: var(--color-orbit-signal-soft);
+}
+
+.route-admin .page-content {
+  align-items: start;
+  padding: clamp(18px, 3vw, 40px) 0 clamp(32px, 5vw, 64px);
+}
+
+.route-admin .site-footer {
+  min-height: 56px;
+  border-color: var(--color-border-subtle);
+  color: var(--color-text-tertiary);
 }
 
 .app-shell.route-screen {
@@ -598,6 +683,28 @@ h1 {
   .site-footer {
     min-height: 92px;
     padding: 16px 0;
+  }
+
+  .route-admin .site-header {
+    min-height: 0;
+    padding: 14px 0 12px;
+    gap: 12px;
+  }
+
+  .route-admin .dev-nav a {
+    min-height: 44px;
+    flex: 1 0 auto;
+    text-align: center;
+  }
+
+  .route-admin .page-content {
+    padding: 16px 0 36px;
+  }
+
+  .route-admin .site-footer {
+    min-height: 60px;
+    padding: 12px 0;
+    gap: 6px;
   }
 }
 

@@ -96,6 +96,7 @@ defineExpose({
     data-testid="personal-journey-stage"
     :data-phase="phase"
     :data-playing="playing ? 'true' : 'false'"
+    data-background-system="orbital-signal-reset"
   >
     <canvas ref="canvas" class="personal-journey-stage__canvas"></canvas>
     <div class="personal-journey-stage__vignette"></div>
@@ -118,7 +119,7 @@ defineExpose({
 .personal-journey-stage {
   z-index: 0;
   overflow: hidden;
-  background: #01030a;
+  background: var(--color-orbit-midnight);
 }
 
 .personal-journey-stage__canvas {
@@ -128,8 +129,8 @@ defineExpose({
 .personal-journey-stage__vignette {
   z-index: 1;
   background:
-    radial-gradient(ellipse at 50% 42%, transparent 17%, rgb(1 3 11 / 8%) 48%, rgb(0 1 5 / 62%) 100%),
-    linear-gradient(180deg, rgb(0 0 0 / 32%), transparent 18%, transparent 72%, rgb(0 0 0 / 54%));
+    radial-gradient(ellipse at 50% 42%, transparent 18%, rgb(1 3 10 / 7%) 48%, rgb(0 1 5 / 64%) 100%),
+    linear-gradient(180deg, rgb(0 1 7 / 36%), transparent 18%, transparent 70%, rgb(0 1 6 / 58%));
 }
 
 .personal-journey-stage__grain {

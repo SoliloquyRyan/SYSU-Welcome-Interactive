@@ -15,6 +15,7 @@ import { databaseTableExists } from './open-database.js'
 
 const LEGACY_DEMO_SEED_VERSION = 'demo-v0-g1-v1'
 export const DEMO_SEED_VERSION = 'demo-v0-g5-v2'
+export const PROTECTED_ROSTER_SEED_VERSION = 'protected-roster-v1'
 
 const SyntheticSurnameSchema = z.enum([
   '林', '陈', '黄', '李', '周', '吴', '梁', '何', '郑', '罗',
@@ -89,6 +90,26 @@ export const DemoSeedManifestSchema = z
   })
   .strict()
 
+export const ProtectedRuntimeSecretSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    profile: z.literal('PROTECTED_ROSTER'),
+    seedVersion: z.literal(PROTECTED_ROSTER_SEED_VERSION),
+    generatedAt: z.string().datetime({ offset: true }),
+    sourceSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    participantCount: z.number().int().min(1).max(300),
+    directoryFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    credentialPepper: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    admin: z
+      .object({
+        id: z.string().min(1).max(64),
+        username: z.string().min(1).max(64),
+        password: z.string().regex(/^[A-Za-z0-9_-]{32}$/),
+      })
+      .strict(),
+  })
+  .strict()
+
 const LegacyDemoSeedManifestSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -119,10 +140,13 @@ const LegacyDemoSeedManifestSchema = z
   .strict()
 
 export type DemoSeedManifest = z.infer<typeof DemoSeedManifestSchema>
+export type ProtectedRuntimeSecret = z.infer<typeof ProtectedRuntimeSecretSchema>
 
 export interface DemoCredentialContext {
   credentialPepper: string
 }
+
+export type CredentialContext = DemoCredentialContext
 
 export interface SeedOptions {
   manifestPath: string
@@ -145,24 +169,24 @@ export interface SeedVerification {
   fingerprint: string | null
 }
 
-const PROGRAMS = [
+export const PROGRAMS = [
   { id: 'program-001', sortOrder: 1, title: '轨道序章' },
   { id: 'program-002', sortOrder: 2, title: '协同回声' },
   { id: 'program-003', sortOrder: 3, title: '共同抵达' },
 ] as const
 
-const GIFTS = [
+export const GIFTS = [
   { id: 'gift-glimmer', sortOrder: 1, name: '微光', powerCost: 5 },
   { id: 'gift-beacon', sortOrder: 2, name: '信标', powerCost: 10 },
   { id: 'gift-orbit', sortOrder: 3, name: '星轨', powerCost: 20 },
   { id: 'gift-starship', sortOrder: 4, name: '星舰', powerCost: 50 },
 ] as const
 
-function sha256(value: string): string {
+export function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex')
 }
 
-function credentialDigest(
+export function credentialDigest(
   pepper: string,
   purpose: string,
   subjectId: string,
@@ -191,6 +215,28 @@ export function readDemoCredentialContext(
 ): DemoCredentialContext {
   const manifest = readSeedManifest(manifestPath)
   return Object.freeze({ credentialPepper: manifest.credentialPepper })
+}
+
+export function readProtectedRuntimeSecret(
+  secretPath: string,
+): ProtectedRuntimeSecret {
+  return ProtectedRuntimeSecretSchema.parse(
+    JSON.parse(fs.readFileSync(secretPath, 'utf8')),
+  )
+}
+
+export function readCredentialContext(
+  credentialPath: string,
+): CredentialContext {
+  const raw = JSON.parse(fs.readFileSync(credentialPath, 'utf8')) as unknown
+  const demo = DemoSeedManifestSchema.safeParse(raw)
+  if (demo.success) {
+    return Object.freeze({ credentialPepper: demo.data.credentialPepper })
+  }
+  const protectedSecret = ProtectedRuntimeSecretSchema.parse(raw)
+  return Object.freeze({
+    credentialPepper: protectedSecret.credentialPepper,
+  })
 }
 
 export function verifyStudentNumberCredential(
@@ -239,6 +285,56 @@ function stableValue(value: unknown): unknown {
     )
   }
   return value
+}
+
+export function fingerprintProtectedDirectoryDatabase(
+  database: SqliteDatabase,
+): string {
+  const identities = database
+    .prepare(
+      `SELECT id, seed_index AS seedIndex, display_name AS displayName,
+              student_number_digest AS studentNumberDigest,
+              public_star_id AS publicStarId, visual_seed AS visualSeed,
+              enabled
+       FROM synthetic_identities
+       ORDER BY seed_index`,
+    )
+    .all()
+  const invitations = database
+    .prepare(
+      `SELECT id, identity_id AS identityId, token_digest AS tokenDigest,
+              token_hint AS tokenHint, status
+       FROM invitation_tokens
+       ORDER BY identity_id`,
+    )
+    .all()
+  const programs = database
+    .prepare(
+      `SELECT id, sort_order AS sortOrder, title, heat, enabled
+       FROM program_catalog ORDER BY sort_order`,
+    )
+    .all()
+  const gifts = database
+    .prepare(
+      `SELECT id, sort_order AS sortOrder, name, power_cost AS powerCost,
+              enabled
+       FROM gift_catalog ORDER BY sort_order`,
+    )
+    .all()
+  const admins = database
+    .prepare(
+      `SELECT id, username, password_digest AS passwordDigest, enabled
+       FROM admin_accounts ORDER BY id`,
+    )
+    .all()
+
+  return sha256(JSON.stringify(stableValue({
+    identities,
+    invitations,
+    programs,
+    gifts,
+    admins,
+  })))
 }
 
 export function fingerprintManifest(manifest: DemoSeedManifest): string {
@@ -1163,4 +1259,241 @@ export function verifyDemoSeed(
     participantCount: manifest.participants.length,
     fingerprint,
   }
+}
+
+export function verifyProtectedRoster(
+  database: SqliteDatabase,
+  options: Omit<SeedOptions, 'now'>,
+): SeedVerification {
+  const issues: string[] = []
+  let secret: ProtectedRuntimeSecret | null = null
+
+  try {
+    secret = readProtectedRuntimeSecret(options.manifestPath)
+  } catch {
+    issues.push('Protected runtime secret is missing or invalid')
+  }
+
+  if (!secret) {
+    return {
+      ready: false,
+      issues,
+      seedVersion: null,
+      participantCount: 0,
+      fingerprint: null,
+    }
+  }
+
+  if (secret.participantCount !== options.participantCount) {
+    issues.push('Configured participant count does not match the protected roster')
+  }
+
+  try {
+    const meta = database
+      .prepare(
+        `SELECT seed_version AS seedVersion,
+                seed_fingerprint AS fingerprint,
+                participant_count AS participantCount
+         FROM demo_seed_meta WHERE id = 1`,
+      )
+      .get() as
+      | { seedVersion: string; fingerprint: string; participantCount: number }
+      | undefined
+    const app = database
+      .prepare(
+        `SELECT seed_version AS seedVersion,
+                seed_fingerprint AS fingerprint
+         FROM app_state WHERE id = 1`,
+      )
+      .get() as { seedVersion: string | null; fingerprint: string | null }
+    const protocol = database
+      .prepare(
+        `SELECT active_protocol_version AS activeProtocolVersion,
+                activation_state AS activationState,
+                data_classification AS dataClassification,
+                protected_source_sha256 AS protectedSourceSha256,
+                protected_imported_at AS protectedImportedAt,
+                cutover_backup_sha256 AS cutoverBackupSha256,
+                cutover_at AS cutoverAt
+         FROM protocol_runtime WHERE id = 1`,
+      )
+      .get() as
+      | {
+          activeProtocolVersion: string
+          activationState: string
+          dataClassification: string
+          protectedSourceSha256: string | null
+          protectedImportedAt: string | null
+          cutoverBackupSha256: string | null
+          cutoverAt: string | null
+        }
+      | undefined
+    const counts = database
+      .prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM synthetic_identities) AS identities,
+           (SELECT COUNT(*) FROM synthetic_identities WHERE enabled = 1) AS enabledIdentities,
+           (SELECT COUNT(*) FROM invitation_tokens) AS invitations,
+           (SELECT COUNT(*) FROM invitation_tokens WHERE status = 'ACTIVE') AS activeInvitations,
+           (SELECT COUNT(*) FROM program_catalog) AS programs,
+           (SELECT COUNT(*) FROM gift_catalog) AS gifts,
+           (SELECT COUNT(*) FROM admin_accounts) AS admins`,
+      )
+      .get() as {
+        identities: number
+        enabledIdentities: number
+        invitations: number
+        activeInvitations: number
+        programs: number
+        gifts: number
+        admins: number
+      }
+    const storedPrograms = database
+      .prepare(
+        `SELECT id, sort_order AS sortOrder, title, enabled
+         FROM program_catalog ORDER BY sort_order`,
+      )
+      .all() as Array<{
+        id: string
+        sortOrder: number
+        title: string
+        enabled: number
+      }>
+    const storedGifts = database
+      .prepare(
+        `SELECT id, sort_order AS sortOrder, name,
+                power_cost AS powerCost, enabled
+         FROM gift_catalog ORDER BY sort_order`,
+      )
+      .all() as Array<{
+        id: string
+        sortOrder: number
+        name: string
+        powerCost: number
+        enabled: number
+      }>
+    const admin = database
+      .prepare(
+        `SELECT id, username, password_digest AS passwordDigest, enabled
+         FROM admin_accounts WHERE id = ?`,
+      )
+      .get(secret.admin.id) as
+      | {
+          id: string
+          username: string
+          passwordDigest: string
+          enabled: number
+        }
+      | undefined
+
+    if (!meta) issues.push('Protected roster metadata is missing')
+    if (meta?.seedVersion !== PROTECTED_ROSTER_SEED_VERSION)
+      issues.push('Protected roster seed version does not match')
+    if (meta?.fingerprint !== secret.directoryFingerprint)
+      issues.push('Protected roster metadata fingerprint does not match')
+    if (meta?.participantCount !== secret.participantCount)
+      issues.push('Protected roster metadata count does not match')
+    if (app.seedVersion !== PROTECTED_ROSTER_SEED_VERSION)
+      issues.push('Application protected roster version does not match')
+    if (app.fingerprint !== secret.directoryFingerprint)
+      issues.push('Application protected roster fingerprint does not match')
+    if (
+      protocol?.activeProtocolVersion !== '2' ||
+      protocol.activationState !== 'V2_ACTIVE' ||
+      protocol.dataClassification !== 'PROTECTED'
+    ) {
+      issues.push('Protocol v2 is not explicitly active on protected roster data')
+    }
+    if (
+      protocol?.protectedSourceSha256 !== secret.sourceSha256 ||
+      !protocol?.protectedImportedAt
+    ) {
+      issues.push('Protected roster source evidence is missing or inconsistent')
+    }
+    if (protocol?.cutoverBackupSha256 || protocol?.cutoverAt) {
+      issues.push('Protected roster must not claim a synthetic Demo cutover')
+    }
+    if (
+      counts.identities !== secret.participantCount ||
+      counts.enabledIdentities !== secret.participantCount
+    ) {
+      issues.push('Protected identity count does not match')
+    }
+    if (
+      counts.invitations !== secret.participantCount ||
+      counts.activeInvitations !== secret.participantCount
+    ) {
+      issues.push('Protected invitation count does not match')
+    }
+    if (counts.programs !== PROGRAMS.length)
+      issues.push('Protected program catalog count does not match')
+    if (counts.gifts !== GIFTS.length)
+      issues.push('Protected gift catalog count does not match')
+    if (counts.admins !== 1) issues.push('Protected admin account count does not match')
+
+    if (
+      JSON.stringify(
+        storedPrograms.map(({ id, sortOrder, title }) => ({ id, sortOrder, title })),
+      ) !== JSON.stringify(PROGRAMS) ||
+      storedPrograms.some(({ enabled }) => enabled !== 1)
+    ) {
+      issues.push('Protected program catalog does not match')
+    }
+    if (
+      JSON.stringify(
+        storedGifts.map(({ id, sortOrder, name, powerCost }) => ({
+          id,
+          sortOrder,
+          name,
+          powerCost,
+        })),
+      ) !== JSON.stringify(GIFTS) ||
+      storedGifts.some(({ enabled }) => enabled !== 1)
+    ) {
+      issues.push('Protected gift catalog does not match')
+    }
+    if (
+      !admin ||
+      admin.username !== secret.admin.username ||
+      admin.passwordDigest !== credentialDigest(
+        secret.credentialPepper,
+        'admin-password',
+        secret.admin.id,
+        secret.admin.password,
+      ) ||
+      admin.enabled !== 1
+    ) {
+      issues.push('Protected admin credential does not match')
+    }
+
+    const directoryFingerprint = fingerprintProtectedDirectoryDatabase(database)
+    if (directoryFingerprint !== secret.directoryFingerprint) {
+      issues.push('Protected directory fingerprint does not match the database')
+    }
+  } catch {
+    issues.push('Protected roster tables are unavailable or inconsistent')
+  }
+
+  return {
+    ready: issues.length === 0,
+    issues: [...new Set(issues)],
+    seedVersion: PROTECTED_ROSTER_SEED_VERSION,
+    participantCount: secret.participantCount,
+    fingerprint: secret.directoryFingerprint,
+  }
+}
+
+export function verifyIdentityDirectory(
+  database: SqliteDatabase,
+  options: Omit<SeedOptions, 'now'>,
+): SeedVerification {
+  try {
+    const raw = JSON.parse(fs.readFileSync(options.manifestPath, 'utf8')) as unknown
+    if (ProtectedRuntimeSecretSchema.safeParse(raw).success) {
+      return verifyProtectedRoster(database, options)
+    }
+  } catch {
+    // The format-specific verifier below returns the fail-closed issue.
+  }
+  return verifyDemoSeed(database, options)
 }

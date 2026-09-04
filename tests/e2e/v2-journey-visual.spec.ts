@@ -14,8 +14,8 @@ import { expect, test } from './support/v2-test.js'
  * are written to the git-ignored output/playwright/v2-journey-visual/ dir for
  * human/AI diffing against the motion-previsual golden frames.
  *
- * This gate never substitutes for the vivo X300 / field sign-off in
- * docs/V2_10_FIELD_ACCEPTANCE.md.
+ * This gate never substitutes for the D-052 physical-phone / field sign-off in
+ * docs/D037_FIELD_ACCEPTANCE.md.
  */
 
 test('plays the normal-motion first journey into the color stage without layout shift', async ({
@@ -58,6 +58,10 @@ test('plays the normal-motion first journey into the color stage without layout 
     const heading = page.getByRole('heading', { name: /找到属于/u })
     await expect(heading).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('personal-journey-stage')).toBeVisible()
+    await expect(page.getByTestId('personal-journey-stage')).toHaveAttribute(
+      'data-background-system',
+      'orbital-signal-reset',
+    )
 
     // Address bar must be scrubbed before the journey starts.
     expect(new URL(page.url()).searchParams.has('token')).toBe(false)

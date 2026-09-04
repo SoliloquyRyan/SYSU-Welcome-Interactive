@@ -148,23 +148,24 @@ describe('V2 mobile visual system contracts', () => {
   it('defines a code-like display face, restrained body typography and small asymmetric corners', () => {
     const page = read('frontend/src/pages/student/V2WelcomeExperience.vue')
     const style = sfcBlock(page, 'style')
+    const tokens = read('frontend/src/styles/tokens.css')
 
-    const cjk = customProperty(style, '--font-stack-cjk')
-    const display = customProperty(style, '--font-stack-display')
-    const signal = customProperty(style, '--font-stack-signal')
-    const data = customProperty(style, '--font-stack-data')
+    const cjk = customProperty(tokens, '--font-family-cjk')
+    const display = customProperty(tokens, '--font-family-display')
+    const signal = customProperty(tokens, '--font-family-signal')
+    const data = customProperty(tokens, '--font-family-data')
     expect(cjk).toMatch(/system-ui|PingFang SC|Microsoft YaHei/u)
     expect(display).toMatch(/Cascadia Code|Cascadia Mono|ui-monospace/u)
     expect(signal).toMatch(/Bahnschrift|Segoe UI Variable/u)
     expect(data).toMatch(/Cascadia Mono|SFMono-Regular|Consolas/u)
-    expect(style).toContain('var(--font-stack-cjk)')
-    expect(style).toContain('--font-display: var(--font-stack-display)')
-    expect(style).toContain('var(--font-stack-signal)')
-    expect(style).toContain('var(--font-stack-data)')
+    expect(style).toContain('--font-ui: var(--font-family-cjk)')
+    expect(style).toContain('--font-display: var(--font-family-display)')
+    expect(style).toContain('--font-signal: var(--font-family-signal)')
+    expect(style).toContain('--font-data: var(--font-family-data)')
     expect(cssRule(style, '.v2-welcome__main h2')).toContain('font-family: var(--font-display)')
 
     for (const token of ['--shape-panel', '--shape-control', '--shape-item']) {
-      const radii = customProperty(style, token).split(/\s+/u)
+      const radii = customProperty(tokens, token).split(/\s+/u)
       expect(radii, `${token} must use four-corner syntax`).toHaveLength(4)
       expect(new Set(radii).size, `${token} must be visibly asymmetric`).toBeGreaterThan(1)
       expect(
@@ -180,6 +181,40 @@ describe('V2 mobile visual system contracts', () => {
     expect(logout).toContain('border: 0')
     expect(Number.parseFloat(logout.match(/border-radius:\s*([^;]+)/u)?.[1] ?? '999')).toBeLessThanOrEqual(4)
     expect(style).toMatch(/\.v2-welcome__logout::before,[\s\S]*?\.v2-welcome__logout::after\s*\{/u)
+  })
+
+  it('shares Orbital Signal semantics while keeping the admin surface operational and explicit', () => {
+    const tokens = read('frontend/src/styles/tokens.css')
+    const app = read('frontend/src/App.vue')
+    const shell = read('frontend/src/style.css')
+    const admin = read('frontend/src/pages/admin/V2AdminConsole.vue')
+    const formalBuild = read('scripts/build-formal.mjs')
+
+    for (const token of [
+      '--color-orbit-surface-1',
+      '--color-orbit-text-primary',
+      '--color-orbit-border-subtle',
+      '--color-orbit-success',
+      '--color-orbit-warning',
+      '--color-orbit-danger',
+      '--color-orbit-disabled-surface',
+      '--color-orbit-focus',
+    ]) {
+      expect(customProperty(tokens, token), `${token} must be defined`).not.toBe('')
+    }
+
+    expect(shell).toMatch(/\.app-shell\.route-admin\s*\{[\s\S]*?--color-bg-canvas:\s*var\(--color-orbit-midnight\)/u)
+    expect(admin).toContain('data-visual-palette="orbital-signal-spectrum"')
+    expect(admin).toContain('data-surface-role="operations"')
+    expect(admin).toContain("NONE: '无活动投影'")
+    expect(admin).toContain('{{ presentationLabel }}')
+    expect(admin).not.toContain('{{ presentation.type }}')
+    expect(admin).toContain("protectedRuntime ? '现场后台登录' : '共用 Demo 后台登录'")
+    expect(admin).toContain('<BaseCard v-if="!protectedRuntime"')
+    expect(app).toContain('import.meta.env.VITE_SITE_EDITION')
+    expect(app).toContain("deploymentCopy(import.meta.env.VITE_SITE_NOTICE, '仅使用固定合成数据')")
+    expect(formalBuild).toContain("VITE_DATA_PROFILE: 'PROTECTED'")
+    expect(formalBuild).toContain("VITE_SITE_NOTICE: process.env.VITE_SITE_NOTICE ?? '受保护名单 · NFC 匿名入口'")
   })
 
   it('keeps one top-level typed heading for program and archive views', () => {
@@ -199,7 +234,7 @@ describe('V2 mobile visual system contracts', () => {
     expect(archive).toContain('<strong class="archive-owner">{{ participantDisplayName }}</strong>')
   })
 
-  it('validates an 8-digit assisted entry locally and adds the private wire prefix once', () => {
+  it('validates an 8-digit assisted entry locally and sends the same value privately', () => {
     const page = read('frontend/src/pages/student/V2WelcomeExperience.vue')
     const script = sfcBlock(page, 'script')
     const assisted = script.match(/function activateAssisted\(\)[\s\S]*?\n\}/u)?.[0] ?? ''
@@ -211,8 +246,9 @@ describe('V2 mobile visual system contracts', () => {
     expect(page).toContain('pattern="[0-9]{8}"')
     expect(assisted).toContain("if (!/^\\d{8}$/.test(studentNumber.value))")
     expect(assisted).toContain("persistentError.value = '请输入 8 位学号。'")
-    expect(assisted).toContain('studentNumber: `2026${studentNumber.value}`')
-    expect(assisted).not.toContain('studentNumber: studentNumber.value')
+    expect(assisted).toContain("void activate('ASSISTED_STUDENT'")
+    expect(assisted).toContain('studentNumber: studentNumber.value')
+    expect(assisted).not.toContain('studentNumber: `2026${studentNumber.value}`')
     expect(page).toContain('输入学生姓名与 8 位学号')
   })
 

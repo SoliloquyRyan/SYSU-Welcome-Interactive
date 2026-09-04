@@ -263,12 +263,12 @@ export function verifyMigrationHistoryAtVersion(
 }
 
 /**
- * Migration 0013 changes persisted protocol-v2 state, so it must never pass
+ * Migrations 0013-0014 change persisted protocol-v2 state, so they must never pass
  * through the legacy auto-migration entrypoint. The backup-first v2
  * maintenance workflow owns the surrounding transaction and is the only
  * supported caller of this deliberately narrow helper.
  */
-export function migrateActiveV2DatabaseFrom12To13(
+export function migrateActiveV2DatabaseFrom12To14(
   database: SqliteDatabase,
   migrationsPath: string,
   now: () => Date = () => new Date(),
@@ -298,13 +298,13 @@ export function migrateActiveV2DatabaseFrom12To13(
     runtime.activationState !== 'V2_ACTIVE' ||
     runtime.dataClassification !== 'SYNTHETIC_DEMO'
   ) {
-    throw new Error('Migration 0013 only supports an active synthetic protocol v2 database')
+    throw new Error('Migrations 0013-0014 only support an active synthetic protocol v2 database')
   }
 
   const available = discoverMigrations(migrationsPath)
   const availableVersion = available.at(-1)?.version ?? 0
-  if (availableVersion !== 13) {
-    throw new Error(`Migration 0013 must be the repository tip, found ${availableVersion}`)
+  if (availableVersion !== 14) {
+    throw new Error(`Migration 0014 must be the repository tip, found ${availableVersion}`)
   }
   if (!databaseTableExists(database, '_schema_migrations')) {
     throw new Error('Migration table is missing')
@@ -317,31 +317,40 @@ export function migrateActiveV2DatabaseFrom12To13(
     issues.push(`Database schema version ${currentVersion} does not match 12`)
   }
   const pending = available.filter((migration) => migration.version > currentVersion)
-  if (pending.length !== 1 || pending[0]?.version !== 13) {
-    issues.push('The only permitted pending migration is 0013')
+  if (
+    pending.length !== 2 ||
+    pending[0]?.version !== 13 ||
+    pending[1]?.version !== 14
+  ) {
+    issues.push('The only permitted pending migrations are 0013 and 0014')
   }
   if (issues.length > 0) {
     throw new Error(issues.join('; '))
   }
 
-  const migration = pending[0]!
-  database.exec(migration.sql)
-  database
-    .prepare(
-      `INSERT INTO _schema_migrations (version, filename, checksum, applied_at)
-       VALUES (?, ?, ?, ?)`,
-    )
-    .run(
-      migration.version,
-      migration.filename,
-      migration.checksum,
-      now().toISOString(),
-    )
+  for (const migration of pending) {
+    database.exec(migration.sql)
+    database
+      .prepare(
+        `INSERT INTO _schema_migrations (version, filename, checksum, applied_at)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(
+        migration.version,
+        migration.filename,
+        migration.checksum,
+        now().toISOString(),
+      )
+  }
 
   return {
-    applied: [migration.version],
+    applied: pending.map(({ version }) => version),
     previousVersion: currentVersion,
-    currentVersion: migration.version,
+    currentVersion: pending.at(-1)!.version,
     availableVersion,
   }
 }
+
+/** @deprecated Use migrateActiveV2DatabaseFrom12To14. */
+export const migrateActiveV2DatabaseFrom12To13 =
+  migrateActiveV2DatabaseFrom12To14

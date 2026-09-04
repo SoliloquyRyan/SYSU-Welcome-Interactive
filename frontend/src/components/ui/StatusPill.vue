@@ -52,31 +52,31 @@ defineProps({
 .status-pill--info {
   --pill-color: var(--color-info);
   --pill-border: var(--color-info);
-  --pill-surface: transparent;
+  --pill-surface: color-mix(in srgb, var(--color-info) 10%, transparent);
 }
 
 .status-pill--success {
   --pill-color: var(--color-success);
   --pill-border: var(--color-success);
-  --pill-surface: transparent;
+  --pill-surface: color-mix(in srgb, var(--color-success) 10%, transparent);
 }
 
 .status-pill--warning {
   --pill-color: var(--color-warning);
   --pill-border: var(--color-warning);
-  --pill-surface: transparent;
+  --pill-surface: color-mix(in srgb, var(--color-warning) 10%, transparent);
 }
 
 .status-pill--danger {
   --pill-color: var(--color-danger);
   --pill-border: var(--color-danger);
-  --pill-surface: transparent;
+  --pill-surface: color-mix(in srgb, var(--color-danger) 10%, transparent);
 }
 
 .status-pill--sm {
   min-height: 1.65rem;
   padding-inline: 0.6rem;
-  font-size: 0.7rem;
+  font-size: var(--font-size-xs);
 }
 
 @media (forced-colors: active) {

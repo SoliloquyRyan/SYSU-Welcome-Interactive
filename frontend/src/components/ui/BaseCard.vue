@@ -37,13 +37,13 @@ defineProps({
 }
 
 .base-card--glass {
-  background: var(--card-background, var(--color-paper-100));
+  background: var(--card-background, var(--color-surface-panel));
   box-shadow: var(--card-shadow, var(--shadow-card));
 }
 
 .base-card--solid {
-  color: var(--color-on-dark);
-  background: var(--color-ink-950);
+  color: var(--card-solid-color, var(--color-on-dark));
+  background: var(--card-solid-background, var(--color-surface-raised));
 }
 
 .base-card--outline {

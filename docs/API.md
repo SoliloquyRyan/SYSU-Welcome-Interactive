@@ -21,7 +21,7 @@
 | `/ws/v2` | ACTIVE 实时：`HELLO`→`HELLO_ACK`→限时 `SUBSCRIBE`；按 `public`/`admin`/`participant:<id>` 分流 |
 | `GET /api/v2/screen/snapshot` | 大屏：公共恒星（含 `started`）、聚合、节目、抽奖公开结果、presentation、终章 |
 | `GET /api/v2/participant/snapshot` | 参与者：本人事实 + 公共投影 + `allowedActions` |
-| `GET /api/v2/admin/snapshot` | 后台：匿名漏斗、角色、控制收据、抽奖状态与中奖者合成姓名+公开星号 |
+| `GET /api/v2/admin/snapshot` | 后台：匿名漏斗、角色、控制收据、抽奖状态与中奖者目录姓名+公开星号；正式姓名只在受控后台会话内可见 |
 | `POST /api/v2/participant/activate` | 身份激活（原子 slot 预留 + 会话 + 初始双值） |
 | `POST /api/v2/participant/commands` | 现行参与者命令：`LOCK_COLOR`/`START_STAR`/`SEND_GIFT`/`POST_BARRAGE`/`COOPERATIVE_LIGHT` |
 | `POST /api/v2/admin/commands` | 现行管理命令：运行/节目控制、`OPEN_RAFFLE`/`DRAW_RAFFLE`/`CLOSE_RAFFLE`/`CLEAR_RAFFLE`、终章预览、弹幕处置、`RESET_DEMO` |

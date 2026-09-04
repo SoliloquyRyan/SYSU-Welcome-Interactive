@@ -10,6 +10,7 @@ import {
   resolvePersonalJourneyFrame,
   smoothJourneyProgress,
 } from './personal-journey-timeline'
+import { ORBITAL_SIGNAL_PALETTE } from '../../styles/orbital-signal'
 
 export {
   PERSONAL_JOURNEY_AMBIENT_CYCLE_MS,
@@ -24,6 +25,7 @@ const TAU = Math.PI * 2
 const DEFAULT_COLOR = '#ffe3ad'
 const DEFAULT_NEUTRAL = '#eef6ff'
 const MAX_PUBLIC_STARS = 300
+export const PERSONAL_JOURNEY_SIGNAL_PALETTE = ORBITAL_SIGNAL_PALETTE
 
 // A restrained stellar palette: color variety is visible at close range but
 // no single saturated hue turns the galaxy into confetti. Assignment is
@@ -167,7 +169,7 @@ function coverRect(image, width, height) {
   }
 }
 
-function drawProceduralNebula(context, width, height, frame) {
+function drawSignalAtmosphere(context, width, height, frame) {
   const center = context.createRadialGradient(
     width * 0.5,
     height * 0.38,
@@ -176,9 +178,9 @@ function drawProceduralNebula(context, width, height, frame) {
     height * 0.38,
     Math.max(width, height) * 0.58,
   )
-  center.addColorStop(0, rgba('#284d98', 0.2 * frame.background.opacity))
-  center.addColorStop(0.34, rgba('#122d68', 0.1 * frame.background.opacity))
-  center.addColorStop(1, 'rgba(1, 3, 10, 0)')
+  center.addColorStop(0, rgba(ORBITAL_SIGNAL_PALETTE.signal, 0.145 * frame.background.opacity))
+  center.addColorStop(0.34, rgba(ORBITAL_SIGNAL_PALETTE.signal, 0.052 * frame.background.opacity))
+  center.addColorStop(1, rgba(ORBITAL_SIGNAL_PALETTE.midnight, 0))
   context.fillStyle = center
   context.fillRect(0, 0, width, height)
 
@@ -192,9 +194,9 @@ function drawProceduralNebula(context, width, height, frame) {
     height * 0.08,
     width * 0.82,
   )
-  upper.addColorStop(0, rgba('#3abbd4', 0.075 * frame.background.opacity))
-  upper.addColorStop(0.28, rgba('#3048a8', 0.06 * frame.background.opacity))
-  upper.addColorStop(1, 'rgba(8, 18, 56, 0)')
+  upper.addColorStop(0, rgba(ORBITAL_SIGNAL_PALETTE.cyan, 0.052 * frame.background.opacity))
+  upper.addColorStop(0.28, rgba(ORBITAL_SIGNAL_PALETTE.signal, 0.042 * frame.background.opacity))
+  upper.addColorStop(1, rgba(ORBITAL_SIGNAL_PALETTE.deep, 0))
   context.fillStyle = upper
   context.fillRect(0, 0, width, height)
 
@@ -206,9 +208,9 @@ function drawProceduralNebula(context, width, height, frame) {
     height * 0.72,
     width * 0.72,
   )
-  lower.addColorStop(0, rgba('#203f8f', 0.07 * frame.background.opacity))
-  lower.addColorStop(0.42, rgba('#14285d', 0.04 * frame.background.opacity))
-  lower.addColorStop(1, 'rgba(3, 8, 24, 0)')
+  lower.addColorStop(0, rgba(ORBITAL_SIGNAL_PALETTE.signalSoft, 0.043 * frame.background.opacity))
+  lower.addColorStop(0.42, rgba(ORBITAL_SIGNAL_PALETTE.signal, 0.026 * frame.background.opacity))
+  lower.addColorStop(1, rgba(ORBITAL_SIGNAL_PALETTE.midnight, 0))
   context.fillStyle = lower
   context.fillRect(0, 0, width, height)
   context.restore()
@@ -227,7 +229,7 @@ function drawNebulaImage(context, image, width, height, frame) {
   context.translate(-width * 0.5, -height * 0.5)
   context.globalAlpha = frame.background.opacity
   if ('filter' in context) {
-    context.filter = `saturate(${frame.background.saturation}) brightness(${frame.background.brightness})`
+    context.filter = `saturate(${frame.background.saturation}) brightness(${frame.background.brightness}) contrast(1.14)`
   }
   context.drawImage(image, rectangle.x, rectangle.y, rectangle.width, rectangle.height)
   context.restore()
@@ -241,7 +243,7 @@ function drawNebulaImage(context, image, width, height, frame) {
   context.scale(frame.background.nebulaScale, frame.background.nebulaScale)
   context.translate(-width * 0.5, -height * 0.5)
   context.globalAlpha = frame.background.nebulaOpacity
-  if ('filter' in context) context.filter = 'saturate(1.15) blur(8px)'
+  if ('filter' in context) context.filter = 'saturate(0.72) contrast(1.18) blur(8px)'
   context.drawImage(image, rectangle.x, rectangle.y, rectangle.width, rectangle.height)
   context.restore()
   return true
@@ -251,11 +253,13 @@ function drawBackground(context, image, width, height, frame) {
   context.save()
   context.globalCompositeOperation = 'source-over'
   context.globalAlpha = 1
-  context.fillStyle = '#01030a'
+  context.fillStyle = ORBITAL_SIGNAL_PALETTE.midnight
   context.fillRect(0, 0, width, height)
-  if (!image || !drawNebulaImage(context, image, width, height, frame)) {
-    drawProceduralNebula(context, width, height, frame)
-  }
+  if (image) drawNebulaImage(context, image, width, height, frame)
+  // Reduce the lightweight portrait texture to luminance structure, then add
+  // the shared restrained atmosphere. This keeps the D-030 load path small
+  // while preventing violet artwork from becoming a separate visual system.
+  drawSignalAtmosphere(context, width, height, frame)
   context.restore()
 }
 

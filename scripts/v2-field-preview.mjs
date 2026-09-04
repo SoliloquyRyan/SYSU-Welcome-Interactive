@@ -13,10 +13,10 @@ const smokeMode = process.env.V2_FIELD_PREVIEW_SMOKE === '1'
 const checklistMode = process.env.DEMO_FIELD_CHECKLIST === '1'
 const FRONTEND_PORT = Number.parseInt(process.env.V2_FIELD_FRONTEND_PORT ?? '5173', 10)
 
-// Terminal-driven checklist mirroring docs/D037_FIELD_ACCEPTANCE.md.
+// Terminal-driven checklist mirroring the D-037/D-051/D-055 gate in docs/D037_FIELD_ACCEPTANCE.md.
 // Answers are evidence for the operator, not a substitute for the signed table.
 const FIELD_CHECKLIST = [
-  ['F01', 'normal-motion 新鲜邀请：稳定可见后按 D-030 金标约 5.4 秒寻星，无跳过按钮'],
+  ['F01', 'normal-motion 新鲜邀请：稳定可见后按 D-030 金标约 5.4 秒寻星，无跳过按钮；寻星到主场景使用同一低饱和 Orbital Signal 背景且无换底闪断'],
   ['F02', '穿越方向/速度连续，电影、选色与入轨是同一颗恒星，交接无闪断'],
   ['F03', '选色控件交接前不可操作、交接后立即可用'],
   ['F04', '开播前隐藏则等待；开播后切后台立即静态，返回不重播'],
@@ -26,14 +26,14 @@ const FIELD_CHECKLIST = [
   ['F08', 'READY 等待页无旧六阶段任务'],
   ['F09', '后台推进 ASSEMBLY，手机与大屏自动收敛'],
   ['F10', '首次启动恒星发放 40 星光；晚到入场直接进入当前场景，不补旧奖励'],
-  ['F11', 'PROGRAM_SUPPORT 节目选择三端一致'],
+  ['F11', 'PROGRAM_SUPPORT 三端权威一致；0/40/80/120/160/220 人均由 420 颗不计人数的中性底星、未解析盘面光和真实星构成低倾角恒星盘，环境以非同步低振幅呼吸、真实星不随人数重排且逐颗保留星色；每颗实时新星只触发一次画外流星并沿逆时针切线进入稳定轨道。300 人仅作技术压力检查；高速段以约 60Hz 目标、首场前预热的有界 WebGL2 完成约 8.4 秒错峰螺旋汇聚、高温核心、一次非对称超新星与连续白场透明接管；稀疏场景只用无身份尘埃维持尺度；无首帧编译顿挫、显式发光 S 形旋臂、同速直线吸附、规整圆环、烟花粒子球、彩虹冲击波、霓虹描边、纯白矩形硬盖、阶段停顿、末帧清空或重复频闪；网页稳态完全透明且无节目板'],
   ['F12', '抽奖仅在 RUNNING + PROGRAM_SUPPORT 可开启；其他状态稳定拒绝'],
   ['F13', '连续抽取无重复；后台见合成姓名+公开星号，大屏只见公开星号'],
   ['F14', '抽奖结果在刷新/重连后恢复；暂停/换场/完成自动收屏但保留记录'],
   ['F15', '仅排练模式 Demo 管理员可清空抽奖；LIVE 或不合格条件均拒绝'],
   ['F16', '软键盘打开时弹幕输入与主提交可达，无整页横向溢出'],
   ['F17', '礼物面板可开关、焦点/返回正常，不与软键盘重叠'],
-  ['F18', '合规弹幕与礼物匿名上屏；暂停/撤下/清屏实时收敛'],
+  ['F18', '礼物业务生效但不上大屏；新弹幕仅实时飘屏、离场销毁，刷新/重连不补播'],
   ['F19', 'Wi-Fi 短暂断开禁写并提示；恢复后先取权威状态且不自动补交'],
   ['F20', '刷新/返回不重播首次电影，不恢复未提交草稿'],
   ['F21', '协同点亮与一次确认终章三端一致'],
@@ -41,7 +41,7 @@ const FIELD_CHECKLIST = [
   ['F23', '顶部退出每次确认；确认后需重新扫码且旧草稿不残留'],
   ['F24', '手机连续操作无掉帧、过热、白屏或崩溃'],
   ['O01', 'OBS：Browser Source 透明 alpha 与节目视频真实合成正确'],
-  ['O02', 'OBS：中心安全区、边缘星点、标题、弹幕、礼物与抽奖实际显示链可读'],
+  ['O02', 'OBS：0/40/80/120/160/220 人盘面密度在远距均成立，420 底星与未解析盘面光持续流动但不被误读为人数；构图读作低倾角盘面而不是显式 S 形旋臂，呼吸克制且不同步驱动真实星；逐颗真实星色与每位新同学一次画外流星轨道捕获可辨。切场前已预热且首帧无顿挫，约 8.4 秒从当前星流连续进入错峰螺旋汇聚、高温核心、一次非对称超新星与白场透明接管，稀疏场景不伪造参与者；无同速直线吸附、规整圆环、烟花粒子球、彩虹冲击波、霓虹描边、纯白矩形硬盖、阶段停顿、末帧清空、硬切或重复频闪；节目稳态无网页节目板/常驻元素，新弹幕短时飘过且抽奖可读'],
   ['O03', 'OBS：浏览器源无网页音频，节目音视频只由 OBS 控制'],
   ['O04', 'OBS：抽奖/故障/场景/互动/终章优先级符合协议，且无合成姓名或私密字段'],
   ['O05', 'OBS：连续切场、隐藏/显示源、全屏预览无黑底闪烁或残帧'],
@@ -49,7 +49,7 @@ const FIELD_CHECKLIST = [
 
 async function runFieldChecklist(invitationQr, invitationQrImage, baseURL) {
   const results = []
-  console.log('\n=== D-037 现场验收逐项检查（终端模式）===')
+  console.log('\n=== D-037/D-051/D-055 现场验收逐项检查（终端模式）===')
   console.log('回答 P=通过 / F=失败 / B=受阻 / S=跳过，直接回车默认 P。')
   console.log('此清单只辅助现场记录，最终签核仍以 docs/D037_FIELD_ACCEPTANCE.md 为准。\n')
   if (process.stdin.isTTY) {
@@ -84,7 +84,7 @@ async function runFieldChecklist(invitationQr, invitationQrImage, baseURL) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
   const reportPath = path.join(outputDirectory, `field-checklist-${timestamp}.md`)
   const lines = [
-    '# D-037 现场检查单记录（终端模式）',
+    '# D-037/D-051/D-055 现场检查单记录（终端模式）',
     '',
     `> 时间：${new Date().toISOString()}；入口：${baseURL}`,
     '> 说明：本文件是被 Git 忽略的现场记录；最终签核以 docs/D037_FIELD_ACCEPTANCE.md 为准。',
@@ -245,7 +245,7 @@ async function main() {
         </head>
         <body>
           <main>
-            <p>VIVO X300 · D-030 FRESH INVITATION</p>
+            <p>PHYSICAL PHONE · D-052 FIELD CHECK</p>
             <h1>手机验收二维码</h1>
             <p>关闭旧的 welcome 标签后，用手机扫码一次。扫码后保持浏览器前台约 6 秒。</p>
             <img src="${invitationQrImage}" alt="一次性合成邀请二维码">

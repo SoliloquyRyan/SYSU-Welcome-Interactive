@@ -66,7 +66,7 @@ export function registerNetworkBoundary(
       status: 'error',
       error: {
         code: 'VALIDATION_FAILED',
-        message: '请求来源不在本地 Demo 允许范围内。',
+        message: '请求来源不在现场服务允许范围内。',
         requestId: request.id,
       },
     })

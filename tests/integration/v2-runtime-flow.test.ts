@@ -206,7 +206,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 13, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 14, issues: [] })
   })
 
   it('requires an explicit readiness override and audits the anonymous funnel', () => {
@@ -295,7 +295,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 13, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 14, issues: [] })
   })
 
   it('starts one public star once and grants the scene reward atomically', () => {
@@ -397,7 +397,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 13, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 14, issues: [] })
   })
 
   it('pauses, removes, source-blocks and clears anonymous barrages with audit facts', () => {

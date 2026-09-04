@@ -1,7 +1,7 @@
 import type { AppConfig } from '../config.js'
 import { verifyMigrations } from './migrate.js'
 import type { SqliteDatabase } from './open-database.js'
-import { verifyDemoSeed } from './seed.js'
+import { verifyIdentityDirectory } from './seed.js'
 import { assertV1RuntimeCompatible } from './v2-foundation.js'
 
 export interface FoundationVerification {
@@ -26,7 +26,7 @@ export function verifyFoundation(
   const migrations = verifyMigrations(database, config.migrationsPath)
   if (!migrations.ready) issues.push(...migrations.issues)
 
-  const seed = verifyDemoSeed(database, {
+  const seed = verifyIdentityDirectory(database, {
     manifestPath: config.seedManifestPath,
     participantCount: config.seedParticipantCount,
   })

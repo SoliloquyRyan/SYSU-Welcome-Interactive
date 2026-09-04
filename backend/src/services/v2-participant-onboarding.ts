@@ -9,7 +9,7 @@ import {
   type V2RuntimeTuple,
 } from '@sysu-welcome/contracts'
 
-import type { DemoCredentialContext } from '../db/seed.js'
+import type { CredentialContext } from '../db/seed.js'
 import {
   invitationTokenDigest,
   verifyStudentNumberCredential,
@@ -475,6 +475,61 @@ function appendAggregateEvents(
     .run(publicSeq, adminSeq)
 }
 
+/**
+ * Schema maintenance can legitimately reshape an existing participant
+ * projection while every service is stopped. Publish snapshot-required
+ * invalidations before the upgrade commits so persisted revisions and event
+ * streams remain monotonic for the next connection.
+ */
+export function reconcileV2ProjectionEventsAfterMaintenance(
+  database: SqliteDatabase,
+  now: Date,
+): void {
+  if (!database.inTransaction) {
+    throw new Error('V2 projection reconciliation requires an active transaction')
+  }
+  const runtime = readRuntime(database)
+  const changedParticipants = database
+    .prepare(
+      `SELECT participant.identity_id AS identityId,
+              participant.participant_revision AS participantRevision
+       FROM v2_participant_states participant
+       WHERE participant.participant_revision != COALESCE((
+         SELECT event.revision
+         FROM v2_domain_events event
+         WHERE event.reset_epoch = participant.reset_epoch
+           AND event.stream_id = 'participant:' || participant.identity_id
+           AND event.event_name = 'participant.snapshot.changed'
+         ORDER BY event.stream_seq DESC LIMIT 1
+       ), -1)
+       ORDER BY participant.identity_id`,
+    )
+    .all() as Array<{ identityId: string; participantRevision: number }>
+  if (changedParticipants.length === 0) return
+
+  const timestamp = now.toISOString()
+  database
+    .prepare(
+      `UPDATE v2_sessions
+       SET revoked_at = COALESCE(revoked_at, ?)
+       WHERE reset_epoch = ?`,
+    )
+    .run(timestamp, runtime.resetEpoch)
+  database
+    .prepare('DELETE FROM v2_idempotency_records WHERE reset_epoch = ?')
+    .run(runtime.resetEpoch)
+  for (const participant of changedParticipants) {
+    appendParticipantEvent(
+      database,
+      participant.identityId,
+      runtime.resetEpoch,
+      participant.participantRevision,
+      timestamp,
+    )
+  }
+  appendAggregateEvents(database, runtime, now)
+}
+
 function appendStarEvent(
   database: SqliteDatabase,
   runtime: RuntimeRow,
@@ -865,7 +920,7 @@ function createParticipantSession(
 
 function resolveIdentity(
   database: SqliteDatabase,
-  credentials: DemoCredentialContext,
+  credentials: CredentialContext,
   request: ReturnType<typeof V2ActivateParticipantRequestSchema.parse>,
 ): IdentityRow | undefined {
   if (request.method === 'INVITATION_TOKEN') {
@@ -891,12 +946,17 @@ function resolveIdentity(
     .all(request.displayName) as Array<
     IdentityRow & { studentNumberDigest: string }
   >
+  const credentialCandidates = request.studentNumber.length === 8
+    ? [request.studentNumber, `2026${request.studentNumber}`]
+    : [request.studentNumber]
   return candidates.find((candidate) =>
-    verifyStudentNumberCredential(
-      credentials,
-      candidate.identityId,
-      request.studentNumber,
-      candidate.studentNumberDigest,
+    credentialCandidates.some((studentNumber) =>
+      verifyStudentNumberCredential(
+        credentials,
+        candidate.identityId,
+        studentNumber,
+        candidate.studentNumberDigest,
+      ),
     ),
   )
 }
@@ -964,7 +1024,7 @@ function saveIdempotency(
 
 export function activateV2Participant(
   database: SqliteDatabase,
-  credentials: DemoCredentialContext,
+  credentials: CredentialContext,
   input: unknown,
   now: Date = new Date(),
 ): V2ActivationResult {

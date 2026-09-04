@@ -16,6 +16,7 @@ const BACKEND_PORT = 3000
 const FRONTEND_PORT = 5173
 const STARTUP_TIMEOUT_MS = 30_000
 const MAX_CAPTURED_OUTPUT = 64 * 1024
+const PROTECTED_RUNTIME = process.env.VITE_DATA_PROFILE === 'PROTECTED'
 
 const childProcesses = new Map()
 let shuttingDown = false
@@ -52,7 +53,9 @@ function appendCaptured(current, chunk) {
 function pnpmCliPath() {
   const cliPath = process.env.npm_execpath
   if (!cliPath || !/pnpm(?:\.c?js|\.mjs)?$/i.test(cliPath)) {
-    throw new Error('请从仓库根目录运行 pnpm dev，以便安全启动工作区。')
+    throw new Error(
+      '请从仓库根目录运行 pnpm dev 或 pnpm dev:formal，以便安全启动工作区。',
+    )
   }
   return cliPath
 }
@@ -536,13 +539,20 @@ async function requestShutdown(exitCode, reason) {
 }
 
 process.on('SIGINT', () => {
-  void requestShutdown(130, '\n正在停止 Demo 服务……')
+  void requestShutdown(
+    130,
+    PROTECTED_RUNTIME ? '\n正在停止正式现场服务……' : '\n正在停止 Demo 服务……',
+  )
 })
 process.on('SIGTERM', () => {
-  void requestShutdown(143, '\n正在停止 Demo 服务……')
+  void requestShutdown(
+    143,
+    PROTECTED_RUNTIME ? '\n正在停止正式现场服务……' : '\n正在停止 Demo 服务……',
+  )
 })
 
 async function main() {
+  const protectedRuntime = PROTECTED_RUNTIME
   const lan = chooseLanAddress()
   const publicOrigin = `http://${lan.address}:${FRONTEND_PORT}`
   const environment = {
@@ -556,7 +566,11 @@ async function main() {
   }
 
   console.log(`局域网地址：${lan.address}（${lan.interfaceName}，${lan.source}）`)
-  console.log('正在检查端口并准备本地合成数据……')
+  console.log(
+    protectedRuntime
+      ? '正在检查端口并验证受保护正式数据……'
+      : '正在检查端口并准备本地合成数据……',
+  )
 
   await assertPortAvailable(BACKEND_HOST, BACKEND_PORT, '后端')
   await assertPortAvailable(lan.address, FRONTEND_PORT, '前端')
@@ -569,8 +583,17 @@ async function main() {
     { label: '协议 v2 数据基础验证', environment },
   )
   if (v2Verified) {
-    console.log('检测到 V2_ACTIVE 合成库，将启动协议 v2 三端（迁移已由一次性切换完成）。')
+    console.log(
+      protectedRuntime
+        ? '检测到 V2_ACTIVE 受保护名单库，将启动协议 v2 正式三端。'
+        : '检测到 V2_ACTIVE 合成库，将启动协议 v2 三端（迁移已由一次性切换完成）。',
+    )
   } else {
+    if (protectedRuntime) {
+      throw new Error(
+        '受保护正式名单库未通过协议 v2 完整验证；正式启动器不会自动迁移、清空或生成合成数据。请运行 pnpm db:v2:verify 并检查本地私密配置。',
+      )
+    }
     const v1SetupSafe = await runPnpmStatus(
       ['exec', 'tsx', 'backend/src/cli/v1-setup-safe-probe.ts'],
       { label: '旧版数据库初始化安全探测', environment },
@@ -635,19 +658,37 @@ async function main() {
     )
   }
 
-  const { adminUsername, manifestPath, qrPath } = await createWelcomeQr(
-    publicOrigin,
-    environment,
-  )
+  const manifestPath = resolveManifestPath(environment)
+  const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'))
+  const adminUsername = manifest?.admin?.username
+  if (
+    typeof adminUsername !== 'string' ||
+    !/^[A-Za-z0-9_-]{3,64}$/.test(adminUsername)
+  ) {
+    throw new Error('运行凭据没有可显示的后台用户名。')
+  }
+  const qrPath = protectedRuntime
+    ? null
+    : (await createWelcomeQr(publicOrigin, environment)).qrPath
   console.log('')
-  console.log('Demo v0 三端服务已就绪：')
+  console.log(
+    protectedRuntime ? '正式受保护三端服务已就绪：' : 'Demo v0 三端服务已就绪：',
+  )
   console.log(`WELCOME_URL=${publicOrigin}/welcome`)
   console.log(`ADMIN_URL=${publicOrigin}/admin`)
   console.log(`SCREEN_URL=${publicOrigin}/screen`)
-  console.log(`WELCOME_QR=${qrPath}`)
-  console.log(`DEMO_ADMIN=${adminUsername}（密码见 DEMO_CREDENTIALS）`)
-  console.log(`DEMO_CREDENTIALS=${manifestPath}（本地忽略文件，内容未回显）`)
-  console.log('扫码二维码可用个性令牌直接进入；终端不会显示令牌、合成学号或后台密码。')
+  if (protectedRuntime) {
+    const nfcMapPath = environment.FORMAL_NFC_MAP_PATH
+    console.log(`FORMAL_ADMIN=${adminUsername}（密码见 FORMAL_CREDENTIALS）`)
+    console.log(`FORMAL_CREDENTIALS=${manifestPath}（本地忽略文件，内容未回显）`)
+    console.log(`FORMAL_NFC_MAP=${nfcMapPath}（私密逐人映射，内容未回显）`)
+    console.log('请按逐人 NFC 映射写卡；终端不会显示姓名、学号、邀请令牌或后台密码。')
+  } else {
+    console.log(`WELCOME_QR=${qrPath}`)
+    console.log(`DEMO_ADMIN=${adminUsername}（密码见 DEMO_CREDENTIALS）`)
+    console.log(`DEMO_CREDENTIALS=${manifestPath}（本地忽略文件，内容未回显）`)
+    console.log('扫码二维码可用个性令牌直接进入；终端不会显示令牌、合成学号或后台密码。')
+  }
   console.log('按 Ctrl+C 停止全部服务。')
 
   if (process.env.DEMO_SMOKE_EXIT_AFTER_READY === '1') {

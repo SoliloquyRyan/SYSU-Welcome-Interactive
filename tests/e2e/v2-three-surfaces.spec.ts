@@ -75,7 +75,7 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     screenContext = await browser.newContext({
       baseURL: demo.baseURL,
       viewport: { width: 1920, height: 1080 },
-      reducedMotion: 'reduce',
+      reducedMotion: 'no-preference',
     })
     adminContext = await browser.newContext({ baseURL: demo.baseURL })
     const participantPage = await participantContext.newPage()
@@ -86,14 +86,77 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
 
     await screenPage.goto('/screen')
     await expect(screenPage.getByRole('heading', { name: '星海集结' })).toBeVisible()
-    await expect(screenPage.getByText('0', { exact: true }).first()).toBeVisible()
+    await expect(screenPage.locator('.v2-screen')).toHaveAttribute(
+      'data-screen-palette',
+      'orbital-signal-spectrum',
+    )
+    await expect(screenPage.locator('.v2-count')).toHaveCount(0)
+    await expect(screenPage.getByText(/\/ 300 颗真实星点/u)).toHaveCount(0)
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-galaxy-structure',
+      'milky-way-low-inclination-disk',
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-decorative-stars',
+      '420',
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-visual-reference-stars',
+      '220',
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-density-system',
+      'unresolved-disk-light',
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-arrival-style',
+      'offscreen-meteor-orbital-capture',
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-galaxy-breath',
+      'ambient-multiphase',
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-assembly-motion',
+      'flowing',
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-active-arrival-meteors',
+      '0',
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-render-target-fps',
+      '30',
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-render-cadence',
+      'ambient-30hz',
+    )
 
     await participantPage.goto(`/welcome?token=${encodeURIComponent(credential.inviteToken)}`)
+    await expect(participantPage.locator('.v2-welcome')).toHaveAttribute(
+      'data-visual-palette',
+      'orbital-signal-spectrum',
+    )
     await expect(participantPage.getByRole('heading', { name: '为你的星选择颜色' })).toBeVisible()
     expect(new URL(participantPage.url()).searchParams.has('token')).toBe(false)
     await participantPage.getByRole('button', { name: '确认星色' }).click()
     await expect(participantPage.getByText('1 颗真实星已抵达')).toBeVisible()
-    await expect(screenPage.getByText('/ 300 颗真实星点')).toBeVisible()
+    await expect(screenPage.locator('.v2-count')).toHaveCount(0)
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-active-arrival-meteors',
+      '1',
+      { timeout: 2_000 },
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-assembly-motion',
+      'flowing',
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-active-arrival-meteors',
+      '0',
+      { timeout: 3_000 },
+    )
 
     await loginAdmin(
       adminPage,
@@ -124,9 +187,49 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     await adminPage.getByRole('button', { name: '恢复运行' }).click()
     await waitForRuntime(adminPage, '运行中', '01 星海集结')
 
+    const programTransitionStartedAt = Date.now()
     await advance(adminPage)
     await waitForRuntime(adminPage, '运行中', '02 节目应援')
     await expect(screenPage.locator('.v2-screen')).toHaveClass(/scene-program_support/u)
+    await expect(screenPage.locator('.v2-screen')).toHaveAttribute(
+      'data-scene-transition',
+      'ASSEMBLY->PROGRAM_SUPPORT',
+    )
+    await expect(screenPage.locator('.v2-screen')).toHaveAttribute(
+      'data-program-transition-style',
+      'stellar-collapse-supernova-reveal',
+    )
+    await expect(screenPage.locator('.v2-screen')).toHaveAttribute(
+      'data-transition-architecture',
+      'native-webgl2-supernova-with-canvas2d-fallback',
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-render-target-fps',
+      '60',
+    )
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
+      'data-render-cadence',
+      'cinematic-vsync',
+    )
+    await expect(screenPage.locator(
+      '.v2-scene-transition__gate, .v2-scene-transition__horizon, .v2-scene-transition__core',
+    )).toHaveCount(0)
+    await expect(screenPage.locator('.v2-barrage-stream')).toHaveCount(0)
+    await expect(screenPage.locator('.v2-screen')).toHaveAttribute(
+      'data-scene-transition',
+      'idle',
+      { timeout: 12_000 },
+    )
+    expect(await screenPage.locator('canvas.v2-galaxy').getAttribute('data-supernova-engine'))
+      .toMatch(/^(webgl2-supernova-postprocess|canvas2d-supernova-fallback)$/u)
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute('data-render-target-fps', '0')
+    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute('data-render-cadence', 'idle')
+    expect(Date.now() - programTransitionStartedAt).toBeGreaterThanOrEqual(7_900)
+    expect(Date.now() - programTransitionStartedAt).toBeLessThan(10_800)
+    await expect(screenPage.locator('.v2-barrage-panel')).toHaveCount(0)
+    await expect(screenPage.locator('.v2-barrage-stream')).toHaveCount(0)
+    await expect(screenPage.locator('.v2-scene-copy')).toHaveCount(0)
+    await expect(screenPage.locator('.v2-gifts')).toHaveCount(0)
 
     await clickAdminCommand(adminPage, '开启抽奖大屏')
     await expect(screenPage.getByRole('heading', { name: '星河幸运坐标' })).toBeVisible()
@@ -151,7 +254,9 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     const selectedProgram = await adminPage.getByLabel('当前节目').locator('option:checked').innerText()
     const selectedTitle = selectedProgram.split('·')[1]?.trim()
     expect(selectedTitle).toBeTruthy()
-    await expect(screenPage.getByRole('heading', { name: selectedTitle! })).toBeVisible()
+    await expect(screenPage.getByRole('heading', { name: selectedTitle! })).toHaveCount(0)
+    await expect(screenPage.locator('.v2-barrage-panel')).toHaveCount(0)
+    await expect(screenPage.locator('.v2-barrage-stream')).toHaveCount(0)
 
     await participantPage.getByRole('button', { name: '送礼物' }).click()
     const giftDialog = participantPage.getByRole('dialog', { name: '为节目送出礼物' })
@@ -165,13 +270,30 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     await expect(giftDialog.getByRole('button', { name: /星舰，50 动力/u })).toBeEnabled()
     await giftDialog.locator('.gift-grid button').first().click()
     await expect(participantPage.getByRole('button', { name: '送礼物' })).toContainText('余额 95')
-    await expect(screenPage.locator('.v2-gifts')).not.toBeEmpty()
+    await expect(screenPage.locator('.v2-gifts')).toHaveCount(0)
     await participantPage.getByLabel('匿名弹幕').fill(barrage)
     await participantPage.getByLabel(/匿名公开上屏/u).check()
     await participantPage.getByRole('button', { name: '发送', exact: true }).click()
-    await expect(screenPage.getByText(barrage)).toBeVisible()
+    const flyingBarrage = screenPage.locator('.v2-barrage-stream__item', { hasText: barrage })
+    await expect(flyingBarrage).toBeVisible()
+    const flyingBarrageStyle = await flyingBarrage.evaluate((element) => {
+      const style = window.getComputedStyle(element)
+      return {
+        backgroundColor: style.backgroundColor,
+        backgroundImage: style.backgroundImage,
+        borderLeftWidth: style.borderLeftWidth,
+      }
+    })
+    expect(flyingBarrageStyle).toEqual({
+      backgroundColor: 'rgba(0, 0, 0, 0)',
+      backgroundImage: 'none',
+      borderLeftWidth: '0px',
+    })
+    await expect(screenPage.locator('.v2-barrage-panel')).toHaveCount(0)
     await expect(adminPage.locator('.barrage-list')).toContainText(barrage)
     await expectNoForbiddenText([screenPage], [credential.publicStarId])
+    await flyingBarrage.waitFor({ state: 'detached', timeout: 15_000 })
+    await expect(screenPage.locator('.v2-barrage-stream')).toHaveCount(0)
 
     await advance(adminPage)
     await waitForRuntime(adminPage, '运行中', '03 协同点亮')

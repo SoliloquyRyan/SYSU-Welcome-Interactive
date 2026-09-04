@@ -136,6 +136,38 @@ const label = computed(
   background: var(--color-ink-950);
 }
 
+.ambient-field--admin {
+  color: var(--color-orbit-signal-soft);
+  background:
+    radial-gradient(ellipse at 76% 18%, rgba(66, 126, 238, 0.11), transparent 36%),
+    radial-gradient(ellipse at 14% 82%, rgba(74, 219, 233, 0.045), transparent 34%),
+    linear-gradient(145deg, var(--color-orbit-surface-1), var(--color-orbit-midnight) 62%);
+}
+
+.ambient-field--admin::before {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(126, 176, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(126, 176, 255, 0.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: linear-gradient(135deg, rgba(0, 0, 0, 0.68), transparent 74%);
+  content: "";
+}
+
+.ambient-field--admin .ambient-field__rule {
+  background: var(--color-orbit-signal-soft);
+  opacity: 0.11;
+}
+
+.ambient-field--admin .ambient-field__bar {
+  background: var(--color-orbit-signal);
+}
+
+.ambient-field--admin .ambient-field__node {
+  background: var(--color-orbit-warm);
+}
+
 .ambient-field--welcome {
   color: #dfe9f8;
   background:
@@ -197,8 +229,8 @@ const label = computed(
 }
 
 .ambient-field--admin .ambient-field__index {
-  top: 64%;
-  opacity: 0.1;
+  top: 42%;
+  opacity: 0.14;
 }
 
 @media (max-width: 720px) {
@@ -219,7 +251,7 @@ const label = computed(
   }
 
   .ambient-field--admin .ambient-field__index {
-    top: auto;
+    display: none;
   }
 }
 

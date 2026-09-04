@@ -1043,7 +1043,15 @@ export const V2ActivateParticipantRequestSchema = z.discriminatedUnion(
         ...v2WriteBase,
         method: z.literal('ASSISTED_SYNTHETIC'),
         displayName: z.string().trim().min(1).max(40),
-        studentNumber: z.string().regex(/^2026\d{8}$/),
+        studentNumber: z.string().regex(/^\d{8,20}$/),
+      })
+      .strict(),
+    z
+      .object({
+        ...v2WriteBase,
+        method: z.literal('ASSISTED_STUDENT'),
+        displayName: z.string().trim().min(1).max(40),
+        studentNumber: z.string().regex(/^\d{8,20}$/),
       })
       .strict(),
   ],

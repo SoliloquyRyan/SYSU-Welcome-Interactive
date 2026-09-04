@@ -22,7 +22,7 @@ import {
   executeV1WriteTransaction,
 } from '../db/v2-foundation.js'
 import {
-  type DemoCredentialContext,
+  type CredentialContext,
   invitationTokenDigest,
   restoreDemoSeedCatalogInTransaction,
   verifyAdminPasswordCredential,
@@ -173,7 +173,7 @@ function genericActivationFailure(): ApiError {
 
 export function activateParticipant(
   database: SqliteDatabase,
-  credentialContext: DemoCredentialContext,
+  credentialContext: CredentialContext,
   request: ActivateParticipantRequest,
   idempotencyKey: string,
   requestId: string,
@@ -330,7 +330,7 @@ export function activateParticipant(
 
 export function loginAdmin(
   database: SqliteDatabase,
-  credentialContext: DemoCredentialContext,
+  credentialContext: CredentialContext,
   request: { username: string; password: string },
   now: Date = new Date(),
 ): AdminLoginResult {
@@ -501,7 +501,7 @@ export function lockStarTemperature(
         if (state.temperatureKelvin === request.temperatureKelvin) return []
         throw new ApiError(
           'STAR_TEMPERATURE_LOCKED',
-          '本场活动的恒星色温已经确认，重置 Demo 后才能重新选择。',
+          '本场活动的恒星色温已经确认，当前不能重新选择。',
           409,
           runtime,
         )

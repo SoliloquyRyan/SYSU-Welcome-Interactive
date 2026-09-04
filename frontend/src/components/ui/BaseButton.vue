@@ -63,40 +63,43 @@ const isDisabled = computed(() => props.disabled || props.loading)
   transition:
     transform var(--motion-duration-fast) var(--motion-ease-standard),
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
     box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .base-button:hover:not(:disabled) {
-  transform: translate(-1px, -1px);
+  transform: translateY(-1px);
 }
 
 .base-button:active:not(:disabled) {
-  transform: translate(1px, 1px);
+  transform: translateY(0);
 }
 
 .base-button:focus-visible {
-  outline: 3px solid var(--color-brand-primary);
+  outline: 3px solid var(--color-focus-ring, var(--color-brand-primary));
   outline-offset: 3px;
   box-shadow: var(--shadow-focus);
 }
 
 .base-button:disabled {
   cursor: not-allowed;
-  color: var(--color-text-secondary);
-  background: var(--color-paper-300);
+  border-color: var(--color-border-subtle);
+  color: var(--color-control-disabled-text);
+  background: var(--color-control-disabled-bg);
   box-shadow: none;
   opacity: 1;
 }
 
 .base-button--primary {
-  color: var(--color-on-dark);
-  background: var(--color-ink-950);
-  box-shadow: inset 5px 0 0 var(--color-signal-orange);
+  color: var(--color-control-primary-text);
+  background: var(--color-control-primary-bg);
+  box-shadow: inset var(--control-primary-accent-width) 0 0 var(--color-control-primary-accent);
 }
 
 .base-button--secondary {
-  color: var(--color-text-primary);
-  background: var(--color-paper-100);
+  color: var(--color-control-secondary-text);
+  background: var(--color-control-secondary-bg);
 }
 
 .base-button--ghost {
@@ -106,8 +109,8 @@ const isDisabled = computed(() => props.disabled || props.loading)
 
 .base-button--danger {
   border-color: var(--color-danger);
-  color: var(--color-on-dark);
-  background: var(--color-danger);
+  color: var(--color-control-danger-text);
+  background: var(--color-control-danger-bg);
 }
 
 .base-button--sm {

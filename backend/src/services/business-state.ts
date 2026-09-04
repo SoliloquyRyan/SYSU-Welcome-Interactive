@@ -87,7 +87,7 @@ export function assertCommandVersion(
   if (version.resetEpoch !== runtime.resetEpoch) {
     throw new ApiError(
       'RESET_EPOCH_CHANGED',
-      'Demo 已重置，请重新载入并登录。',
+      '活动数据已重置，请重新载入并登录。',
       409,
       runtime,
     )

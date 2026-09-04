@@ -1,8 +1,6 @@
 :root {
   color-scheme: light;
-  font-family:
-    Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", ui-sans-serif,
-    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-family-cjk);
   color: #17191d;
   background: #f4f0e8;
   font-synthesis: none;
@@ -20,6 +18,29 @@
   --color-registration-blue-strong: #10329b;
   --color-signal-orange: #d94717;
   --color-on-dark: #f7f3ea;
+
+  /* Shared Orbital Signal spectrum for participant, stage, and operations. */
+  --color-orbit-midnight: #01030a;
+  --color-orbit-deep: #07101f;
+  --color-orbit-signal: #427eee;
+  --color-orbit-signal-soft: #7eb0ff;
+  --color-orbit-cyan: #4adbe9;
+  --color-orbit-star: #eef4ff;
+  --color-orbit-warm: #ffd79a;
+  --color-orbit-surface-1: #050b16;
+  --color-orbit-surface-2: #091426;
+  --color-orbit-surface-3: #10213a;
+  --color-orbit-text-primary: #eef4ff;
+  --color-orbit-text-secondary: #b7c6df;
+  --color-orbit-text-tertiary: #8e9fbd;
+  --color-orbit-border-subtle: rgba(126, 176, 255, 0.18);
+  --color-orbit-border-strong: rgba(126, 176, 255, 0.4);
+  --color-orbit-success: #71d9bd;
+  --color-orbit-warning: #ffd79a;
+  --color-orbit-danger: #ff8ea2;
+  --color-orbit-disabled-text: #71819e;
+  --color-orbit-disabled-surface: rgba(92, 111, 145, 0.12);
+  --color-orbit-focus: #9bc8ff;
 
   /* Semantic color roles */
   --color-space-950: var(--color-ink-950);
@@ -48,16 +69,39 @@
   --color-info: var(--color-registration-blue);
   --color-neutral: var(--color-ink-600);
 
+  /* Shared component roles. Route themes may remap these without changing components. */
+  --color-control-primary-bg: var(--color-ink-950);
+  --color-control-primary-text: var(--color-on-dark);
+  --color-control-primary-accent: var(--color-signal-orange);
+  --color-control-secondary-bg: var(--color-paper-100);
+  --color-control-secondary-text: var(--color-text-primary);
+  --color-control-disabled-bg: var(--color-paper-300);
+  --color-control-disabled-text: var(--color-text-secondary);
+  --color-control-danger-bg: var(--color-danger);
+  --color-control-danger-text: var(--color-on-dark);
+  --control-primary-accent-width: 5px;
+
   /* Two-value system: names and icons remain mandatory alongside color. */
   --color-power: var(--color-signal-orange);
   --color-starlight: var(--color-registration-blue);
 
   /* Typography */
-  --font-family-sans:
-    Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", ui-sans-serif,
-    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-family-mono:
-    "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-family-cjk:
+    "HarmonyOS Sans SC", "OPPO Sans", MiSans, "vivo Sans", "Noto Sans SC",
+    "Source Han Sans SC", "PingFang SC", "Microsoft YaHei UI", system-ui,
+    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-family-display:
+    "Cascadia Mono", "SFMono-Regular", Consolas, "HarmonyOS Sans SC",
+    "OPPO Sans", MiSans, "vivo Sans", "Noto Sans SC", "Source Han Sans SC",
+    "PingFang SC", "Microsoft YaHei UI", ui-monospace, monospace;
+  --font-family-signal:
+    Bahnschrift, "Aptos Display", "Segoe UI Variable Display", Inter,
+    system-ui, sans-serif;
+  --font-family-data:
+    Bahnschrift, "Cascadia Mono", "SFMono-Regular", Consolas, ui-monospace,
+    monospace;
+  --font-family-sans: var(--font-family-cjk);
+  --font-family-mono: var(--font-family-data);
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-md: 1rem;
@@ -92,6 +136,10 @@
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
   --radius-pill: 0.25rem;
+  --shape-panel: 8px 2px 8px 2px;
+  --shape-control: 6px 2px 6px 2px;
+  --shape-item: 7px 2px 7px 2px;
+  --shape-sheet: 12px 3px 12px 3px;
   --shadow-card: none;
   --shadow-panel: var(--shadow-card);
   --shadow-focus: 0 0 0 4px rgba(23, 70, 209, 0.2);

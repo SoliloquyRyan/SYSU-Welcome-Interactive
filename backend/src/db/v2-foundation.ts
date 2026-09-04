@@ -6,7 +6,7 @@ import Database from 'better-sqlite3'
 import { V2RealtimeEventEnvelopeSchema } from '@sysu-welcome/contracts'
 
 import {
-  migrateActiveV2DatabaseFrom12To13,
+  migrateActiveV2DatabaseFrom12To14,
   migrateDatabase,
   verifyMigrationHistoryAtVersion,
   verifyMigrations,
@@ -19,6 +19,7 @@ import {
   restoreDemoSeedCatalogInTransaction,
   type SeedOptions,
   verifyDemoSeed,
+  verifyIdentityDirectory,
 } from './seed.js'
 
 export const V2_DESTRUCTIVE_CONFIRMATION =
@@ -58,6 +59,8 @@ export interface ProtocolRuntimeState {
   dataClassification: 'UNVERIFIED' | 'SYNTHETIC_DEMO' | 'PROTECTED'
   cutoverBackupSha256: string | null
   cutoverAt: string | null
+  protectedSourceSha256: string | null
+  protectedImportedAt: string | null
   v1ServiceInstanceId: string | null
   v1ServiceLeaseExpiresAt: string | null
   v1ServiceRegisteredAt: string | null
@@ -121,7 +124,7 @@ export interface V2UpgradeOptions extends Omit<SeedOptions, 'now'> {
 
 export interface V2UpgradeResult {
   previousSchemaVersion: 12
-  schemaVersion: 13
+  schemaVersion: 14
   resetEpoch: number
   backupPath: string
   backupSha256: string
@@ -318,6 +321,7 @@ const EXPECTED_CUTOVER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   protocol_runtime: [
     'id', 'active_protocol_version', 'activation_state',
     'data_classification', 'cutover_backup_sha256', 'cutover_at',
+    'protected_source_sha256', 'protected_imported_at',
     'v1_service_instance_id', 'v1_service_lease_expires_at',
     'v1_service_registered_at', 'v1_service_generation',
     'v1_service_listen_generation', 'v1_service_listened_at',
@@ -504,7 +508,7 @@ function schemaDefinition(database: SqliteDatabase): string {
 function schemaMatchesMigrations(
   database: SqliteDatabase,
   migrationsPath: string,
-  throughVersion = 13,
+  throughVersion = 14,
 ): boolean {
   const pristine = new Database(':memory:')
   try {
@@ -525,6 +529,17 @@ export function readProtocolRuntime(
   database: SqliteDatabase,
 ): ProtocolRuntimeState | null {
   if (!databaseTableExists(database, 'protocol_runtime')) return null
+  const columns = new Set(
+    (database.pragma('table_info(protocol_runtime)') as Array<{ name: string }>).map(
+      ({ name }) => name,
+    ),
+  )
+  const protectedSourceExpression = columns.has('protected_source_sha256')
+    ? 'protected_source_sha256'
+    : 'NULL'
+  const protectedImportedExpression = columns.has('protected_imported_at')
+    ? 'protected_imported_at'
+    : 'NULL'
 
   return (
     database
@@ -534,6 +549,8 @@ export function readProtocolRuntime(
                 data_classification AS dataClassification,
                 cutover_backup_sha256 AS cutoverBackupSha256,
                 cutover_at AS cutoverAt,
+                ${protectedSourceExpression} AS protectedSourceSha256,
+                ${protectedImportedExpression} AS protectedImportedAt,
                 v1_service_instance_id AS v1ServiceInstanceId,
                 v1_service_lease_expires_at AS v1ServiceLeaseExpiresAt,
                 v1_service_registered_at AS v1ServiceRegisteredAt,
@@ -792,10 +809,10 @@ function assertMigrationsReady(
   migrationsPath: string,
 ): void {
   const verification = verifyMigrations(database, migrationsPath)
-  if (!verification.ready || verification.currentVersion !== 13) {
+  if (!verification.ready || verification.currentVersion !== 14) {
     maintenanceError(
       'V2_MIGRATIONS_NOT_READY',
-      `V2 cutover requires the complete schema through migration 0013: ${verification.issues.join('; ')}`,
+      `V2 cutover requires the complete schema through migration 0014: ${verification.issues.join('; ')}`,
     )
   }
 }
@@ -869,7 +886,7 @@ function assessSyntheticDemoData(
   if (!schemaMatchesMigrations(database, options.migrationsPath)) {
     maintenanceError(
       'V2_DATA_CLASSIFICATION_UNSAFE',
-      'The live SQLite schema does not exactly match migrations 0001-0013',
+      'The live SQLite schema does not exactly match migrations 0001-0014',
     )
   }
 
@@ -959,10 +976,10 @@ function assessSyntheticV2UpgradeSource(
     options.migrationsPath,
     12,
   )
-  if (!migrations.ready || migrations.availableVersion !== 13) {
+  if (!migrations.ready || migrations.availableVersion !== 14) {
     maintenanceError(
       'V2_MIGRATIONS_NOT_READY',
-      `V2 upgrade requires an exact schema-12 database and migration 0013 as the repository tip: ${migrations.issues.join('; ')}`,
+      `V2 upgrade requires an exact schema-12 database with migrations 0013-0014 as the repository tip: ${migrations.issues.join('; ')}`,
     )
   }
 
@@ -1242,7 +1259,7 @@ function resetLegacyRuntimeShell(
     .run(timestamp)
 }
 
-function initializeV2Runtime(
+export function initializeV2Runtime(
   database: SqliteDatabase,
   resetEpoch: number,
   timestamp: string,
@@ -1387,7 +1404,7 @@ export async function switchSyntheticDemoToV2(
   }
 }
 
-export async function upgradeSyntheticV2DatabaseFrom12To13(
+export async function upgradeSyntheticV2DatabaseFrom12To14(
   database: SqliteDatabase,
   options: V2UpgradeOptions,
 ): Promise<V2UpgradeResult> {
@@ -1407,10 +1424,17 @@ export async function upgradeSyntheticV2DatabaseFrom12To13(
       )
     }
     assessSyntheticV2UpgradeSource(database, options)
-    const migration = migrateActiveV2DatabaseFrom12To13(
+    const migration = migrateActiveV2DatabaseFrom12To14(
       database,
       options.migrationsPath,
       options.now,
+    )
+    const { reconcileV2ProjectionEventsAfterMaintenance } = await import(
+      '../services/v2-participant-onboarding.js'
+    )
+    reconcileV2ProjectionEventsAfterMaintenance(
+      database,
+      (options.now ?? (() => new Date()))(),
     )
     const verification = verifyV2Foundation(database, options)
     if (!verification.ready) {
@@ -1424,7 +1448,7 @@ export async function upgradeSyntheticV2DatabaseFrom12To13(
 
     return {
       previousSchemaVersion: migration.previousVersion as 12,
-      schemaVersion: migration.currentVersion as 13,
+      schemaVersion: migration.currentVersion as 14,
       resetEpoch: assessment.resetEpoch,
       backupPath: backup.backupPath,
       backupSha256: backup.sha256,
@@ -1438,6 +1462,10 @@ export async function upgradeSyntheticV2DatabaseFrom12To13(
     )
   }
 }
+
+/** @deprecated Use upgradeSyntheticV2DatabaseFrom12To14. */
+export const upgradeSyntheticV2DatabaseFrom12To13 =
+  upgradeSyntheticV2DatabaseFrom12To14
 
 export function resetSyntheticV2Database(
   database: SqliteDatabase,
@@ -1531,22 +1559,34 @@ export function verifyV2Foundation(
   }
   issues.push(...schemaDriftIssues(database))
   if (migrations.ready && !schemaMatchesMigrations(database, options.migrationsPath)) {
-    issues.push('The live SQLite schema does not exactly match migrations 0001-0013')
+    issues.push('The live SQLite schema does not exactly match migrations 0001-0014')
   }
 
-  const seed = verifyDemoSeed(database, options)
+  const seed = verifyIdentityDirectory(database, options)
   if (!seed.ready) issues.push(...seed.issues)
 
   const protocol = readProtocolRuntime(database)
   if (
     protocol?.activeProtocolVersion !== '2' ||
     protocol.activationState !== 'V2_ACTIVE' ||
-    protocol.dataClassification !== 'SYNTHETIC_DEMO'
+    !['SYNTHETIC_DEMO', 'PROTECTED'].includes(protocol.dataClassification)
   ) {
-    issues.push('Protocol v2 is not explicitly active on synthetic Demo data')
+    issues.push('Protocol v2 is not explicitly active on a verified identity directory')
   }
-  if (!protocol?.cutoverBackupSha256 || !protocol.cutoverAt) {
-    issues.push('Protocol v2 cutover backup evidence is missing')
+  if (protocol?.dataClassification === 'SYNTHETIC_DEMO') {
+    if (!protocol.cutoverBackupSha256 || !protocol.cutoverAt) {
+      issues.push('Protocol v2 cutover backup evidence is missing')
+    }
+    if (protocol.protectedSourceSha256 || protocol.protectedImportedAt) {
+      issues.push('Synthetic Demo protocol state contains protected-roster evidence')
+    }
+  } else if (protocol?.dataClassification === 'PROTECTED') {
+    if (!protocol.protectedSourceSha256 || !protocol.protectedImportedAt) {
+      issues.push('Protected roster source evidence is missing')
+    }
+    if (protocol.cutoverBackupSha256 || protocol.cutoverAt) {
+      issues.push('Protected roster protocol state claims a synthetic cutover')
+    }
   }
 
   let resetEpoch: number | null = null

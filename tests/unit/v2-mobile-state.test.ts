@@ -487,6 +487,7 @@ describe('V2-08 mobile state and motion gates', () => {
     expect(template).not.toContain('selected-star')
     expect(template).not.toContain('cinematic__flight')
     expect(stage).toContain('nebula-master.webp')
+    expect(stage).toContain('data-background-system="orbital-signal-reset"')
     expect(stage).toContain('publicStars: []')
     expect(stage).toContain('renderer?.waitForPhase(phase)')
     expect(renderer).toContain('drawDiscoveryMotes')

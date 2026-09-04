@@ -10,6 +10,7 @@ import {
 import {
   PERSONAL_JOURNEY_AMBIENT_COLORS,
   PERSONAL_JOURNEY_GALAXY_CORE_STOPS,
+  PERSONAL_JOURNEY_SIGNAL_PALETTE,
   personalJourneyAmbientColor,
   resolvePersonalJourneyOwnLabel,
 } from '../../frontend/src/pages/student/personal-journey-renderer.js'
@@ -34,6 +35,18 @@ function expectSamePose(first: ReturnType<typeof hero>, second: ReturnType<typeo
 }
 
 describe('D-030 personal journey renderer timeline', () => {
+  it('uses the cross-surface Orbital Signal palette for the mobile atmosphere', () => {
+    expect(PERSONAL_JOURNEY_SIGNAL_PALETTE).toEqual({
+      midnight: '#01030a',
+      deep: '#07101f',
+      signal: '#427eee',
+      signalSoft: '#7eb0ff',
+      cyan: '#4adbe9',
+      star: '#eef4ff',
+      warm: '#ffd79a',
+    })
+  })
+
   it('freezes the gold-reference durations and deterministic layer density', () => {
     expect(PERSONAL_JOURNEY_DURATIONS).toEqual({
       discovery: 5_400,

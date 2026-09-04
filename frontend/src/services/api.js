@@ -92,7 +92,7 @@ export async function apiRequest(path, options = {}) {
       if (options.signal?.aborted && !timedOut) throw error
       throw new ApiError('请求等待超时；结果可能尚未确认，请使用原操作重试。')
     }
-    throw new ApiError('无法连接本地 Demo 服务，请检查网络后重试。')
+    throw new ApiError('无法连接现场服务，请检查网络后重试。')
   } finally {
     globalThis.clearTimeout(timeoutId)
     options.signal?.removeEventListener('abort', abortFromCaller)
@@ -350,10 +350,10 @@ export function publicErrorMessage(error) {
     VALIDATION_FAILED: '请检查填写内容后重试。',
     IDEMPOTENCY_CONFLICT: '该操作无法安全重放，请刷新状态后重试。',
     STALE_STAGE: '现场阶段已经更新，正在同步最新状态。',
-    RESET_EPOCH_CHANGED: 'Demo 已重置，请重新进入。',
+    RESET_EPOCH_CHANGED: '活动数据已重置，请重新进入。',
     RUNTIME_PAUSED: '现场互动已暂停。',
     RUNTIME_COMPLETED: '本场活动已经结束。',
-    STALE_RESET_EPOCH: 'Demo 已重置，请重新进入。',
+    STALE_RESET_EPOCH: '活动数据已重置，请重新进入。',
     STAR_CAPACITY_REACHED: '公共星系名额已满。',
     ONBOARDING_STATE_INVALID: '当前入场步骤已经变化，正在同步。',
     SCENE_ACTION_INVALID: '当前现场环节不接受这项操作。',
@@ -367,7 +367,7 @@ export function publicErrorMessage(error) {
     SOURCE_BLOCKED: '当前入口已暂停发送公开弹幕。',
     UPGRADE_REQUIRED: '当前页面需要升级后才能连接此服务。',
     PROTOCOL_VERSION_MISMATCH: '页面与服务端协议版本不一致。',
-    SERVICE_UNAVAILABLE: '本地 Demo 服务暂时不可用。',
+    SERVICE_UNAVAILABLE: '现场服务暂时不可用。',
   }
   const message = messages[error.code] ?? error.message
   return error.requestId ? `${message}（请求 ${error.requestId}）` : message

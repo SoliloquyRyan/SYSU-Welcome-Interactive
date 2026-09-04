@@ -3,7 +3,7 @@ import type { ReadyResponse } from '@sysu-welcome/contracts'
 import type { AppConfig } from '../config.js'
 import { verifyMigrations } from '../db/migrate.js'
 import type { SqliteDatabase } from '../db/open-database.js'
-import { verifyDemoSeed } from '../db/seed.js'
+import { verifyIdentityDirectory } from '../db/seed.js'
 import type { RealtimeHub } from '../realtime/hub.js'
 
 export function readReadiness(
@@ -29,7 +29,7 @@ export function readReadiness(
     schemaVersion = migrations.currentVersion
 
     if (migrationReady) {
-      const seed = verifyDemoSeed(database, {
+      const seed = verifyIdentityDirectory(database, {
         manifestPath: config.seedManifestPath,
         participantCount: config.seedParticipantCount,
       })
@@ -79,7 +79,7 @@ export function readReadiness(
       : {
           error: {
             code: 'SERVICE_UNAVAILABLE' as const,
-            message: 'Demo 基础服务尚未就绪，请先完成本地初始化。',
+            message: '服务基础数据尚未就绪，请先完成对应运行配置。',
             requestId,
           },
         }),

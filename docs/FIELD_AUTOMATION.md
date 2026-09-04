@@ -1,12 +1,13 @@
-# 真机自动化脚手架（vivo X300 · B7）
+# Android 实体手机自动化脚手架（可选 · 兼容旧文件名）
 
 > 状态：`脚手架就绪`——只做脚手架与文档，不代跑任何验收结论。
 > 配套脚本：[`scripts/vivo-field-automation.mjs`](../scripts/vivo-field-automation.mjs)。
 > 相关文档：[`D037_FIELD_ACCEPTANCE.md`](./D037_FIELD_ACCEPTANCE.md)（当前人工复验门）、[`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md)（D-036 历史签核）、[`RUNBOOK.md`](./RUNBOOK.md) §4（现场预览）、[`DECISIONS.md`](./DECISIONS.md)（决策记录）。
+> D-052 已取消 vivo X300 指定机型门；脚本文件名和既有输出目录只为兼容历史命令保留，不代表当前验收限制。
 
 ## 1. 目的与边界
 
-**目的**：在 D-037 现场人工复验前，对项目负责人的 vivo X300 真机做一次**只读自动化预检**：
+**目的**：在 D-037/D-052 现场人工复验前，对支持 ADB + Chrome DevTools 的 Android 实体手机做一次**可选、只读的自动化预检**：
 
 - 经 `adb forward` + Chrome DevTools（CDP）连接真机 Chrome；
 - 用 `preview:v2:field` 的临时合成栈与一次性合成邀请打开 `/welcome`，断言地址栏令牌被立即清除；
@@ -18,6 +19,7 @@
 
 - **真机预检 ≠ 人工签核**。桌面自动化、截图或 AI 观察都不能代签真机/现场验收；最终以
   [`D037_FIELD_ACCEPTANCE.md`](./D037_FIELD_ACCEPTANCE.md) 的人工 `PASS` / `FAIL` 为准。本脚本产出只是线索。
+- **脚手架不构成设备门**：当前签核只要求至少一台代表实际上线访问方式的实体智能手机，不限定品牌、型号或操作系统；iPhone 或不支持 ADB/CDP 的手机可直接按人工表验收，无需运行本脚本。
 - **只读**：不点击选色 / 抽奖 / 场景按钮，不提交任何业务命令，不写业务数据，不读取、升级、切换或重置 `backend/.data/`。
 - **令牌纪律**：令牌只在地址栏存在到 SPA 接管为止；脚本断言清除成功后才拍第一张截图，报告与日志不出现令牌原文
   （日志打印为 `<redacted>`）。
@@ -25,7 +27,7 @@
 ## 2. 前置条件
 
 1. **adb**：Windows 安装 Android platform-tools，`adb` 在 PATH 中；或设置 `$env:ADB_PATH` 指向 `adb.exe`。
-2. **vivo X300**：开发者选项 → 开启「USB 调试」；USB 连接电脑并在手机上授权（信任此电脑 / RSA 指纹）。
+2. **Android 实体手机**：开发者选项 → 开启「USB 调试」；USB 连接电脑并在手机上授权（信任此电脑 / RSA 指纹）。若本次选择 iPhone 或不支持 ADB/CDP 的手机，跳过本页脚手架，直接执行人工签核表。
 3. **真机 Chrome 可远程调试**：Chrome 需开放 devtools 远程入口（`chrome_devtools_remote`，入口差异见 §6）。
 4. **现场预览栈已启动**（只读观察的目标栈，临时合成数据）：
 
@@ -54,7 +56,7 @@
 ## 3. 使用步骤
 
 1. 按 §2 启动 preview 栈，确认后台、大屏与二维码页正常。
-2. 手机 USB 连接电脑，开启 USB 调试并授权；确认真机 Chrome 已打开并停留在前台。
+2. 将支持 ADB/CDP 的 Android 手机通过 USB 连接电脑，开启 USB 调试并授权；确认真机 Chrome 已打开并停留在前台。
 3. 运行（不启动任何服务，脚本只做连接与观察）：
 
    ```powershell
@@ -123,3 +125,4 @@
 - **备用方案**：若 `adb forward` + CDP 在真机上不可用，可改用 Appium / WebDriver（UiAutomator2 + chromedriver）
   做真机自动化；那是另一套依赖与本脚本无关，且同样不能代签人工验收。
 - **本脚本不启动任何服务**：`preview:v2:field` 需要人工先起好；脚本退出前会 `adb forward --remove tcp:9222` 清理。
+- **兼容命名**：`vivo-field-automation.mjs`、`output/vivo-field/` 和 `%TEMP%\vivo-field\` 是 D-035 时期留下的兼容名称，不表示只支持或只允许 vivo 设备。

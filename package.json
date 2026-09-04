@@ -9,6 +9,8 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "dev:formal": "node scripts/dev-formal.mjs",
+    "build:formal": "node scripts/build-formal.mjs",
     "preview:mobile": "pnpm build:contracts && pnpm build:backend && tsx scripts/mobile-animation-preview.mjs",
     "preview:journey": "pnpm build:contracts && pnpm build:backend && tsx scripts/personal-journey-preview.mjs",
     "preview:v2:field": "pnpm build:contracts && pnpm build:backend && tsx scripts/v2-field-preview.mjs",
@@ -39,6 +41,10 @@
     "db:verify": "tsx backend/src/cli/verify.ts",
     "db:reset": "tsx backend/src/cli/reset.ts",
     "db:v2:upgrade": "tsx backend/src/cli/v2-upgrade.ts",
+    "db:v2:verify": "tsx backend/src/cli/v2-verify.ts",
+    "db:roster:import": "tsx backend/src/cli/import-protected-roster.ts",
+    "db:nfc:finalize": "tsx backend/src/cli/finalize-nfc-map.ts",
+    "db:test-accounts:export": "tsx backend/src/cli/export-test-accounts.ts",
     "docs:check": "node scripts/check-docs.mjs"
   },
   "devDependencies": {
