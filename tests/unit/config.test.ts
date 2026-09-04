@@ -4,7 +4,22 @@ import { loadConfig } from '../../backend/src/config.js'
 
 describe('backend configuration', () => {
   it('keeps 300 participants as the normal default', () => {
-    expect(loadConfig({}).seedParticipantCount).toBe(300)
+    expect(loadConfig({})).toMatchObject({
+      seedParticipantCount: 300,
+      secureCookies: false,
+      trustLoopbackProxy: false,
+    })
+  })
+
+  it('enables only explicit secure-cookie and loopback-proxy flags', () => {
+    expect(
+      loadConfig({
+        DEMO_SECURE_COOKIES: '1',
+        DEMO_TRUST_LOOPBACK_PROXY: '1',
+      }),
+    ).toMatchObject({ secureCookies: true, trustLoopbackProxy: true })
+    expect(() => loadConfig({ DEMO_SECURE_COOKIES: 'true' })).toThrow()
+    expect(() => loadConfig({ DEMO_TRUST_LOOPBACK_PROXY: 'all' })).toThrow()
   })
 
   it('allows an isolated test stack to request a smaller synthetic seed', () => {

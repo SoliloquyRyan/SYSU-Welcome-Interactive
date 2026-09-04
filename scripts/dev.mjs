@@ -17,6 +17,7 @@ const FRONTEND_PORT = 5173
 const STARTUP_TIMEOUT_MS = 30_000
 const MAX_CAPTURED_OUTPUT = 64 * 1024
 const PROTECTED_RUNTIME = process.env.VITE_DATA_PROFILE === 'PROTECTED'
+const REHEARSAL_RUNTIME = process.env.VITE_DATA_PROFILE === 'REHEARSAL'
 
 const childProcesses = new Map()
 let shuttingDown = false
@@ -462,7 +463,7 @@ async function createWelcomeQr(publicOrigin, environment) {
   const welcomeUrl = new URL('/welcome', publicOrigin)
   welcomeUrl.searchParams.set('token', invitationToken)
 
-  const dataDirectory = path.resolve(REPOSITORY_ROOT, 'backend', '.data')
+  const dataDirectory = path.dirname(manifestPath)
   const qrPath = path.join(dataDirectory, 'welcome-entry.svg')
   await fs.mkdir(dataDirectory, { recursive: true, mode: 0o700 })
   await QRCode.toFile(qrPath, welcomeUrl.href, {
@@ -541,13 +542,21 @@ async function requestShutdown(exitCode, reason) {
 process.on('SIGINT', () => {
   void requestShutdown(
     130,
-    PROTECTED_RUNTIME ? '\n正在停止正式现场服务……' : '\n正在停止 Demo 服务……',
+    PROTECTED_RUNTIME
+      ? '\n正在停止正式现场服务……'
+      : REHEARSAL_RUNTIME
+        ? '\n正在停止合成正式视觉排练服务……'
+        : '\n正在停止 Demo 服务……',
   )
 })
 process.on('SIGTERM', () => {
   void requestShutdown(
     143,
-    PROTECTED_RUNTIME ? '\n正在停止正式现场服务……' : '\n正在停止 Demo 服务……',
+    PROTECTED_RUNTIME
+      ? '\n正在停止正式现场服务……'
+      : REHEARSAL_RUNTIME
+        ? '\n正在停止合成正式视觉排练服务……'
+        : '\n正在停止 Demo 服务……',
   )
 })
 
@@ -672,7 +681,11 @@ async function main() {
     : (await createWelcomeQr(publicOrigin, environment)).qrPath
   console.log('')
   console.log(
-    protectedRuntime ? '正式受保护三端服务已就绪：' : 'Demo v0 三端服务已就绪：',
+    protectedRuntime
+      ? '正式受保护三端服务已就绪：'
+      : REHEARSAL_RUNTIME
+        ? '合成正式视觉排练三端已就绪：'
+        : 'Demo v0 三端服务已就绪：',
   )
   console.log(`WELCOME_URL=${publicOrigin}/welcome`)
   console.log(`ADMIN_URL=${publicOrigin}/admin`)
@@ -683,6 +696,11 @@ async function main() {
     console.log(`FORMAL_CREDENTIALS=${manifestPath}（本地忽略文件，内容未回显）`)
     console.log(`FORMAL_NFC_MAP=${nfcMapPath}（私密逐人映射，内容未回显）`)
     console.log('请按逐人 NFC 映射写卡；终端不会显示姓名、学号、邀请令牌或后台密码。')
+  } else if (REHEARSAL_RUNTIME) {
+    console.log(`WELCOME_QR=${qrPath}`)
+    console.log(`REHEARSAL_ADMIN=${adminUsername}（密码见 REHEARSAL_CREDENTIALS）`)
+    console.log(`REHEARSAL_CREDENTIALS=${manifestPath}（合成忽略文件，内容未回显）`)
+    console.log('本入口使用 300 条纯合成技术目录，正式视觉按 220 人验收；不包含或读取真实姓名、学号、令牌与 NFC 映射。')
   } else {
     console.log(`WELCOME_QR=${qrPath}`)
     console.log(`DEMO_ADMIN=${adminUsername}（密码见 DEMO_CREDENTIALS）`)

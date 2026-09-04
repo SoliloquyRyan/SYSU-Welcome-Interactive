@@ -2,7 +2,7 @@
 
 感谢参与 SYSU Welcome Interactive。请先通过 Issue 明确需求、负责人、优先级、所属模块和验收标准，再开始实现。
 
-协议 v2 的当前权威是 [`docs/DECISIONS.md`](./docs/DECISIONS.md) 与 [`docs/PROTOCOL_V2.md`](./docs/PROTOCOL_V2.md)；项目现状、文档地图与“下一步做什么”见 [`docs/README.md`](./docs/README.md)。D-037 已取消寄语/时光胶囊并启用节目中场个人抽奖；D-046～D-050 继续约束大屏逆时针真实星流、逐人流星、摄影式 `displayColor`、30Hz/60Hz、预热有界缓冲及手机/大屏 Orbital Signal 背景。D-051 已用约 8.4 秒的错峰螺旋汇聚、高温核心、一次非对称超新星和连续白场透明接管整体替换黑洞路线，`PROGRAM_SUPPORT` 稳态仍完全透明且只显示实时新弹幕。D-053 又把三端共享组件、状态、字体和小圆角收口到 Orbital Signal 语义层，同时禁止后台持续氛围动画、手机低于 12px 的关键操作文案及只靠透明度表达禁用；页面专属 Canvas/WebGL 美术与业务状态保持独立。D-055 将 220 人设为正式视觉满场参考，以盘面主导银河、420 颗无身份底星、有界环境密度补偿、低振幅非同步呼吸及流星轨道捕获替换 D-046/D-047 的显式旋臂/320 底星构图；300 人只保留为协议和压力测试上限。D-036 是变更前的已签核历史基线，不能代签 D-037/D-051/D-053/D-055。已有 schema 12 的 `V2_ACTIVE` 合成库必须在停服、独立备份和明确确认后执行 [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) §7.2 的 12→13 升级；新工作以最新决策为准，先写 DECISIONS 再改代码。
+协议 v2 的当前权威是 [`docs/DECISIONS.md`](./docs/DECISIONS.md) 与 [`docs/PROTOCOL_V2.md`](./docs/PROTOCOL_V2.md)；项目现状、文档地图与“下一步做什么”见 [`docs/README.md`](./docs/README.md)。D-037 已取消寄语/时光胶囊并启用节目中场个人抽奖；D-046～D-050 继续约束大屏逆时针真实星流、逐人流星、摄影式 `displayColor`、30Hz/60Hz、预热有界缓冲及手机/大屏 Orbital Signal 背景。D-051 已用约 8.4 秒的错峰螺旋汇聚、高温核心、一次非对称超新星和连续白场透明接管整体替换黑洞路线，`PROGRAM_SUPPORT` 稳态仍完全透明且只显示实时新弹幕。D-053 又把三端共享组件、状态、字体和小圆角收口到 Orbital Signal 语义层；D-055 将 220 人设为正式视觉满场参考，以盘面主导银河、420 颗无身份底星、有界环境密度补偿、低振幅非同步呼吸及流星轨道捕获替换显式旋臂构图。D-056 要求正式数据永不进 Git，生产只用仓库外私有目录、单个 loopback 后端、HTTPS/Secure Cookie 和一致性备份；协作者统一用隔离固定合成排练。D-036 是变更前的已签核历史基线，不能代签当前版本。已有 schema 12 的 `V2_ACTIVE` 合成库必须在停服、独立备份和明确确认后执行 [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) §7.2 的 12→14 升级；新工作以最新决策为准，先写 DECISIONS 再改代码。
 
 ## 开发环境
 
@@ -13,7 +13,7 @@
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm dev
+pnpm dev:rehearsal              # 推荐给协作者；不需要也不得获取正式数据库
 ```
 
 提交前从仓库根目录验证共享契约、后端、自动化测试与前端构建（快速门；收口用 `pnpm verify:v2-09`，完整命令清单见 [`docs/README.md`](./docs/README.md)）：
@@ -44,7 +44,7 @@ pnpm verify:g4
 
 D-021 的提交前工作树验收见 [`docs/archive/acceptance-g0-g4.md`](./docs/archive/acceptance-g0-g4.md)：根级 `pnpm verify:g4` 退出码为 0，Vitest 20 个文件/119 条、共享契约/后端/前端构建，以及 9 场景 × 3 浏览器项目的 Playwright 27/27 均通过。该历史结果不绑定任何提交。G0～G4 冻结候选提交形成后，必须在该提交的干净工作树重跑适用门禁，并由 D-022 记录被验收提交的完整 SHA、命令结果与复验前后工作树状态；D-022 落地前只能称为冻结候选，不能称为可复现冻结版本。任何代码改动仍须重新执行适用门禁，不能长期借用 D-021 结果。
 
-如果依赖发生变化，请更新对应 workspace 的 `package.json` 与根 `pnpm-lock.yaml`。不要提交 `node_modules/`、`dist/`、`backend/.data/`、测试报告、本地环境文件或编辑器临时文件。
+如果依赖发生变化，请更新对应 workspace 的 `package.json` 与根 `pnpm-lock.yaml`。不要提交 `node_modules/`、`dist/`、`backend/.data/`、`backend/.rehearsal/`、`backend/.private/`、正式备份、测试报告、本地环境文件或编辑器临时文件。
 
 协议 v2 还遵守以下硬边界：
 
@@ -52,6 +52,7 @@ D-021 的提交前工作树验收见 [`docs/archive/acceptance-g0-g4.md`](./docs
 - 数据库变更只能新增下一编号迁移，不修改已冻结的 `0001`～`0013`；
 - 破坏性切换、升级或维护重置只允许在明确确认全部数据均为可丢弃合成/Demo 数据后执行；发现真实、不可重建或有保留价值的数据必须停止，不能自动清空；
 - 不因本机已安装技能而增加 GSAP、Three.js 或其他运行时依赖；任何新依赖都需要独立授权、范围、性能和降级审查。
+- 不把正式数据库发给协作者。功能、UI、协议和压力修改使用 `pnpm dev:rehearsal` 的固定 300 人合成技术目录，视觉验收仍以 220 人为正式参考；生产部署按 [`docs/SERVER_DEPLOYMENT.md`](./docs/SERVER_DEPLOYMENT.md) 执行。
 
 ## Issue 流程
 

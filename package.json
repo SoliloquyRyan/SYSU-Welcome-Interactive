@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:formal": "node scripts/dev-formal.mjs",
+    "dev:rehearsal": "node scripts/dev-rehearsal.mjs",
+    "start:formal": "node scripts/start-formal.mjs",
     "build:formal": "node scripts/build-formal.mjs",
     "preview:mobile": "pnpm build:contracts && pnpm build:backend && tsx scripts/mobile-animation-preview.mjs",
     "preview:journey": "pnpm build:contracts && pnpm build:backend && tsx scripts/personal-journey-preview.mjs",
@@ -22,8 +24,8 @@
     "typecheck:load": "tsc -p tests/load/tsconfig.json --noEmit",
     "typecheck:soak": "tsc -p tests/soak/tsconfig.json --noEmit",
     "test": "pnpm build:contracts && vitest run",
-    "verify:g1": "node --check scripts/dev.mjs && pnpm typecheck && pnpm test && pnpm build",
-    "verify:g2": "node --check scripts/dev.mjs && pnpm typecheck && pnpm test && pnpm build",
+    "verify:g1": "pnpm deploy:check && pnpm typecheck && pnpm test && pnpm build",
+    "verify:g2": "pnpm deploy:check && pnpm typecheck && pnpm test && pnpm build",
     "test:e2e": "pnpm build:contracts && pnpm build:backend && pnpm typecheck:e2e && playwright test --project=chromium-ci",
     "test:e2e:windows": "pnpm build:contracts && pnpm build:backend && pnpm typecheck:e2e && playwright test --project=chrome --project=msedge",
     "test:e2e:all": "pnpm build:contracts && pnpm build:backend && pnpm typecheck:e2e && playwright test --project=chromium-ci --project=chrome --project=msedge",
@@ -32,6 +34,8 @@
     "test:v2:load": "pnpm build:contracts && pnpm build:backend && pnpm typecheck:load && tsx tests/load/run-v2-load.ts",
     "test:v2:soak:smoke": "pnpm build:contracts && pnpm build:backend && pnpm typecheck:soak && tsx tests/soak/run-v2-render-soak.ts --smoke",
     "test:v2:soak": "pnpm build:contracts && pnpm build:backend && pnpm typecheck:soak && tsx tests/soak/run-v2-render-soak.ts",
+    "test:formal:smoke": "pnpm build:formal && node tests/smoke/run-formal-production-smoke.mjs",
+    "test:rehearsal:smoke": "node tests/smoke/run-rehearsal-first-run-smoke.mjs",
     "verify:v2-09": "pnpm typecheck && pnpm test && pnpm build && pnpm typecheck:e2e && playwright test --project=chromium-ci --project=chrome --project=msedge && pnpm typecheck:load && tsx tests/load/run-v2-load.ts",
     "verify:g3": "pnpm verify:g2 && pnpm typecheck:e2e && playwright test --project=chromium-ci --project=chrome --project=msedge",
     "verify:g4": "pnpm verify:g3 && pnpm typecheck:load && tsx tests/load/run-g4-load.ts",
@@ -45,7 +49,10 @@
     "db:roster:import": "tsx backend/src/cli/import-protected-roster.ts",
     "db:nfc:finalize": "tsx backend/src/cli/finalize-nfc-map.ts",
     "db:test-accounts:export": "tsx backend/src/cli/export-test-accounts.ts",
-    "docs:check": "node scripts/check-docs.mjs"
+    "db:formal:backup": "tsx backend/src/cli/formal-backup.ts",
+    "db:formal:restore": "tsx backend/src/cli/formal-restore.ts",
+    "docs:check": "node scripts/check-docs.mjs",
+    "deploy:check": "node --check scripts/dev.mjs && node --check scripts/dev-formal.mjs && node --check scripts/dev-rehearsal.mjs && node --check scripts/formal-runtime.mjs && node --check scripts/start-formal.mjs && node --check tests/smoke/run-formal-production-smoke.mjs && node --check tests/smoke/run-rehearsal-first-run-smoke.mjs && node scripts/check-deployment.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

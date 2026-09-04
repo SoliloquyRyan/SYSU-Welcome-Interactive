@@ -1,6 +1,6 @@
 # Demo v0 测试目录
 
-> 状态：v2 现行。G0～G4 是 v1 历史基线；当前权威验收标准见 [`docs/TEST_PLAN.md`](../docs/TEST_PLAN.md)，人工验收见 [`docs/V2_10_FIELD_ACCEPTANCE.md`](../docs/V2_10_FIELD_ACCEPTANCE.md)，v1 的 34 条 P0 证据矩阵与 D-021/D-022 总验收记录已归档至 [`docs/archive/v1-test-plan.md`](../docs/archive/v1-test-plan.md)、[`docs/archive/acceptance-g0-g4.md`](../docs/archive/acceptance-g0-g4.md) 与 [`docs/archive/acceptance-g0-g4-d022.md`](../docs/archive/acceptance-g0-g4-d022.md)。v2 专项入口：`pnpm test:v2:e2e`、`pnpm test:v2:load`、`pnpm test:v2:soak`。
+> 状态：v2 / D-056 现行。G0～G4 是 v1 历史基线；当前权威验收标准见 [`docs/TEST_PLAN.md`](../docs/TEST_PLAN.md)，当前人工复验见 [`docs/D037_FIELD_ACCEPTANCE.md`](../docs/D037_FIELD_ACCEPTANCE.md)，D-036 历史签核见 [`docs/V2_10_FIELD_ACCEPTANCE.md`](../docs/V2_10_FIELD_ACCEPTANCE.md)。v1 的 34 条 P0 证据矩阵与 D-021/D-022 总验收记录已归档至 [`docs/archive/v1-test-plan.md`](../docs/archive/v1-test-plan.md)、[`docs/archive/acceptance-g0-g4.md`](../docs/archive/acceptance-g0-g4.md) 与 [`docs/archive/acceptance-g0-g4-d022.md`](../docs/archive/acceptance-g0-g4-d022.md)。v2 专项入口：`pnpm test:v2:e2e`、`pnpm test:v2:load`、`pnpm test:v2:soak`；部署专项入口：`pnpm deploy:check`、`pnpm test:formal:smoke`、`pnpm test:rehearsal:smoke`。
 
 ## 1. Demo v0 最终必须证明的范围
 
@@ -11,7 +11,7 @@
 - 300 个固定合成参与者的协议级负载，目标事件传播延迟 p95 不超过 2 秒；
 - 至少一台代表实际上线访问方式的实体智能手机、Windows Chrome、Windows Edge、1920×1080 和 `prefers-reduced-motion`；实体手机不限定品牌、型号或操作系统。
 
-实体 NFC、印刷、iPhone、微信、公网 HTTPS、真实场馆和主备硬件属于正式版延期测试，不是 Demo v0 的通过条件。
+实体 NFC、印刷、额外手机/浏览器兼容、实际公网 HTTPS、真实场馆和主备硬件属于正式现场测试；D-056 只关闭仓库内部署工具链，不代签目标服务器。
 
 ## 2. 目录结构
 
@@ -26,6 +26,7 @@ tests/
 ├─ e2e/           # G3 三端真实浏览器关键闭环与恢复
 │  └─ fixtures/   # G3 隔离临时数据库与真实服务编排
 ├─ load/          # G4 300 人真实 HTTP/WebSocket 协议负载、指标与固定测试夹具
+├─ smoke/         # 正式生产启动与合成排练首次初始化的临时数据 smoke
 └─ reports/       # 本地生成且默认忽略的机器可读结果
 ```
 
@@ -158,6 +159,6 @@ pnpm verify:g3
 
 G3 已按 v1 的 34 条 P0 证据矩阵（现归档于 [`docs/archive/v1-test-plan.md`](../docs/archive/v1-test-plan.md)）回填自动化结果，项目负责人也已将 vivo X300 指定人工项标为 `MANUAL-PASS`；D-021 验收未发现或复现未关闭 S0/S1，G3 在 D-021 的提交前工作树范围内收口。真机浏览器版本与实际 CSS 视口未单独记录，作为 D-021 证据限制保留。G4 的独立机器可读专项报告已经证明 300 人本机协议负载目标，但不扩张为 30 分钟 soak、分布式局域网、场馆或正式上线结论。
 
-## 8. 正式版延期测试
+## 8. 正式版剩余测试
 
-正式发布前另行补充：实体 NFC/二维码写入与打样、iPhone Safari、双端微信、正式 HTTPS 域名、真实数据治理、场馆网络、主备设备、音视频灯光 Cue、完整离线兜底和 AI 审核供应商验证。
+D-056 已补充 Caddy/systemd/env 静态检查、仓库外生产启动、Secure Cookie、NFC 映射对账、SQLite 一致性备份/恢复和合成排练 smoke。正式发布前仍须在目标服务器补充：DNS/证书/Caddy/systemd/防火墙、加密私密传输与恢复演练、实体 NFC/二维码写入与抽检、至少一台代表实际访问方式的实体手机、正式数据治理、场馆网络、主备设备、音视频灯光 Cue、完整离线兜底和未来 AI 审核供应商验证；可选扩展包括 iPhone Safari 与微信等额外组合。

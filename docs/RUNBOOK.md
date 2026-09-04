@@ -1,24 +1,29 @@
 # 运行手册（v2 现行）
 
-> 状态：本手册覆盖协议 v2 的本地开发、自动验证、现场预览与维护操作。v1 六阶段手册已归档至 [`archive/v1-runbook.md`](./archive/v1-runbook.md)。协议细节以 [`PROTOCOL_V2.md`](./PROTOCOL_V2.md) 为准。
+> 状态：本手册覆盖协议 v2 的本地开发、合成排练、自动验证、现场预览与维护操作；D-056 正式服务器安装、更新、回滚及上线检查详见 [`SERVER_DEPLOYMENT.md`](./SERVER_DEPLOYMENT.md)。v1 六阶段手册已归档至 [`archive/v1-runbook.md`](./archive/v1-runbook.md)。协议细节以 [`PROTOCOL_V2.md`](./PROTOCOL_V2.md) 为准。
 
 ## 1. 适用范围
 
 - 参与者端 `/welcome`、共用后台 `/admin`、展示端 `/screen`；
 - 本地服务、SQLite 持久化、HTTP 命令与 WebSocket 事件；
-- 固定合成 Demo 与 D-054 受保护正式名单；二者必须使用不同数据库、凭据和启动入口；
-- 正式名单已经本地导入，HTTPS origin、实体 NFC 写卡、印刷与数据治理签核仍是上线门。
+- 固定合成 Demo、可共享合成排练与 D-054 受保护正式名单；三者必须使用不同数据库、凭据和启动入口；
+- 正式名单已经本地导入；D-056 已提供单机生产启动、Caddy/systemd、持久化与备份/恢复工具，但实际服务器、HTTPS origin、实体 NFC 写卡、印刷与数据治理签核仍是上线门。
 
 ## 2. 快速开始
 
 ```bash
 pnpm install --frozen-lockfile   # 首次
 pnpm dev                         # 合成 Demo：检查数据基础 + 后端 + 三端
+pnpm dev:rehearsal               # 协作者排练：隔离合成目录，首次自动建成 v2
 pnpm dev:formal                  # 正式名单：只接受已存在且验证通过的 backend/.private 配置
 pnpm build:formal                # 正式前端生产构建：固化 PROTECTED UI，不打包私密数据库/凭据
+pnpm test:formal:smoke           # 临时合成 PROTECTED 生产启动与 Secure Cookie smoke
+pnpm test:rehearsal:smoke        # 全新临时目录验证合成排练首次初始化/启动/清理
 ```
 
-启动器输出三端同源地址（手机入口、`/admin`、`/screen`）。客户端只用相对 `/api` 与同源 `/ws`，不得硬编码 `localhost`。`dev:formal` 从私密运行凭据读取人数，使用正式部署文案，并在后台隐藏合成重置入口；它不会打印名单、学号、令牌或管理员密码。
+启动器输出三端同源地址（手机入口、`/admin`、`/screen`）。客户端只用相对 `/api` 与同源 `/ws`，不得硬编码 `localhost`。`dev:rehearsal` 默认使用被忽略的 `backend/.rehearsal/`，首次创建固定 300 人合成技术目录并经过真实 v1 listen/clean shutdown 与一次性 v2 切换；页面明确标示纯合成排练，正式视觉参考仍为 220 人。它不读取 `.private`，已有但不完整的排练目录会安全停止而不覆盖，可用新的绝对 `REHEARSAL_RUNTIME_DIR` 重建。
+
+`dev:formal` 从私密运行凭据读取人数，使用正式部署文案，并在后台隐藏合成重置入口；它不会打印名单、学号、令牌或管理员密码。本机默认读 `backend/.private/`，也可通过 `FORMAL_RUNTIME_DIR` 以及可选的 `FORMAL_DATABASE_PATH`、`FORMAL_RUNTIME_SECRET_PATH`、`FORMAL_NFC_MAP_PATH` 指向别处。生产服务器必须使用代码仓库外的绝对 `FORMAL_RUNTIME_DIR`，经 `pnpm start:formal` 启动；不要用开发服务器承载公网流量。
 
 启动器为协议感知：只有完整验证通过的 `V2_ACTIVE + SYNTHETIC_DEMO|PROTECTED` 库才启动 v2 三端；只有普通 `pnpm dev` 面对明确空库或 `V1_ACTIVE` 库时才可走原 Demo 初始化。`dev:formal` 对缺失、损坏、人数不一致或误分类配置一律停止，绝不自动迁移、清空、造数或回退 v1。合成 `.data` 已按 §7.2 备份优先升级至 schema 14；正式 `.private` 从新库直接初始化为 schema 14。
 
@@ -29,6 +34,9 @@ pnpm build:formal                # 正式前端生产构建：固化 PROTECTED U
 | `pnpm test` | Vitest 单元/集成/API 回归 | 快速反馈 |
 | `pnpm typecheck` | 契约 + 后端类型检查 | |
 | `pnpm build` | 契约/后端/前端生产构建 | |
+| `pnpm deploy:check` | 部署模板、生产/排练脚本与忽略规则静态检查 | G1/G2 已包含 |
+| `pnpm test:formal:smoke` | 生产 fail-closed、loopback API 与 Secure Cookie | 仅使用 OS 临时合成 PROTECTED 数据 |
+| `pnpm test:rehearsal:smoke` | 合成排练首次初始化、v2 切换与三端启动 | 仅使用 OS 临时固定合成数据 |
 | `pnpm docs:check` | 文档链接完整性 + DECISIONS 倒序检查 | 文档改动后必跑 |
 | `pnpm test:v2:e2e` | 三浏览器 v2 三端闭环（3/3） | 使用 OS 临时 v2 库，不碰 `.data` |
 | `pnpm test:e2e:all` | 全部浏览器场景 × 3 项目 | 收口用（含 v2-journey-visual 视觉门） |
@@ -136,15 +144,41 @@ pnpm db:v2:verify
 ```powershell
 pnpm db:nfc:finalize -- --input 'backend/.private/2026-nfc-map.csv' `
   --output 'backend/.private/2026-nfc-map-final.csv' `
-  --public-origin 'https://正式域名/可选基础路径'
+  --public-origin 'https://正式域名'
 ```
 
-写卡前随机抽检“学号→卡片→本人私有档案”映射；标签和二维码只写完整 HTTPS URL，不写姓名、学号。丢卡/补卡必须撤销旧令牌并重新发卡；当前撤销操作流程仍待负责人现场定稿。正式库没有重置入口，恢复只允许使用同代完整数据库+运行凭据备份，不得借 `RESET_DEMO` 清场。
+当前生产路由只接受无路径 origin；定稿文件中的每一行会在正式启动前与数据库中的序号、姓名、学号 HMAC、随机令牌摘要和公开星号自动对账，且 URL origin 必须与 `FORMAL_PUBLIC_ORIGIN` 精确一致。写卡前仍须随机抽检“学号→卡片→本人私有档案”映射；标签和二维码只写完整 HTTPS URL，不写姓名、学号。丢卡/补卡必须撤销旧令牌并重新发卡；当前撤销操作流程仍待负责人现场定稿。正式库没有重置入口，恢复只允许使用同代完整数据库+运行凭据+NFC 映射备份，不得借 `RESET_DEMO` 清场。
+
+### 7.5 正式一致性备份与全新目录恢复
+
+正式备份不是把正在运行的 `.sqlite` 直接复制到 Git 或共享目录。它必须同时保存数据库、同代运行凭据和 NFC 映射，并生成逐文件 SHA-256 manifest：
+
+```powershell
+pnpm db:formal:backup -- --database '<正式 sqlite>' `
+  --secret '<正式运行凭据 json>' `
+  --nfc-map '<正式 NFC 映射 csv>' `
+  --output-dir '<仓库外、尚不存在的绝对备份目录>' `
+  --confirm CREATE_VERIFIED_PROTECTED_BACKUP
+```
+
+备份器先验证源库为完整 `V2_ACTIVE + PROTECTED`，逐行核对 NFC 映射与数据库/运行凭据，使用 SQLite 在线 backup 生成一致快照，把输出数据库规范化为无 `-wal/-shm` 依赖的单文件，再复验协议、schema、人数和完整性。输出目录存在、位于仓库内或确认串错误时拒绝。备份包仍含姓名/学号摘要、令牌与口令材料，只能最小权限、加密、离机保管，不得上传 GitHub 或普通协作盘。
+
+恢复只写到全新的仓库外目录，不覆盖活动库：
+
+```powershell
+pnpm db:formal:restore -- --bundle-dir '<已验证备份目录>' `
+  --output-dir '<仓库外、尚不存在的恢复目录>' `
+  --confirm MATERIALIZE_VERIFIED_PROTECTED_BACKUP
+```
+
+恢复器会在创建目标前核验 manifest、长度、SHA-256、SQLite 完整性与 `PROTECTED` v2 基础，复制后再次全量验证。真正切换时先停服务，确认没有第二个写者，把 `FORMAL_RUNTIME_DIR` 改为新目录，再启动并复核；旧目录保留到人工签核。生产服务器应运行编译后的 `node backend/dist/cli/formal-backup.js` / `formal-restore.js`，完整步骤见 [`SERVER_DEPLOYMENT.md`](./SERVER_DEPLOYMENT.md) §3.3 与 §6。
 
 ## 8. 安全红线
 
 - 真实名单只在已授权的私密导入通道和正式运行库中处理；禁止在测试、截图、日志、Issue、提交或聊天回显中展示姓名、学号、令牌、口令或映射行。
 - 日志不记录完整令牌、学号、Cookie、密码、抽奖身份映射或弹幕正文。
 - 测试、预览与截图使用 OS 临时库或 `backend/.data/` 合成 Demo；`backend/.private/` 只由正式导入、验证、备份和 `pnpm dev:formal` 接触。
-- 局域网 HTTP 不提供传输机密性；正式公网必须 HTTPS + `Secure` Cookie。
+- 协作者优先使用 `pnpm dev:rehearsal`；不得为了“拿到同样效果”复制真实 `.private`、备份包或正式 NFC 映射。
+- 局域网 HTTP 不提供传输机密性；正式公网必须由 Caddy 或经审查的等价反向代理提供 HTTPS/WSS，后端只监听 loopback，会话使用 `Secure + HttpOnly + SameSite=Lax` Cookie。
+- 正式数据位于代码目录之外；release 更新不得覆盖持久目录。当前 SQLite 仅允许单后端实例，不得放网络共享盘或横向扩容写实例。
 - 未授权不提交、不推送。

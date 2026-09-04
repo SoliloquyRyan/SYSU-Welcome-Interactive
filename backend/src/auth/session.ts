@@ -81,16 +81,22 @@ export function sessionSecretFromCookie(
 export function serializeSessionCookie(
   type: SessionType,
   secret: string,
+  options: { secure?: boolean } = {},
 ): string {
   const maxAge =
     type === 'PARTICIPANT'
       ? PARTICIPANT_SESSION_SECONDS
       : ADMIN_SESSION_SECONDS
-  return `${cookieNameFor(type)}=${encodeURIComponent(secret)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`
+  const secure = options.secure === true ? '; Secure' : ''
+  return `${cookieNameFor(type)}=${encodeURIComponent(secret)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`
 }
 
-export function serializeClearedSessionCookie(type: SessionType): string {
-  return `${cookieNameFor(type)}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
+export function serializeClearedSessionCookie(
+  type: SessionType,
+  options: { secure?: boolean } = {},
+): string {
+  const secure = options.secure === true ? '; Secure' : ''
+  return `${cookieNameFor(type)}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure}`
 }
 
 export function createSession(

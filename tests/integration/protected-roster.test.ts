@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { BACKEND_ROOT } from '../../backend/src/config.js'
 import { openDatabase } from '../../backend/src/db/open-database.js'
+import { verifyProtectedNfcMap } from '../../backend/src/db/protected-nfc-map.js'
 import { importProtectedRoster } from '../../backend/src/db/protected-roster.js'
 import {
   readCredentialContext,
@@ -59,7 +60,7 @@ describe('D-054 protected roster import', () => {
         migrationsPath: MIGRATIONS_PATH,
         runtimeSecretPath: secretPath,
         nfcMapPath,
-        publicOrigin: 'https://welcome.example.edu.cn/event',
+        publicOrigin: 'https://welcome.example.edu.cn',
         now: () => NOW,
       },
     )
@@ -101,9 +102,47 @@ describe('D-054 protected roster import', () => {
     expect(secretText).not.toContain('测试甲')
     expect(secretText).not.toContain('26000001')
     const nfcMap = fs.readFileSync(nfcMapPath, 'utf8')
-    expect(nfcMap).toContain('https://welcome.example.edu.cn/event/welcome?token=')
+    expect(nfcMap).toContain('https://welcome.example.edu.cn/welcome?token=')
     expect(nfcMap).not.toContain('token=26000001')
     expect(nfcMap.match(/welcome\?token=/g)).toHaveLength(2)
+    expect(
+      verifyProtectedNfcMap(database, {
+        runtimeSecretPath: secretPath,
+        nfcMapPath,
+        expectedOrigin: 'https://welcome.example.edu.cn',
+      }),
+    ).toEqual({ participantCount: 2 })
+  })
+
+  it('rejects an NFC map that no longer matches the protected directory', () => {
+    importRoster()
+    const mapping = fs.readFileSync(nfcMapPath, 'utf8')
+    fs.writeFileSync(
+      nfcMapPath,
+      mapping.replaceAll('https://welcome.example.edu.cn', ''),
+      'utf8',
+    )
+    expect(() =>
+      verifyProtectedNfcMap(database, {
+        runtimeSecretPath: secretPath,
+        nfcMapPath,
+        expectedOrigin: 'https://welcome.example.edu.cn',
+      }),
+    ).toThrowError(/not finalized/)
+
+    fs.writeFileSync(
+      nfcMapPath,
+      mapping.replace('/welcome?token=', '/welcome?token=A'),
+      'utf8',
+    )
+
+    expect(() =>
+      verifyProtectedNfcMap(database, {
+        runtimeSecretPath: secretPath,
+        nfcMapPath,
+        expectedOrigin: 'https://welcome.example.edu.cn',
+      }),
+    ).toThrowError(/invalid invitation token|does not match/)
   })
 
   it('accepts an eight-digit protected student ID and rejects Demo reset', () => {

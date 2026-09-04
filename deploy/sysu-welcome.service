@@ -1,0 +1,37 @@
+[Unit]
+Description=SYSU Welcome Interactive protected backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sysu-welcome
+Group=sysu-welcome
+WorkingDirectory=/opt/sysu-welcome/current
+EnvironmentFile=/etc/sysu-welcome/runtime.env
+ExecStart=/usr/bin/node /opt/sysu-welcome/current/scripts/start-formal.mjs
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=20s
+UMask=0077
+StateDirectory=sysu-welcome
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/sysu-welcome/current
+ReadWritePaths=/var/lib/sysu-welcome
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

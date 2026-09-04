@@ -147,7 +147,11 @@ export async function buildApp(
   const app = Fastify({
     logger:
       options.logger === false ? false : createLoggerOptions(config.logLevel),
+    trustProxy: config.trustLoopbackProxy
+      ? ['127.0.0.1', '::1']
+      : false,
   })
+  const cookieOptions = { secure: config.secureCookies === true }
   const database = openDatabase(config.databasePath)
   const startupProtocol = readProtocolRuntime(database)
   const v2Active = startupProtocol?.activeProtocolVersion === '2' && startupProtocol.activationState === 'V2_ACTIVE'
@@ -533,7 +537,7 @@ export async function buildApp(
       }
       loginRateLimiter.recordSuccess('admin-login', sourceIp)
       return reply.header('cache-control', 'no-store')
-        .header('set-cookie', serializeSessionCookie('ADMIN', secret))
+        .header('set-cookie', serializeSessionCookie('ADMIN', secret, cookieOptions))
         .send(readV2AdminSnapshot(database, ['ALL'], timestamp))
     } catch (error) {
       if (countsAsLoginFailure(error)) loginRateLimiter.recordFailure('admin-login', sourceIp, now())
@@ -555,7 +559,7 @@ export async function buildApp(
         throw error
       }
     }
-    return reply.header('set-cookie', serializeClearedSessionCookie('ADMIN'))
+    return reply.header('set-cookie', serializeClearedSessionCookie('ADMIN', cookieOptions))
       .send({ status: 'ok', protocolVersion: '2' })
   })
 
@@ -569,7 +573,7 @@ export async function buildApp(
       loginRateLimiter.recordSuccess('participant-activation', sourceIp)
       return reply
         .header('cache-control', 'no-store')
-        .header('set-cookie', serializeSessionCookie('PARTICIPANT', result.session.secret))
+        .header('set-cookie', serializeSessionCookie('PARTICIPANT', result.session.secret, cookieOptions))
         .send(V2ActivateParticipantResponseSchema.parse({
           status: 'ok',
           protocolVersion: '2',
@@ -600,7 +604,7 @@ export async function buildApp(
       }
     }
     return reply
-      .header('set-cookie', serializeClearedSessionCookie('PARTICIPANT'))
+      .header('set-cookie', serializeClearedSessionCookie('PARTICIPANT', cookieOptions))
       .send({ status: 'ok', protocolVersion: '2' })
   })
 
@@ -678,7 +682,7 @@ export async function buildApp(
       })
       const adminSnapshot = readV2AdminSnapshot(database, ['ALL'], now())
       return reply.header('cache-control', 'no-store')
-        .header('set-cookie', serializeSessionCookie('ADMIN', secret))
+        .header('set-cookie', serializeSessionCookie('ADMIN', secret, cookieOptions))
         .send(V2AdminCommandResponseSchema.parse({
           status: 'ok', protocolVersion: '2', resetEpoch: result.resetEpoch,
           command: 'RESET_DEMO', replayed: false, runtime: adminSnapshot.runtime,
@@ -750,7 +754,7 @@ export async function buildApp(
       .header('cache-control', 'no-store')
       .header(
         'set-cookie',
-        serializeSessionCookie('PARTICIPANT', result.session.secret),
+        serializeSessionCookie('PARTICIPANT', result.session.secret, cookieOptions),
       )
       .send(result.snapshot)
   })
@@ -766,7 +770,7 @@ export async function buildApp(
     const session = sessionFor(request, 'PARTICIPANT')
     if (session) revokeSession(database, session.id, now())
     return reply
-      .header('set-cookie', serializeClearedSessionCookie('PARTICIPANT'))
+      .header('set-cookie', serializeClearedSessionCookie('PARTICIPANT', cookieOptions))
       .send(SessionEndedResponseSchema.parse({ status: 'ok' }))
   })
 
@@ -876,7 +880,7 @@ export async function buildApp(
     loginRateLimiter.recordSuccess(kind, sourceIp)
     return reply
       .header('cache-control', 'no-store')
-      .header('set-cookie', serializeSessionCookie('ADMIN', result.session.secret))
+      .header('set-cookie', serializeSessionCookie('ADMIN', result.session.secret, cookieOptions))
       .send(result.snapshot)
   })
 
@@ -884,7 +888,7 @@ export async function buildApp(
     const session = sessionFor(request, 'ADMIN')
     if (session) revokeSession(database, session.id, now())
     return reply
-      .header('set-cookie', serializeClearedSessionCookie('ADMIN'))
+      .header('set-cookie', serializeClearedSessionCookie('ADMIN', cookieOptions))
       .send(SessionEndedResponseSchema.parse({ status: 'ok' }))
   })
 
@@ -1039,7 +1043,7 @@ export async function buildApp(
     if (!result.replayed) {
       reply.header(
         'set-cookie',
-        serializeSessionCookie('ADMIN', result.session.secret),
+        serializeSessionCookie('ADMIN', result.session.secret, cookieOptions),
       )
     }
     return reply.header('cache-control', 'no-store').send(result.body)

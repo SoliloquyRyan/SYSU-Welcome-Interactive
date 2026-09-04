@@ -19,6 +19,8 @@ const EnvironmentSchema = z.object({
   DEMO_LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .default('info'),
+  DEMO_SECURE_COOKIES: z.enum(['0', '1']).default('0'),
+  DEMO_TRUST_LOOPBACK_PROXY: z.enum(['0', '1']).default('0'),
   DEMO_SEED_PARTICIPANT_COUNT: z.coerce
     .number()
     .int()
@@ -36,6 +38,8 @@ export interface AppConfig {
   allowedOrigins: string[]
   logLevel: string
   seedParticipantCount: number
+  secureCookies?: boolean
+  trustLoopbackProxy?: boolean
 }
 
 function resolveBackendPath(value: string): string {
@@ -60,5 +64,7 @@ export function loadConfig(
     allowedOrigins: [...new Set(allowedOrigins)],
     logLevel: parsed.DEMO_LOG_LEVEL,
     seedParticipantCount: parsed.DEMO_SEED_PARTICIPANT_COUNT,
+    secureCookies: parsed.DEMO_SECURE_COOKIES === '1',
+    trustLoopbackProxy: parsed.DEMO_TRUST_LOOPBACK_PROXY === '1',
   }
 }

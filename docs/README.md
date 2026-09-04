@@ -7,9 +7,9 @@
 1. 读完本页（现状卡 + 规则卡）。
 2. 读 [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md)：目标、已完成/未完成、边界。
 3. 要跑起来：读 [`RUNBOOK.md`](./RUNBOOK.md)。
-4. 要写代码：按需查 [`PROTOCOL_V2.md`](./PROTOCOL_V2.md)（协议）、[`REQUIREMENTS.md`](./REQUIREMENTS.md)（需求）、[`VISUAL_GUIDE.md`](./VISUAL_GUIDE.md)（视觉）、[`API.md`](./API.md)（接口）。
+4. 要写代码：按需查 [`PROTOCOL_V2.md`](./PROTOCOL_V2.md)（协议）、[`REQUIREMENTS.md`](./REQUIREMENTS.md)（需求）、[`VISUAL_GUIDE.md`](./VISUAL_GUIDE.md)（视觉）、[`API.md`](./API.md)（接口）；要上服务器则读 [`SERVER_DEPLOYMENT.md`](./SERVER_DEPLOYMENT.md)。
 
-## 二、现状卡（D-037/D-051/D-055 当前候选，详见 PROJECT_CONTEXT）
+## 二、现状卡（D-037/D-051/D-056 当前候选，详见 PROJECT_CONTEXT）
 
 | 事项 | 状态 |
 |---|---|
@@ -25,17 +25,18 @@
 | D-053：三端 Orbital Signal 视觉收口 | 🟢 当前工作树已统一共享语义表面/文字/状态/焦点/禁用令牌与本机字体角色；手机关键标签不低于 12px，后台改为无持续氛围动画的克制深空运营控制台且不显示内部 presentation 枚举。快速门、三浏览器闭环、390/1366/1920 浏览器实看、键盘焦点、禁用态与 reduced-motion 通过，详见 [`TEST_PLAN.md`](./TEST_PLAN.md) §3.16；实体手机/OBS/场馆仍待负责人签核 |
 | D-054：受保护名单 + 匿名 NFC + 隔离测试账号 | 🟢 220 人正式库已导入 `backend/.private/` 并以 `V2_ACTIVE + PROTECTED + schema 14` 验证通过；只使用姓名/8 位学号，NFC URL 使用随机令牌，5 个测试账号留在独立合成库；正式域名和实体写卡仍待完成 |
 | D-055：220 人盘面银河 + 420 底星 + 呼吸与轨道入场 | 🟢 当前工作树 21 项核心单测、40 文件/389 项全仓门、三浏览器闭环、0/40/80/120/160/220 正式视觉梯度、300 技术压力档、单人流星两阶段截图、reduced-motion 与透明节目端点均通过；详见 [`TEST_PLAN.md`](./TEST_PLAN.md) §3.18，实际 OBS/LED 屏和场馆观看距离主观签核仍待完成 |
+| D-056：正式单机部署 + 一致性备份/恢复 + 合成排练 | 🟢 已实现仓库外私有持久目录、生产启动前 `PROTECTED` 验证、loopback 后端、HTTPS/Secure Cookie、Caddy/systemd 模板、在线一致性备份、checksum 恢复和 `pnpm dev:rehearsal`；本机自动证据见 [`TEST_PLAN.md`](./TEST_PLAN.md) §3.19，实际服务器/DNS/证书/防火墙/私密传输仍待执行 |
 | **实际 `backend/.data` 合成 Demo** | ✅ 已备份优先从 schema 12→14，完整验证通过；继续只作独立测试库 |
 | D-037/D-052/D-053 实体手机 / 三端局域网 / OBS 复验 | ⏳ `PENDING`；至少一台代表实际上线访问方式的实体智能手机即可，不限定品牌、型号或操作系统；D-036 结果不能代签变更后流程或当前 UI |
 
-**口径**：D-036 已关闭的是 2026-08-15 基线；D-037/D-048～D-053/D-055 仍需受影响的现场复验。D-054 已完成本机受保护名单导入和合成 Demo 升级，但 HTTPS 正式入口、实体写卡、数据告知/保管/删除责任以及实体手机/OBS/场馆签核仍是独立上线门。
+**口径**：D-036 已关闭的是 2026-08-15 基线；D-037/D-048～D-053/D-055 仍需受影响的现场复验。D-054 已完成本机受保护名单导入，D-056 已完成仓库内生产部署工具链与合成协作入口；但没有实际主机/域名就不能称为已部署，HTTPS 正式入口、私密传输、实体写卡、数据责任以及实体手机/OBS/场馆签核仍是独立上线门。
 
 ## 三、规则卡
 
 ### 不可妥协（安全红线）
 
-1. 真实姓名、学号、令牌与私密映射只允许存在于获授权源文件和 Git 忽略的 `backend/.private/`；不得进入代码、日志、截图、报告或 Git。
-2. 合成测试只使用 `backend/.data/`，正式运行只使用 `backend/.private/`；两者不得合并。切换、升级与重置均按 RUNBOOK 维护门执行。
+1. 真实姓名、学号、令牌、运行凭据、私密映射与正式备份不得进入代码、日志、截图、报告或 Git；生产服务器必须放在代码目录外的最小权限持久目录。
+2. 合成 Demo 使用 `backend/.data/`，共享排练使用 `backend/.rehearsal/`，本机正式验证使用被忽略的 `backend/.private/`，生产正式运行使用服务器仓库外目录；四者不得合并。切换、升级、备份、恢复与重置均按 RUNBOOK 维护门执行。
 3. 动画不得承载、推进或延迟业务事实；reduced-motion 与断线直接静态终态。
 4. 桌面自动化证据不能代签真机/现场人工验收。
 
@@ -61,6 +62,7 @@
 | [`PROTOCOL_V2.md`](./PROTOCOL_V2.md) | 协议 v2 唯一权威：入场时钟、三场景、快照/事件、错误码、重置与切换 |
 | [`REQUIREMENTS.md`](./REQUIREMENTS.md) | 当前需求清单（V2-MUST），细节指向 PROTOCOL_V2 |
 | [`RUNBOOK.md`](./RUNBOOK.md) | 运行手册：启动、验证门、现场流程、维护门 |
+| [`SERVER_DEPLOYMENT.md`](./SERVER_DEPLOYMENT.md) | 正式单机部署、私密数据转移、Caddy/systemd、备份恢复与上线清单 |
 | [`TEST_PLAN.md`](./TEST_PLAN.md) | 现行测试计划与门禁入口 |
 | [`D037_FIELD_ACCEPTANCE.md`](./D037_FIELD_ACCEPTANCE.md) | D-037/D-051/D-053 当前人工复验表（`PENDING`） |
 | [`V2_10_FIELD_ACCEPTANCE.md`](./V2_10_FIELD_ACCEPTANCE.md) | D-036 变更前历史人工签核原表 |
@@ -69,7 +71,7 @@
 | [`DATA_PRIVACY.md`](./DATA_PRIVACY.md) | 数据最小化与隐私边界 |
 | [`API.md`](./API.md) | v2 端点总览；v1 接口参考在 [`archive/v1-api.md`](./archive/v1-api.md) |
 | [`GLOSSARY.md`](./GLOSSARY.md) | 术语表（slot、epoch、revision、presentation、金标等） |
-| [`DECISIONS.md`](./DECISIONS.md) | 决策日志（D-001～D-055，倒序：编号越大越新） |
+| [`DECISIONS.md`](./DECISIONS.md) | 决策日志（D-001～D-056，倒序：编号越大越新） |
 
 ### 历史层（只读追溯）
 
@@ -81,7 +83,12 @@
 ```text
 pnpm install --frozen-lockfile   # 安装
 pnpm dev                         # 本地三端；未通过验证的 v2 库会安全停止
+pnpm dev:rehearsal               # 协作者共享的隔离合成排练；首次自动初始化 v2
 pnpm dev:formal                  # 只启动已验证的 backend/.private 正式名单库
+pnpm start:formal                # 服务器生产入口；要求仓库外私有目录与 HTTPS origin
+pnpm deploy:check                # 部署模板与安全开关静态检查
+pnpm test:formal:smoke           # 临时合成 PROTECTED 生产启动/Secure Cookie smoke
+pnpm test:rehearsal:smoke        # 全新临时目录的合成排练首次启动 smoke
 pnpm preview:v2:field            # 现场验收临时 v2 栈（需 $env:DEMO_HOST 可信私网 IPv4）
 pnpm test                        # 单元/集成/API 回归
 pnpm test:v2:e2e                 # 三浏览器 v2 E2E
@@ -92,4 +99,6 @@ pnpm docs:check                  # 文档链接与 DECISIONS 倒序自检
 pnpm db:verify                   # 数据库/种子校验
 pnpm db:v2:upgrade -- --backup <新路径> --confirm SYNTHETIC_DEMO_DATA_IS_DISPOSABLE
 pnpm db:test-accounts:export -- --output <私密新路径.csv> --count 5
+pnpm db:formal:backup -- --database <sqlite> --secret <json> --nfc-map <csv> --output-dir <仓库外新目录> --confirm CREATE_VERIFIED_PROTECTED_BACKUP
+pnpm db:formal:restore -- --bundle-dir <备份目录> --output-dir <仓库外新目录> --confirm MATERIALIZE_VERIFIED_PROTECTED_BACKUP
 ```

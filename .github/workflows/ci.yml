@@ -41,6 +41,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Verify formal deployment package
+        run: pnpm deploy:check && pnpm test:formal:smoke && pnpm test:rehearsal:smoke
+
       - name: Check documentation
         run: pnpm docs:check
 
