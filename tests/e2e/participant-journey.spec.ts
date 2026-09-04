@@ -159,7 +159,7 @@ test('recovers from generic activation failures and safely replays a lost capsul
       .getByRole('button', { name: '提交时光胶囊' })
       .click()
     await expect(participantPage.getByRole('alert')).toContainText(
-      '本地 Demo 服务暂时不可用',
+      '现场服务暂时不可用',
     )
     await participantPage
       .getByRole('button', { name: /^(?:提交|更新)时光胶囊$/u })

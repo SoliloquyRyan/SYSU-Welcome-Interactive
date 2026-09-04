@@ -58,30 +58,41 @@ export default class SanitizedReporter implements Reporter {
 
   onEnd(result: FullResult): void {
     const reportPath = path.resolve('tests', 'reports', 'g3-browser.json')
+    const report = {
+      schemaVersion: 1,
+      startedAt: this.startedAt,
+      finishedAt: new Date().toISOString(),
+      status: result.status,
+      total: this.results.length,
+      environment: {
+        platform: process.platform,
+        release: os.release(),
+        architecture: process.arch,
+        node: process.version,
+        pnpm: pnpmVersion(),
+        playwright: playwrightPackage.version,
+      },
+      tests: this.results,
+    }
     fs.mkdirSync(path.dirname(reportPath), { recursive: true })
     fs.writeFileSync(
       reportPath,
-      `${JSON.stringify(
-        {
-          schemaVersion: 1,
-          startedAt: this.startedAt,
-          finishedAt: new Date().toISOString(),
-          status: result.status,
-          total: this.results.length,
-          environment: {
-            platform: process.platform,
-            release: os.release(),
-            architecture: process.arch,
-            node: process.version,
-            pnpm: pnpmVersion(),
-            playwright: playwrightPackage.version,
-          },
-          tests: this.results,
-        },
-        null,
-        2,
-      )}\n`,
+      `${JSON.stringify(report, null, 2)}\n`,
       'utf8',
     )
+
+    const failed = this.results.filter((test) => test.status !== 'passed' && test.status !== 'skipped')
+    console.log(
+      `sanitized-e2e-summary: status=${result.status}, total=${this.results.length}, failed=${failed.length}`,
+    )
+    for (const test of failed) {
+      console.log(
+        `sanitized-e2e-failure: project=${test.project}, status=${test.status}, title=${JSON.stringify(test.title)}${
+          test.failureCheckpoint
+            ? `, checkpoint=${JSON.stringify(test.failureCheckpoint)}`
+            : ''
+        }`,
+      )
+    }
   }
 }
