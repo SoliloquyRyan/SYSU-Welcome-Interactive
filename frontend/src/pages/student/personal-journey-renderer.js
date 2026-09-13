@@ -11,6 +11,9 @@ import {
   smoothJourneyProgress,
 } from './personal-journey-timeline'
 import { ORBITAL_SIGNAL_PALETTE } from '../../styles/orbital-signal'
+import { drawGalacticPlate, drawStellarAtmosphere, onStellarPlateReady, stellarPlateStatus } from '../../rendering/galactic-medium'
+import { flowCamera, stellarFormation, projectFlowStar, personalStarFormation } from '../../rendering/stellar-flow.js'
+import { createStellarNebulaRenderer } from '../../rendering/stellar-nebula.js'
 
 export {
   PERSONAL_JOURNEY_AMBIENT_CYCLE_MS,
@@ -32,17 +35,17 @@ export const PERSONAL_JOURNEY_SIGNAL_PALETTE = ORBITAL_SIGNAL_PALETTE
 // deterministic, so particles never change color between frames or devices.
 export const PERSONAL_JOURNEY_AMBIENT_COLORS = Object.freeze([
   '#d9efff',
-  '#9fcfff',
-  '#bce8e5',
-  '#fff0cf',
-  '#ffd5bf',
-  '#d6ccff',
+  '#c0ced8',
+  '#d6dfde',
+  '#f0e5cf',
+  '#decfbd',
+  '#cbd0de',
 ])
 
 export const PERSONAL_JOURNEY_GALAXY_CORE_STOPS = Object.freeze([
-  Object.freeze({ offset: 0, color: '#f7fbff', alpha: 0.42 }),
-  Object.freeze({ offset: 0.07, color: '#dbeeff', alpha: 0.3 }),
-  Object.freeze({ offset: 0.2, color: '#8fc5ff', alpha: 0.19 }),
+  Object.freeze({ offset: 0, color: '#f7fbff', alpha: 0.58 }),
+  Object.freeze({ offset: 0.07, color: '#dbeeff', alpha: 0.4 }),
+  Object.freeze({ offset: 0.2, color: '#8fc5ff', alpha: 0.25 }),
   Object.freeze({ offset: 0.46, color: '#527fdc', alpha: 0.08 }),
   Object.freeze({ offset: 0.74, color: '#263f8f', alpha: 0.025 }),
   Object.freeze({ offset: 1, color: '#102454', alpha: 0 }),
@@ -103,6 +106,7 @@ const ORBIT_DUST = Object.freeze(Array.from(
   { length: PERSONAL_JOURNEY_PARTICLE_COUNTS.orbitDust },
   (_, index) => Object.freeze({
     band: index % 4,
+    formation: stellarFormation('phone-dust:'+index),
     baseAngle: seeded(index + 211) * TAU,
     radialNoise: (seeded(index + 239) - 0.5) * 0.09,
     size: 0.55 + seeded(index + 251) * 1.3,
@@ -148,119 +152,8 @@ function mixedRgba(from, to, progress, alpha = 1) {
   return `rgba(${red}, ${green}, ${blue}, ${Math.min(1, Math.max(0, alpha))})`
 }
 
-function imageDimensions(image) {
-  return {
-    width: Number(image?.naturalWidth ?? image?.videoWidth ?? image?.width) || 0,
-    height: Number(image?.naturalHeight ?? image?.videoHeight ?? image?.height) || 0,
-  }
-}
-
-function coverRect(image, width, height) {
-  const source = imageDimensions(image)
-  if (source.width <= 0 || source.height <= 0) return null
-  const scale = Math.max(width / source.width, height / source.height)
-  const drawWidth = source.width * scale
-  const drawHeight = source.height * scale
-  return {
-    x: (width - drawWidth) / 2,
-    y: (height - drawHeight) / 2,
-    width: drawWidth,
-    height: drawHeight,
-  }
-}
-
-function drawSignalAtmosphere(context, width, height, frame) {
-  const center = context.createRadialGradient(
-    width * 0.5,
-    height * 0.38,
-    0,
-    width * 0.5,
-    height * 0.38,
-    Math.max(width, height) * 0.58,
-  )
-  center.addColorStop(0, rgba(ORBITAL_SIGNAL_PALETTE.signal, 0.145 * frame.background.opacity))
-  center.addColorStop(0.34, rgba(ORBITAL_SIGNAL_PALETTE.signal, 0.052 * frame.background.opacity))
-  center.addColorStop(1, rgba(ORBITAL_SIGNAL_PALETTE.midnight, 0))
-  context.fillStyle = center
-  context.fillRect(0, 0, width, height)
-
-  context.save()
-  context.globalCompositeOperation = 'screen'
-  const upper = context.createRadialGradient(
-    width * 0.74,
-    height * 0.08,
-    0,
-    width * 0.74,
-    height * 0.08,
-    width * 0.82,
-  )
-  upper.addColorStop(0, rgba(ORBITAL_SIGNAL_PALETTE.cyan, 0.052 * frame.background.opacity))
-  upper.addColorStop(0.28, rgba(ORBITAL_SIGNAL_PALETTE.signal, 0.042 * frame.background.opacity))
-  upper.addColorStop(1, rgba(ORBITAL_SIGNAL_PALETTE.deep, 0))
-  context.fillStyle = upper
-  context.fillRect(0, 0, width, height)
-
-  const lower = context.createRadialGradient(
-    width * 0.04,
-    height * 0.72,
-    0,
-    width * 0.04,
-    height * 0.72,
-    width * 0.72,
-  )
-  lower.addColorStop(0, rgba(ORBITAL_SIGNAL_PALETTE.signalSoft, 0.043 * frame.background.opacity))
-  lower.addColorStop(0.42, rgba(ORBITAL_SIGNAL_PALETTE.signal, 0.026 * frame.background.opacity))
-  lower.addColorStop(1, rgba(ORBITAL_SIGNAL_PALETTE.midnight, 0))
-  context.fillStyle = lower
-  context.fillRect(0, 0, width, height)
-  context.restore()
-}
-
-function drawNebulaImage(context, image, width, height, frame) {
-  const rectangle = coverRect(image, width, height)
-  if (!rectangle) return false
-
-  context.save()
-  context.translate(
-    width * (0.5 + frame.background.xPercent / 100),
-    height * (0.5 + frame.background.yPercent / 100),
-  )
-  context.scale(frame.background.scale, frame.background.scale)
-  context.translate(-width * 0.5, -height * 0.5)
-  context.globalAlpha = frame.background.opacity
-  if ('filter' in context) {
-    context.filter = `saturate(${frame.background.saturation}) brightness(${frame.background.brightness}) contrast(1.14)`
-  }
-  context.drawImage(image, rectangle.x, rectangle.y, rectangle.width, rectangle.height)
-  context.restore()
-
-  context.save()
-  context.globalCompositeOperation = 'screen'
-  context.translate(
-    width * (0.5 + frame.background.nebulaXPercent / 100),
-    height * (0.5 + frame.background.nebulaYPercent / 100),
-  )
-  context.scale(frame.background.nebulaScale, frame.background.nebulaScale)
-  context.translate(-width * 0.5, -height * 0.5)
-  context.globalAlpha = frame.background.nebulaOpacity
-  if ('filter' in context) context.filter = 'saturate(0.72) contrast(1.18) blur(8px)'
-  context.drawImage(image, rectangle.x, rectangle.y, rectangle.width, rectangle.height)
-  context.restore()
-  return true
-}
-
-function drawBackground(context, image, width, height, frame) {
-  context.save()
-  context.globalCompositeOperation = 'source-over'
-  context.globalAlpha = 1
-  context.fillStyle = ORBITAL_SIGNAL_PALETTE.midnight
-  context.fillRect(0, 0, width, height)
-  if (image) drawNebulaImage(context, image, width, height, frame)
-  // Reduce the lightweight portrait texture to luminance structure, then add
-  // the shared restrained atmosphere. This keeps the D-030 load path small
-  // while preventing violet artwork from becoming a separate visual system.
-  drawSignalAtmosphere(context, width, height, frame)
-  context.restore()
+function drawBackground(context, _image, width, height, frame) {
+  drawStellarAtmosphere(context, width, height, frame.field.orbitElapsedMs / 1000)
 }
 
 function drawFarStars(context, width, height, frame, ambientTimeMs) {
@@ -277,14 +170,15 @@ function drawFarStars(context, width, height, frame, ambientTimeMs) {
   context.save()
   context.globalCompositeOperation = 'screen'
   for (const star of FAR_STARS) {
-    const angle = star.angle + driftTime / 21_000 * (star.depth * 0.55 + 0.12)
-    const radial = star.radius * Math.min(width, height) * radialFactor
+    const angle = star.angle + driftTime / 195_000 * (star.depth * 0.18 + 0.04)
+    const parallax = 1 + Math.sin(driftTime / 37000 + star.depth * 2) * .025 * star.depth
+    const radial = star.radius * Math.max(width, height) * radialFactor * parallax
     const x = centerX + Math.cos(angle) * radial * 1.08
     const y = centerY + Math.sin(angle) * radial * 1.44
-    const alpha = mixJourneyValue(0.04, star.alpha, reveal)
+    const alpha = mixJourneyValue(0.07, star.alpha * .88, reveal)
     context.beginPath()
     context.fillStyle = rgba(star.color, alpha)
-    context.arc(x, y, star.size * mixJourneyValue(0.45, 1, reveal), 0, TAU)
+    context.arc(x, y, star.size * mixJourneyValue(0.35, .58, reveal), 0, TAU)
     context.fill()
   }
   context.restore()
@@ -327,28 +221,14 @@ function drawDiscoveryMotes(context, width, height, frame) {
   context.restore()
 }
 
-function orbitDustProjection(particle, width, height, frame, thetaOffset = 0) {
-  const radii = [0.3, 0.45, 0.63, 0.82]
-  const radius = Math.min(0.94, Math.max(0.2, radii[particle.band] + particle.radialNoise))
-  const cycle = 48_000 + particle.band * 20_000
-  const theta = particle.baseAngle
-    + frame.field.orbitElapsedMs / cycle * TAU * particle.speed
-    + thetaOffset
-  return {
-    ...projectPersonalOrbit({
-      width,
-      height,
-      radius,
-      theta,
-      rotationDegrees: frame.field.rotationDegrees + (particle.band - 1.5) * 1.15,
-      scale: frame.field.scale,
-    }),
-    orbitRadius: radius,
-  }
+function orbitDustProjection(particle,width,height,frame,thetaOffset=0) {
+  const p=projectFlowStar(particle.formation,frame.field.orbitElapsedMs/1000+thetaOffset*4,width,height,true)
+  return { ...p, x:width*.5+(p.x-width*.5)*frame.field.scale, y:height*.435+(p.y-height*.435)*frame.field.scale, depth:particle.band>1?1:-1, orbitRadius:particle.formation.radius }
+
 }
 
 function paintOrbitParticle(context, point, previous, particle, alpha, scale) {
-  const radius = particle.size * (0.62 + scale * 0.38) * (point.depth > 0 ? 1.14 : 0.84)
+  const radius = particle.size * (0.28 + scale * 0.22) * (point.depth > 0 ? 1.14 : 0.84)
   context.strokeStyle = rgba(particle.color, alpha * 0.22)
   context.lineWidth = Math.max(0.45, radius * 0.48)
   context.lineCap = 'round'
@@ -401,76 +281,14 @@ function drawOrbitDust(context, width, height, frame, foreground) {
   context.restore()
 }
 
-function addGalaxyCoreStops(gradient, reveal) {
-  for (const stop of PERSONAL_JOURNEY_GALAXY_CORE_STOPS) {
-    gradient.addColorStop(stop.offset, rgba(stop.color, stop.alpha * reveal))
-  }
-}
-
 function drawGalaxyCore(context, width, height, frame) {
-  if (frame.field.reveal <= 0) return
-  const centerX = width * 0.48
-  const centerY = height * 0.41
-  const reveal = frame.field.reveal
-  const fieldScale = frame.field.scale
-
-  // The luminous galactic disc is drawn in an elliptical coordinate system:
-  // a compact white-blue core, then progressively dimmer blue structure.
-  context.save()
-  context.globalCompositeOperation = 'screen'
-  context.translate(centerX, centerY)
-  context.rotate(frame.field.rotationDegrees * Math.PI / 180)
-  context.scale(fieldScale, fieldScale * 0.35)
-  const discRadius = width * 0.58
-  const disc = context.createRadialGradient(0, 0, 0, 0, 0, discRadius)
-  addGalaxyCoreStops(disc, reveal)
-  context.fillStyle = disc
-  context.fillRect(-discRadius, -discRadius, discRadius * 2, discRadius * 2)
-  context.restore()
-
-  context.save()
-  context.globalCompositeOperation = 'screen'
-  const nucleusRadius = Math.max(12, width * 0.085 * fieldScale)
-  const nucleus = context.createRadialGradient(
-    centerX,
-    centerY,
-    0,
-    centerX,
-    centerY,
-    nucleusRadius,
-  )
-  nucleus.addColorStop(0, rgba('#ffffff', 0.34 * reveal))
-  nucleus.addColorStop(0.16, rgba('#e8f6ff', 0.24 * reveal))
-  nucleus.addColorStop(0.48, rgba('#8fc7ff', 0.09 * reveal))
-  nucleus.addColorStop(1, rgba('#5178db', 0))
-  context.fillStyle = nucleus
-  context.fillRect(0, 0, width, height)
-
-  context.translate(centerX, centerY)
-  context.rotate(frame.field.rotationDegrees * Math.PI / 180)
-  context.setLineDash([2, 13])
-  context.lineCap = 'round'
-  const orbitBands = [
-    { radius: 0.4, alpha: 0.07 },
-    { radius: 0.63, alpha: 0.042 },
-    { radius: 0.84, alpha: 0.024 },
-  ]
-  for (const band of orbitBands) {
-    context.strokeStyle = rgba('#a6d1ff', band.alpha * reveal)
-    context.lineWidth = 0.65
-    context.beginPath()
-    context.ellipse(
-      0,
-      0,
-      width * 0.54 * band.radius * fieldScale,
-      height * 0.18 * band.radius * fieldScale,
-      0,
-      -0.35,
-      Math.PI * 1.48,
-    )
-    context.stroke()
-  }
-  context.restore()
+  drawGalacticPlate(context, width, height, {
+    seconds: frame.field.orbitElapsedMs / 1000,
+    reveal: frame.field.reveal,
+    scale: frame.field.scale,
+    rotation: frame.field.rotationDegrees * Math.PI / 180,
+    personal: true,
+  })
 }
 
 function starIdentity(star) {
@@ -543,57 +361,19 @@ function ownOrbitConfig(ownStar) {
 }
 
 function drawOwnTrail(context, ownStar, color, width, height, frame) {
-  if (frame.field.reveal <= 0) return
-  const orbit = ownOrbitConfig(ownStar)
-  const theta = orbit.angle + frame.field.orbitElapsedMs / orbit.period * TAU
-  const current = projectPersonalOrbit({
-    width,
-    height,
-    radius: orbit.radius,
-    theta,
-    rotationDegrees: frame.field.rotationDegrees,
-    scale: 1,
-  })
-  const previous = projectPersonalOrbit({
-    width,
-    height,
-    radius: orbit.radius,
-    theta: theta - 0.055,
-    rotationDegrees: frame.field.rotationDegrees,
-    scale: 1,
-  })
-  const entry = smoothJourneyProgress(frame.field.orbitElapsedMs / 2_750)
-  const trailAlpha = frame.field.reveal
-    * mixJourneyValue(0.11, 0.026, smoothJourneyProgress((frame.field.orbitElapsedMs - 1_500) / 2_300))
-    * entry
-  const gradient = context.createLinearGradient(previous.x, previous.y, current.x, current.y)
-  gradient.addColorStop(0, rgba(color, 0))
-  gradient.addColorStop(1, rgba(color, trailAlpha))
-
-  context.save()
-  context.globalCompositeOperation = 'screen'
-  context.lineCap = 'round'
-  context.strokeStyle = gradient
-  context.lineWidth = 4
-  context.shadowColor = rgba(color, 0.18)
-  context.shadowBlur = 14
-  context.beginPath()
-  context.moveTo(previous.x, previous.y)
-  context.quadraticCurveTo(
-    (previous.x + frame.hero.x) / 2,
-    (previous.y + frame.hero.y) / 2 - 2,
-    frame.hero.x,
-    frame.hero.y,
-  )
-  context.stroke()
-  context.restore()
+  if (frame.field.reveal < .98 || !['handoff','orbit'].includes(frame.phase) || frame.field.orbitElapsedMs < 2800) return
+  const previous=projectFlowStar(personalStarFormation(ownStar),frame.field.orbitElapsedMs/1000-.65,width,height,true)
+  const gradient=context.createLinearGradient(previous.x,previous.y,frame.hero.x,frame.hero.y)
+  gradient.addColorStop(0,rgba(color,0));gradient.addColorStop(1,rgba(color,.15))
+  context.save();context.globalCompositeOperation='screen';context.strokeStyle=gradient;context.lineWidth=1.3;context.lineCap='round'
+  context.beginPath();context.moveTo(previous.x,previous.y);context.lineTo(frame.hero.x,frame.hero.y);context.stroke();context.restore()
 }
 
 function drawHeroStar(context, color, width, height, frame) {
   if (frame.hero.opacity <= 0 || frame.hero.scale <= 0) return 0
   const scale = frame.hero.scale
-  const haloRadius = Math.max(1.5, 72 * scale * frame.hero.glowScale)
-  const coreRadius = Math.max(0.45, 4.2 * scale)
+  const haloRadius = Math.max(1.5, 92 * scale * frame.hero.glowScale)
+  const coreRadius = Math.max(0.45, 4.8 * scale)
   const gradient = context.createRadialGradient(
     frame.hero.x,
     frame.hero.y,
@@ -623,6 +403,21 @@ function drawHeroStar(context, color, width, height, frame) {
   context.beginPath()
   context.arc(frame.hero.x, frame.hero.y, haloRadius, 0, TAU)
   context.fill()
+  // A fine optical cross gives the same persistent star a readable silhouette.
+  // Its length follows the existing continuous scale, including orbit handoff.
+  const rayLength = 40 * scale
+  context.save()
+  context.translate(frame.hero.x, frame.hero.y)
+  for (const thickness of [0.9, 0.7]) {
+    const ray = context.createLinearGradient(-rayLength, 0, rayLength, 0)
+    ray.addColorStop(0, mixedRgba(DEFAULT_NEUTRAL, color, frame.hero.colorMix, 0))
+    ray.addColorStop(0.5, mixedRgba(DEFAULT_NEUTRAL, color, frame.hero.colorMix, 0.45 * frame.hero.opacity))
+    ray.addColorStop(1, mixedRgba(DEFAULT_NEUTRAL, color, frame.hero.colorMix, 0))
+    context.fillStyle = ray
+    context.fillRect(-rayLength, -thickness / 2, rayLength * 2, thickness)
+    context.rotate(Math.PI / 2)
+  }
+  context.restore()
   context.fillStyle = `rgba(255, 255, 255, ${frame.hero.opacity})`
   context.beginPath()
   context.arc(frame.hero.x, frame.hero.y, coreRadius, 0, TAU)
@@ -665,12 +460,12 @@ function drawOwnStarLabel(context, ownStar, width, height, frame, starRadius) {
   if (!label) return
   context.save()
   context.globalAlpha = label.opacity
-  context.font = '600 9.5px Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif'
+  context.font = '500 10.5px Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif'
   context.textAlign = 'center'
   context.textBaseline = 'middle'
   context.lineJoin = 'round'
-  context.lineWidth = 3
-  context.strokeStyle = 'rgba(1, 4, 12, 0.88)'
+  context.lineWidth = 2
+  context.strokeStyle = 'rgba(5, 9, 14, 0.65)'
   context.fillStyle = rgba('#e7f1ff', 0.92)
   context.strokeText(label.text, label.x, label.y)
   context.fillText(label.text, label.x, label.y)
@@ -698,7 +493,6 @@ export function createPersonalJourneyRenderer(canvas, options = {}) {
     color: options.color ?? DEFAULT_COLOR,
     ownStar: options.ownStar ?? null,
     publicStars: [...(options.publicStars ?? [])].slice(0, MAX_PUBLIC_STARS),
-    nebulaImage: options.nebulaImage ?? null,
   }
   let reduced = Boolean(options.reduced)
   let width = 1
@@ -712,6 +506,8 @@ export function createPersonalJourneyRenderer(canvas, options = {}) {
   let createdAt = now()
   let orbitStartedAt = createdAt
   let lastOwnPosition = null
+  let nebula = null, nebulaFailed = false
+  let pausedAt = options.paused ? now() : null
 
   function settlePhaseWaiters(phase, result) {
     const waiters = phaseWaiters.get(phase)
@@ -782,6 +578,7 @@ export function createPersonalJourneyRenderer(canvas, options = {}) {
 
   function paint(timestamp = now()) {
     if (destroyed) return null
+    timestamp = pausedAt ?? timestamp
     const timeMs = phaseTime(timestamp)
     const frame = resolvePersonalJourneyFrame({
       phase: state.phase,
@@ -794,11 +591,19 @@ export function createPersonalJourneyRenderer(canvas, options = {}) {
     })
     context.setTransform(dpr, 0, 0, dpr, 0, 0)
     context.clearRect(0, 0, width, height)
-    drawBackground(context, state.nebulaImage, width, height, frame)
+    drawBackground(context, null, width, height, frame)
+    canvas.dataset.galaxyMaterial = stellarPlateStatus()
+    if (!reduced && !nebulaFailed && frame.field.reveal > 0) {
+      if (!nebula) { try { nebula=createStellarNebulaRenderer(()=>{nebulaFailed=true},{personal:true}) } catch { nebulaFailed=true } }
+      const seconds=frame.field.orbitElapsedMs/1000
+      const camera=flowCamera(seconds,0,{personal:true,width,height});camera.focal*=frame.field.scale
+      const surface=nebula?.draw(camera,seconds,canvas.width,canvas.height,1,frame.field.reveal)
+      if(surface) { context.drawImage(surface,0,0,width,height);canvas.dataset.galaxyMaterial='flowing-spiral' }
+      else { nebulaFailed=true;drawGalaxyCore(context,width,height,frame) }
+    } else drawGalaxyCore(context,width,height,frame)
     drawFarStars(context, width, height, frame, reduced ? 0 : Math.max(0, timestamp - createdAt))
     drawDiscoveryMotes(context, width, height, frame)
     drawOrbitDust(context, width, height, frame, false)
-    drawGalaxyCore(context, width, height, frame)
     drawPublicStars(context, state.publicStars, state.ownStar, width, height, frame)
     const ownColor = state.ownStar?.color ?? state.color
     drawOwnTrail(context, state.ownStar, ownColor, width, height, frame)
@@ -809,15 +614,16 @@ export function createPersonalJourneyRenderer(canvas, options = {}) {
     return frame
   }
 
+  let lastPaintAt = -Infinity
   function loop(timestamp) {
     if (!running || destroyed) return
     advancePhase(timestamp)
-    paint(timestamp)
+    if (phaseAnimation || timestamp-lastPaintAt >= 1000/30-.7) { paint(timestamp);lastPaintAt=timestamp }
     frameHandle = requestFrame(loop)
   }
 
   function shouldRun() {
-    return !destroyed && !reduced && ownerDocument?.hidden !== true
+    return !destroyed && !reduced && pausedAt === null && ownerDocument?.hidden !== true
   }
 
   function updateLoop() {
@@ -909,21 +715,28 @@ export function createPersonalJourneyRenderer(canvas, options = {}) {
     return api
   }
 
-  function setNebulaImage(image) {
-    state.nebulaImage = image ?? null
-    paint(now())
-    return api
-  }
-
   function setReduced(next) {
     const wasReduced = reduced
     reduced = Boolean(next)
+    if (reduced) { nebula?.destroy(); nebula=null }
     if (reduced) {
       phaseAnimation = null
       state.progress = personalJourneyDuration(state.phase) > 0 ? 1 : state.progress
       if (state.progress >= 1) completeCurrentPhase(wasReduced ? 'static' : 'reduced')
     }
     paint(now())
+    updateLoop()
+    return api
+  }
+
+  function setPaused(next) {
+    if (next && pausedAt === null) pausedAt = now()
+    else if (!next && pausedAt !== null) {
+      const elapsed = now() - pausedAt
+      createdAt += elapsed; orbitStartedAt += elapsed
+      if (phaseAnimation?.startedAt !== null && phaseAnimation) phaseAnimation.startedAt += elapsed
+      pausedAt = null
+    }
     updateLoop()
     return api
   }
@@ -942,7 +755,6 @@ export function createPersonalJourneyRenderer(canvas, options = {}) {
     if (Object.hasOwn(next, 'publicStars')) {
       state.publicStars = [...(next.publicStars ?? [])].slice(0, MAX_PUBLIC_STARS)
     }
-    if (Object.hasOwn(next, 'nebulaImage')) state.nebulaImage = next.nebulaImage ?? null
     lastOwnPosition = null
     paint(now())
     updateLoop()
@@ -977,6 +789,8 @@ export function createPersonalJourneyRenderer(canvas, options = {}) {
     phaseAnimation = null
     if (frameHandle !== null) cancelFrame(frameHandle)
     frameHandle = null
+    nebula?.destroy(); nebula=null
+    stopPlateListener()
     resizeObserver?.disconnect()
     runtimeWindow?.removeEventListener?.('resize', resize)
     ownerDocument?.removeEventListener?.('visibilitychange', updateLoop)
@@ -994,14 +808,15 @@ export function createPersonalJourneyRenderer(canvas, options = {}) {
     setColor,
     setOwnStar,
     setPublicStars,
-    setNebulaImage,
     setReduced,
+    setPaused,
     waitForPhase,
     renderNow,
     resize,
     destroy,
   })
 
+  const stopPlateListener = onStellarPlateReady(() => { if (!destroyed && ownerDocument?.hidden !== true) paint(now()) })
   const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : null
   resizeObserver?.observe(canvas)
   if (!resizeObserver) runtimeWindow?.addEventListener?.('resize', resize)

@@ -45,14 +45,21 @@
     "db:verify": "tsx backend/src/cli/verify.ts",
     "db:reset": "tsx backend/src/cli/reset.ts",
     "db:v2:upgrade": "tsx backend/src/cli/v2-upgrade.ts",
+    "db:v2:catalog-upgrade": "tsx backend/src/cli/program-catalog-upgrade.ts",
+    "db:v2:credits-upgrade": "tsx backend/src/cli/program-credits-upgrade.ts",
+    "db:v2:gift-upgrade": "tsx backend/src/cli/gift-experience-upgrade.ts",
+    "db:v2:live-interaction-upgrade": "tsx backend/src/cli/live-interaction-upgrade.ts",
     "db:v2:verify": "tsx backend/src/cli/v2-verify.ts",
     "db:roster:import": "tsx backend/src/cli/import-protected-roster.ts",
+    "db:roster:star-ids": "tsx backend/src/cli/update-protected-star-ids.ts",
     "db:nfc:finalize": "tsx backend/src/cli/finalize-nfc-map.ts",
     "db:test-accounts:export": "tsx backend/src/cli/export-test-accounts.ts",
     "db:formal:backup": "tsx backend/src/cli/formal-backup.ts",
     "db:formal:restore": "tsx backend/src/cli/formal-restore.ts",
     "docs:check": "node scripts/check-docs.mjs",
-    "deploy:check": "node --check scripts/dev.mjs && node --check scripts/dev-formal.mjs && node --check scripts/dev-rehearsal.mjs && node --check scripts/formal-runtime.mjs && node --check scripts/start-formal.mjs && node --check tests/smoke/run-formal-production-smoke.mjs && node --check tests/smoke/run-rehearsal-first-run-smoke.mjs && node scripts/check-deployment.mjs"
+    "deploy:check": "node --check scripts/dev.mjs && node --check scripts/dev-formal.mjs && node --check scripts/dev-rehearsal.mjs && node --check scripts/formal-runtime.mjs && node --check scripts/start-formal.mjs && node --check tests/smoke/run-formal-production-smoke.mjs && node --check tests/smoke/run-rehearsal-first-run-smoke.mjs && node scripts/check-deployment.mjs",
+    "db:v2:ranking-upgrade": "tsx backend/src/cli/program-ranking-upgrade.ts",
+    "db:v2:awards-upgrade": "tsx backend/src/cli/awards-upgrade.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

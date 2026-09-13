@@ -207,7 +207,7 @@ describe('G2 six-stage participant and screen flow', () => {
       idempotencyKey('first-gift'),
     )
     expect(participant.participant).toMatchObject({
-      powerBalance: 95,
+      powerBalance: 99,
       starlight: 70,
       firstGiftCompleted: true,
       giftCount: 1,
@@ -268,7 +268,7 @@ describe('G2 six-stage participant and screen flow', () => {
     expect(finalParticipant.runtime.stage).toBe(6)
     expect(finalParticipant.archiveAvailable).toBe(true)
     expect(finalParticipant.participant.starlight).toBe(100)
-    expect(finalParticipant.participant.powerBalance).toBe(95)
+    expect(finalParticipant.participant.powerBalance).toBe(99)
 
     const screenResponse = await harness.request({
       method: 'GET',
@@ -284,7 +284,7 @@ describe('G2 six-stage participant and screen flow', () => {
       cooperativeLightCount: 1,
       eligibleParticipantCount: 1,
     })
-    expect(screen.programs.find(({ id }) => id === 'program-001')?.heat).toBe(5)
+    expect(screen.programs.find(({ id }) => id === 'program-001')?.heat).toBe(1)
     expect(screen.publishedBarrages).toHaveLength(1)
     const publicJson = JSON.stringify(screen)
     expect(publicJson).not.toContain(finalParticipant.participant.displayName)

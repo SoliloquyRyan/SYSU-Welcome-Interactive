@@ -69,7 +69,9 @@ describe('D-054 protected roster import', () => {
   it('creates a verified protected v2 directory without putting student IDs in URLs', () => {
     const result = importRoster()
 
-    expect(result).toMatchObject({ participantCount: 2, schemaVersion: 14 })
+    expect(result).toMatchObject({ participantCount: 2, schemaVersion: 21 })
+    expect(database.prepare('SELECT public_star_id FROM synthetic_identities ORDER BY seed_index').pluck().all())
+      .toEqual(['C-0001', 'C-0002'])
     expect(readProtocolRuntime(database)).toMatchObject({
       activeProtocolVersion: '2',
       activationState: 'V2_ACTIVE',
@@ -92,7 +94,7 @@ describe('D-054 protected roster import', () => {
       }),
     ).toMatchObject({
       ready: true,
-      schemaVersion: 14,
+      schemaVersion: 21,
       participantCount: 2,
       resetEpoch: 1,
       issues: [],
@@ -222,6 +224,19 @@ describe('D-054 protected roster import', () => {
         .pluck()
         .get(),
     ).toBe(0)
+    expect(fs.existsSync(secretPath)).toBe(false)
+    expect(fs.existsSync(nfcMapPath)).toBe(false)
+  })
+
+  it('rejects surname-initial collisions before creating a database or credentials', () => {
+    expect(() => importProtectedRoster(database, {
+      schemaVersion: 1, sourceSha256: 'd'.repeat(64), records: [
+        { displayName: '李测试', studentNumber: '26001234' },
+        { displayName: '林测试', studentNumber: '26101234' },
+      ],
+    }, { migrationsPath: MIGRATIONS_PATH, runtimeSecretPath: secretPath, nfcMapPath }))
+      .toThrow(/Duplicate star identifier at roster rows 1 and 2/)
+    expect(database.prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table'").pluck().get()).toBe(0)
     expect(fs.existsSync(secretPath)).toBe(false)
     expect(fs.existsSync(nfcMapPath)).toBe(false)
   })

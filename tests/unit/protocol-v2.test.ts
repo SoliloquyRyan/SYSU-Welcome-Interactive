@@ -22,6 +22,26 @@ import {
 
 const NOW = '2026-08-13T04:00:00.000Z'
 
+function idleLiveInteraction(participant = false) {
+  return {
+    revision: 0,
+    segmentCode: null,
+    phase: 'IDLE' as const,
+    roundNumber: 0,
+    prompt: '',
+    buzzCount: 0,
+    leader: null,
+    voteCandidates: [],
+    totalVotes: 0,
+    resultsVisible: false,
+    ...(participant ? { participation: { hasBuzzed: false, buzzPosition: null, hasVoted: false, votedFor: null } } : {}),
+  }
+}
+
+function emptyClosingRecap() {
+  return { barrageCount: 0, barrages: [], giftTotals: [], totalGiftQuantity: 0, totalGiftPower: 0 }
+}
+
 const CONTRACTS_READY = {
   contractVersion: '2' as const,
   activeRuntimeVersion: '1' as const,
@@ -86,6 +106,8 @@ function needsColorParticipant() {
     firstBarrageRewardedAt: null,
     cooperativeLightAt: null,
     powerBalance: 100,
+    unlockedBarrageStyles: [],
+    programAllowance: 0,
     starlight: 20,
     rewards: [
       {
@@ -126,6 +148,8 @@ function participantSnapshot() {
     currentProgram: null,
     programs: [],
     interaction: { interactionRevision: 0, barragePaused: false, displayBatch: 0 },
+    liveInteraction: idleLiveInteraction(true),
+    closingRecap: emptyClosingRecap(),
     finalRecap: [],
   }
 }
@@ -167,6 +191,8 @@ function screenSnapshot() {
     interaction: { interactionRevision: 0, barragePaused: false, displayBatch: 0 },
     publishedBarrages: [],
     raffle: { displayActive: false, raffleRevision: 0, eligibleCount: 0, remainingCount: 0, winners: [] },
+    liveInteraction: idleLiveInteraction(),
+    closingRecap: emptyClosingRecap(),
     finalRecap: [],
   }
 }
@@ -200,11 +226,13 @@ function adminSnapshot() {
     interaction: { interactionRevision: 0, barragePaused: false, displayBatch: 0 },
     publishedBarrages: [],
     raffle: { displayActive: false, raffleRevision: 0, eligibleCount: 0, remainingCount: 0, winners: [] },
+    liveInteraction: idleLiveInteraction(),
     capsuleCandidates: [],
     lastControlReceipt: null,
     currentProgram: null,
     programs: [],
     finalRecap: [],
+    closingRecap: emptyClosingRecap(),
   }
 }
 
@@ -628,11 +656,18 @@ describe('protocol v2 shared contract', () => {
         interactionRevision: 8,
         gift: {
           giftEventId: 'gift-001', programId: 'program-001', giftId: 'starship',
-          giftName: '星际飞船', createdAt: NOW,
+          giftName: '星际飞船', powerCost: 20, sentCount: 3, createdAt: NOW,
         },
       },
     }
     expect(V2RealtimeEventEnvelopeSchema.safeParse(giftEvent).success).toBe(true)
+    expect(V2RealtimeEventEnvelopeSchema.safeParse({
+      ...giftEvent,
+      payload: {
+        ...giftEvent.payload,
+        gift: { ...giftEvent.payload.gift, powerCost: 50, sentCount: undefined },
+      },
+    }).success).toBe(true)
     expect(V2RealtimeEventEnvelopeSchema.safeParse({
       ...giftEvent,
       payload: {

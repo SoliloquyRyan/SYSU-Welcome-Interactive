@@ -1,4 +1,5 @@
 <script setup>
+import { createGiftFlightQueue } from "../../rendering/gift-flight-queue"
 import {
   computed,
   nextTick,
@@ -7,6 +8,7 @@ import {
   ref,
   watch,
 } from 'vue'
+import { useBuzzerCountdown } from '../../composables/useBuzzerCountdown'
 import { useReducedMotion } from '../../composables/useReducedMotion'
 import { useV2ParticipantRealtime } from '../../composables/useV2ParticipantRealtime'
 import {
@@ -25,9 +27,22 @@ import {
   starTemperatureColor,
 } from '../../services/star-temperature'
 import collegeWordmarkUrl from '../../assets/brand/sysu-intelligent-engineering-white.png'
+import '../../styles/mobile-font.css'
 import GiftSignalIcon from './GiftSignalIcon.vue'
 import PersonalJourneyStage from './PersonalJourneyStage.vue'
+import ProgramStageBackground from '../../components/ProgramStageBackground.vue'
+import MobileProgramOpening from './MobileProgramOpening.vue'
+import { createMobileProgramOpeningGate } from '../../rendering/mobile-program-opening'
+import PersonalMemento from './PersonalMemento.vue'
+import OpeningMusic from './OpeningMusic.vue'
+import MobileBarrage from './MobileBarrage.vue'
+import GiftStarshipFlight from '../../components/GiftStarshipFlight.vue'
+import { CINEMA_TIMING } from '../../rendering/cinema-timing'
+import { BARRAGE_COLORS, barragePaint } from '../../services/barrage-colors'
+import { programCredits } from '../../services/program-credits'
+import { interactionLabel } from '../../services/interaction-label'
 import SignalTypeTitle from './SignalTypeTitle.vue'
+
 import { PERSONAL_JOURNEY_PHASES } from './personal-journey-renderer'
 import {
   COLOR_CONFIRM_CINEMATIC_DURATION_MS,
@@ -48,6 +63,8 @@ import {
   visibleCharacterCount,
 } from './v2-mobile-state'
 
+const protectedRuntime = import.meta.env.VITE_DATA_PROFILE === 'PROTECTED'
+
 const props = defineProps({
   capability: { type: Object, required: true },
 })
@@ -61,7 +78,6 @@ const PROGRAM_STATE_LABELS = Object.freeze({
 })
 const ARCHIVE_METRIC_HELP = Object.freeze({
   power: '动力是可用于节目礼物的现场额度；送礼会扣减，初始额度由活动统一发放。',
-  starlight: '星光记录你完成入场与现场互动的成长进度；它只累计，不用于支付。',
 })
 
 const root = ref(null)
@@ -69,12 +85,54 @@ const journeyStage = ref(null)
 const snapshot = ref(null)
 const entryState = ref('checking')
 const activeTab = ref('scene')
+const colorPickerOpen = ref(false)
+const mainDockBody = ref(null)
+const tabScroll = {}
 const cinematic = ref('')
+const mobileProgramOpening = ref(false)
+const pageHidden = ref(document.hidden)
+const mobileOpeningGate = createMobileProgramOpeningGate()
+function finishMobileProgramOpening() { mobileProgramOpening.value = false }
 const displayName = ref('')
 const studentNumber = ref('')
 const colorKelvin = ref(STAR_TEMPERATURE_DEFAULT)
+const liveBarrages = ref([])
+const giftFlights = ref([])
+const giftAnnouncement = ref('')
+const giftFlightQueue = createGiftFlightQueue({
+  duration: () => reducedMotion.value ? CINEMA_TIMING.starshipStaticMs : CINEMA_TIMING.starshipPhoneMs + 200,
+  gap: CINEMA_TIMING.starshipGapMs,
+  onChange: flight => {
+    giftFlights.value = flight ? [flight] : []
+    giftAnnouncement.value = flight ? '星舰 ×' + flight.quantity : ''
+  },
+})
+const seenGiftFlights = new Set()
+function clearLiveBarrages() {
+  liveBarrages.value = []
+}
+function removeLiveBarrage(id) {
+  liveBarrages.value = liveBarrages.value.filter(item => item.barrageId !== id)
+}
+function clearGiftFlights() {
+  giftFlightQueue.clear()
+}
+function launchGiftFlight(gift) {
+  if (snapshot.value?.stage?.mode && snapshot.value.stage.mode !== 'PROGRAM' || runtime.value?.status !== 'RUNNING' || runtime.value?.currentScene !== 'PROGRAM_SUPPORT' || snapshot.value?.presentation?.type !== 'NONE' || currentProgram.value?.id !== gift.programId) return
+  if (document.hidden || gift.showStarship !== true || gift.giftId !== 'gift-starship' || seenGiftFlights.has(gift.giftEventId)) return
+  colorPickerOpen.value = false
+  seenGiftFlights.add(gift.giftEventId)
+  if (seenGiftFlights.size > 128) seenGiftFlights.delete(seenGiftFlights.values().next().value)
+  const flight = { id: gift.giftEventId, quantity: gift.quantity ?? 1 }
+  giftFlightQueue.enqueue(flight)
+}
+const barrageColor = ref('white')
 const barrageDraft = ref('')
-const barrageConsent = ref(false)
+const barrageConfirmOpen = ref(false)
+const barrageConfirmCancel = ref(null)
+const barrageSend = ref(null)
+const giftQuantity = ref(1)
+const voteChoice = ref('')
 const dockTextInputFocused = ref(false)
 const giftOpen = ref(false)
 const logoutOpen = ref(false)
@@ -100,6 +158,21 @@ let cinematicTimer = null
 let cinematicResolve = null
 let discoveryVisibilityCancel = null
 let mounted = false
+let titleObserver = null
+/* Title measurement is installed below the computed copy. */
+const observeTitle = async () => {
+  await nextTick()
+  titleObserver?.disconnect()
+  const title = root.value?.querySelector('.scene-copy')
+  if (!title) return
+  const measure = () => {
+    if (root.value) root.value.style.setProperty('--content-top', (title.getBoundingClientRect().bottom - root.value.getBoundingClientRect().top + 12) + 'px')
+  }
+  titleObserver = new ResizeObserver(measure)
+  titleObserver.observe(title)
+  measure()
+}
+
 let busyOwner = null
 let sessionGeneration = 0
 let snapshotRequestSequence = 0
@@ -115,10 +188,15 @@ const runtime = computed(() => snapshot.value?.runtime ?? null)
 const admitted = computed(() => participant.value?.onboardingState === 'ADMITTED')
 const completed = computed(() => runtime.value?.status === 'COMPLETED')
 const navigationAvailable = computed(() => admitted.value || completed.value)
-const modalOpen = computed(() => giftOpen.value || logoutOpen.value)
+const modalOpen = computed(() => giftOpen.value || logoutOpen.value || barrageConfirmOpen.value)
 const headerUnavailable = computed(() => modalOpen.value || Boolean(cinematic.value))
 const sceneCopy = computed(() => mobileSceneCopy(snapshot.value))
 const currentProgram = computed(() => snapshot.value?.currentProgram ?? null)
+const liveInteraction = computed(() => snapshot.value?.liveInteraction ?? null)
+const buzzerCountdown = useBuzzerCountdown(liveInteraction, computed(() => snapshot.value?.generatedAt))
+const selectedGiftId = ref('gift-glimmer')
+const selectedGift = computed(() => currentProgram.value?.giftCatalog?.find(g => g.id === selectedGiftId.value))
+const giftTotal = computed(() => (selectedGift.value?.powerCost ?? 0) * giftQuantity.value)
 const nextProgram = computed(() => snapshot.value?.programs?.find(({ state }) => state === 'NEXT') ?? null)
 const viewCopy = computed(() => {
   if (activeTab.value === 'programs') {
@@ -127,32 +205,47 @@ const viewCopy = computed(() => {
       title: '节目单',
       subtitle: currentProgram.value
         ? `正在进行：${currentProgram.value.title}`
-        : '查看现场节目顺序与当前进度。',
+        : '',
     }
   }
   if (activeTab.value === 'archive') {
     return {
       kicker: '个人记录',
       title: '星际档案',
-      subtitle: `${participantDisplayName.value} · ${personalStarCode.value}`,
+      subtitle: '',
     }
+  }
+  if (runtime.value?.status === 'RUNNING' && runtime.value?.currentScene === 'PROGRAM_SUPPORT') {
+    if (snapshot.value?.stage?.mode === 'HOST' && currentProgram.value?.kind !== 'SPEECH') return { kicker: '迎新之夜', title: '此刻，共赴新程', subtitle: '' }
+    return { kicker: snapshot.value?.presentation.type === 'RAFFLE' ? '互动环节二' : '正在现场', title: snapshot.value?.presentation.type === 'RAFFLE' ? '上台观众，即将揭晓' : currentProgram.value?.title ?? '等待节目', subtitle: snapshot.value?.presentation.type === 'RAFFLE' ? '抬头看向大屏，等待本轮上台观众公布。' : currentProgram.value ? programCredits(currentProgram.value) || '' : '' }
   }
   return {
     kicker: runtime.value?.status === 'COMPLETED' ? '活动终章' : '现场信号',
     title: sceneCopy.value.title,
+    displayTitle: completed.value ? '今夜的星河，\n已经成形' : sceneCopy.value.title,
     subtitle: sceneCopy.value.subtitle,
   }
 })
+watch([viewCopy, visualHeight], observeTitle)
 const viewRevealKey = computed(() => [
   activeTab.value,
   runtime.value?.status ?? 'UNKNOWN',
   runtime.value?.currentScene ?? 'READY',
 ].join(':'))
 const selectedColor = computed(() => starTemperatureColor(colorKelvin.value))
+const selectedBarrageStyle = computed(() => BARRAGE_COLORS.find(({ id }) => id === barrageColor.value) ?? BARRAGE_COLORS[0])
+const premiumBarrageNeedsUnlock = computed(() => selectedBarrageStyle.value.cost > 0
+  && !participant.value?.unlockedBarrageStyles?.includes(selectedBarrageStyle.value.id))
+function barrageSwatch(color) { return color.personal ? selectedColor.value : color.paint }
+const temperatureSpectrum = [2400, 3600, 5000, 6500, 9000, 12000]
+  .map((kelvin) => `${starTemperatureColor(kelvin)} ${((kelvin - STAR_TEMPERATURE_MIN) / (STAR_TEMPERATURE_MAX - STAR_TEMPERATURE_MIN)) * 100}%`)
+  .join(', ')
 const discoveryActive = computed(() =>
   cinematic.value === 'discovery-pending' || cinematic.value === 'discovering',
 )
 const welcomeStyle = computed(() => ({
+  '--selected-color': selectedColor.value,
+  '--temperature-spectrum': `linear-gradient(90deg, ${temperatureSpectrum})`,
   '--discovery-duration': `${DISCOVERY_CINEMATIC_DURATION_MS}ms`,
   '--color-confirm-duration': `${COLOR_CONFIRM_CINEMATIC_DURATION_MS}ms`,
   '--orbit-handoff-duration': `${ORBIT_HANDOFF_CINEMATIC_DURATION_MS}ms`,
@@ -161,12 +254,12 @@ const welcomeStyle = computed(() => ({
 const ownPublicStar = computed(() => snapshot.value?.publicStars?.find(
   ({ publicStarId }) => publicStarId === participant.value?.ownPublicStarId,
 ) ?? null)
-const journeyOwnStar = computed(() => ({
+const journeyOwnStar = computed(() => snapshot.value ? ({
   id: personalStarCode.value,
-  label: personalStarCode.value,
+  label: activeTab.value === 'scene' ? personalStarCode.value : '',
   formationSlot: ownPublicStar.value?.formationSlot ?? personalStarCode.value,
   color: selectedColor.value,
-}))
+}) : null)
 const archiveMetricMessage = computed(() => ARCHIVE_METRIC_HELP[archiveMetricHelp.value] ?? '')
 const journeyPhase = computed(() => {
   if (cinematic.value === 'discovery-pending' || cinematic.value === 'discovering') {
@@ -179,20 +272,25 @@ const journeyPhase = computed(() => {
   return PERSONAL_JOURNEY_PHASES.ORBIT
 })
 const journeyPlaying = computed(() => ['discovering', 'color-confirm', 'orbit-handoff'].includes(cinematic.value))
+const programBackgroundVisible = computed(() => admitted.value && !completed.value
+  && runtime.value?.currentScene === 'PROGRAM_SUPPORT' && !journeyPlaying.value)
 const galaxyCapacityValid = computed(() => (snapshot.value?.publicStars?.length ?? 0) <= 300)
 const connectionMessage = computed(() => {
+  // COMPLETED intentionally closes realtime. The memento carries the durable
+  // end state; intentional suspension must not look like a connection fault.
+  if (completed.value) return ''
   if (!snapshot.value || realtime.state.value === 'online') return ''
   if (realtime.state.value === 'offline') return '设备已离线；未确认的内容不会自动提交。'
   if (realtime.lastError.value) return realtime.lastError.value
   return ['syncing', 'reconnecting'].includes(realtime.state.value)
-    ? '正在同步权威状态…'
+    ? '正在恢复连接，请稍候…'
     : ''
 })
 const colorConnectionMessage = computed(() => {
-  if (realtime.state.value === 'online') return '权威状态已同步，可以确认星色。'
+  if (realtime.state.value === 'online') return ''
   if (realtime.state.value === 'offline') return '设备已离线；恢复连接后才能确认星色。'
   if (realtime.lastError.value) return realtime.lastError.value
-  if (['syncing', 'reconnecting'].includes(realtime.state.value)) return '正在同步权威状态…'
+  if (['syncing', 'reconnecting'].includes(realtime.state.value)) return '正在恢复连接，请稍候…'
   return '身份已保存，正在建立实时连接…'
 })
 const writesReady = computed(() =>
@@ -203,14 +301,15 @@ const writesReady = computed(() =>
 const giftInteractionReady = computed(() =>
   writesReady.value &&
   actionAllowed(snapshot.value, 'SEND_GIFT') &&
-  Boolean(currentProgram.value),
+  Boolean(currentProgram.value && currentProgram.value.kind === 'PERFORMANCE' && currentProgram.value.giftsEnabled !== false),
 )
 const giftAvailabilityMessage = computed(() => {
   if (runtime.value?.status === 'PAUSED') return '现场已暂停，暂时不能送礼物。'
   if (runtime.value?.status === 'COMPLETED') return '本场活动已结束，礼物互动已经关闭。'
   if (realtime.state.value !== 'online') {
-    return connectionMessage.value || '正在恢复权威状态，暂时不能送礼物。'
+    return connectionMessage.value || '正在恢复连接，暂时不能送礼物。'
   }
+  if (currentProgram.value && currentProgram.value.kind !== 'PERFORMANCE') return '互动环节不接收礼物，请按主持人和互动面板的现场说明参与。'
   if (!currentProgram.value || !actionAllowed(snapshot.value, 'SEND_GIFT')) {
     return '当前节目暂不接收礼物。'
   }
@@ -220,6 +319,28 @@ const dockExpanded = computed(() =>
   activeTab.value !== 'scene',
 )
 const barrageLength = computed(() => visibleCharacterCount(barrageDraft.value))
+const currentProgramGiftSummary = computed(() =>
+  currentProgram.value?.giftCatalog?.filter(({ sentCount }) => sentCount > 0) ?? [],
+)
+const archiveGiftQuantity = computed(() =>
+  participant.value?.giftHistory?.reduce((total, item) => total + item.quantity, 0) ?? 0,
+)
+
+function formatArchiveTime(value) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(value))
+}
+
+function applyGiftEvent(gift) {
+  if (currentProgram.value?.id === gift.programId) {
+    const catalogGift = currentProgram.value.giftCatalog?.find(item => item.id === gift.giftId)
+    if (catalogGift) catalogGift.sentCount = Math.max(catalogGift.sentCount ?? 0, gift.sentCount ?? (catalogGift.sentCount ?? 0) + 1)
+  }
+  launchGiftFlight(gift)
+}
 
 function syncVisualViewport() {
   const height = window.visualViewport?.height ?? window.innerHeight
@@ -277,7 +398,8 @@ function abortSnapshotRequests() {
 
 function clearSensitiveDrafts() {
   barrageDraft.value = ''
-  barrageConsent.value = false
+  barrageConfirmOpen.value = false
+  voteChoice.value = ''
 }
 
 function cancelDiscoveryVisibilityWait() {
@@ -348,6 +470,10 @@ function waitForStableDocumentVisibility() {
 }
 
 function clearSession() {
+  finishMobileProgramOpening()
+  clearLiveBarrages()
+  clearGiftFlights()
+  seenGiftFlights.clear()
   abortSnapshotRequests()
   realtime.stop()
   snapshot.value = null
@@ -368,6 +494,7 @@ function clearSession() {
   toastTimer = null
   finishCinematic()
   giftOpen.value = false
+  barrageConfirmOpen.value = false
   logoutOpen.value = false
   dockTextInputFocused.value = false
   busyOwner = null
@@ -377,6 +504,18 @@ function clearSession() {
 
 function putSnapshot(next) {
   const previous = snapshot.value
+  const resetLiveContent = !previous || (previous.resetEpoch !== next.resetEpoch || previous.runtime.status !== next.runtime.status || previous.runtime.currentScene !== next.runtime.currentScene || previous.presentation.type !== next.presentation.type)
+  if (previous && resetLiveContent) {
+    clearLiveBarrages()
+    clearGiftFlights()
+  }
+  if (resetLiveContent || liveBarrages.value.length === 0) {
+    liveBarrages.value = [...(next.publishedBarrages ?? [])]
+  }
+  if (previous?.resetEpoch !== next.resetEpoch) seenGiftFlights.clear()
+  if (previous?.liveInteraction?.roundNumber !== next.liveInteraction?.roundNumber || next.liveInteraction?.phase !== 'VOTE_OPEN') {
+    voteChoice.value = ''
+  }
   snapshot.value = next
   if (next.participant.colorTemperatureKelvin !== null) {
     colorKelvin.value = next.participant.colorTemperatureKelvin
@@ -409,7 +548,7 @@ async function refreshSnapshot() {
         persistentError.value = '活动已重置，请重新核验。'
         return null
       }
-      persistentNotice.value = '已忽略一份晚到的旧状态，页面继续保留较新的权威进度。'
+      persistentNotice.value = '已保留你最新的进度。'
       return snapshot.value
     }
     snapshotCommitSequence = requestSequence
@@ -429,13 +568,27 @@ async function refreshSnapshot() {
 async function onPublicEvent(frame) {
   const current = snapshot.value
   if (!current) return
-  current.publicSeq = frame.streamSeq
+  current.publicSeq = Math.max(current.publicSeq, frame.streamSeq)
   const payload = frame.payload
   if (frame.name === 'runtime.changed') {
-    await refreshSnapshot()
+    const playOpening = mobileOpeningGate.consume({
+      previous: current.runtime, next: payload.runtime, resetEpoch: frame.resetEpoch,
+      online: realtime.state.value === 'online', admitted: admitted.value,
+      reduced: reducedMotion.value, hidden: document.hidden, cinematic: cinematic.value,
+      presentation: current.presentation.type,
+    })
+    const next = await refreshSnapshot()
+    if (playOpening && mounted && next?.runtime.runRevision === payload.runtime.runRevision
+      && next.runtime.currentScene === 'PROGRAM_SUPPORT' && next.runtime.status === 'RUNNING'
+      && next.presentation.type === 'NONE' && realtime.state.value === 'online'
+      && admitted.value && !reducedMotion.value && !document.hidden && !cinematic.value) {
+      mobileProgramOpening.value = true
+    }
     return
   }
   if (frame.name === 'presentation.changed') {
+    toast.value = ''
+    colorPickerOpen.value = false
     current.presentation = payload.presentation
     current.presentationRevision = payload.presentationRevision
   } else if (frame.name === 'star.node.upserted') {
@@ -443,15 +596,46 @@ async function onPublicEvent(frame) {
   } else if (frame.name === 'aggregate.changed') {
     current.aggregate = payload.aggregate
     current.aggregateRevision = payload.aggregateRevision
+  } else if (frame.name === 'barrage.published') {
+    if (!document.hidden && current.runtime.status === 'RUNNING' && current.runtime.currentScene === 'PROGRAM_SUPPORT' && current.presentation.type === 'NONE' && !liveBarrages.value.some(({ barrageId }) => barrageId === payload.barrage.barrageId)) {
+      while (liveBarrages.value.length >= 100) removeLiveBarrage(liveBarrages.value[0].barrageId)
+      liveBarrages.value.push(payload.barrage)
+    }
+  } else if (frame.name === 'barrage.removed') {
+    payload.barrageIds.forEach(removeLiveBarrage)
+  } else if (frame.name === 'barrage.cleared') {
+    clearLiveBarrages()
   } else if (frame.name === 'barrage.pause.changed') {
     current.interaction.interactionRevision = payload.interactionRevision
     current.interaction.barragePaused = payload.paused
+  } else if (frame.name === 'gift.sent') {
+    // A fresh command snapshot may already include this gift (or later gifts).
+    // Deliver its visual without moving counts or interaction revision backwards.
+    const stateIsNewer = current.interaction.interactionRevision > payload.interactionRevision
+    current.interaction.interactionRevision = Math.max(current.interaction.interactionRevision, payload.interactionRevision)
+    if (stateIsNewer) launchGiftFlight(payload.gift)
+    else applyGiftEvent(payload.gift)
   } else if (frame.name === 'program.changed') {
+    const beforeId = current.currentProgram?.id
+    const beforeMode = current.stage?.mode
     await refreshSnapshot()
+    if (beforeId !== snapshot.value?.currentProgram?.id || beforeMode !== snapshot.value?.stage?.mode) { clearGiftFlights(); giftOpen.value = false }
+  } else if (frame.name === 'live.interaction.changed') {
+    const previousRound = current.liveInteraction?.roundNumber
+    const previousPhase = current.liveInteraction?.phase
+    await refreshSnapshot()
+    const next = snapshot.value?.liveInteraction
+    if (next?.roundNumber !== previousRound || next?.phase !== previousPhase || next?.participation?.hasVoted) {
+      voteChoice.value = ''
+    }
   }
 }
 
 const realtime = useV2ParticipantRealtime({ snapshot, refresh: refreshSnapshot, onPublicEvent })
+watch(() => [runtime.value?.status, runtime.value?.currentScene, snapshot.value?.presentation.type, realtime.state.value], () => {
+  if (runtime.value?.status !== 'RUNNING' || runtime.value?.currentScene !== 'PROGRAM_SUPPORT'
+    || snapshot.value?.presentation.type !== 'NONE' || realtime.state.value !== 'online') finishMobileProgramOpening()
+})
 
 function definitive(error) {
   return error instanceof ApiError && error.status >= 400 && error.status < 500
@@ -482,7 +666,7 @@ async function acceptActivation(response, activationSession) {
   if (!galaxyCapacityValid.value) {
     realtime.suspend('星系容量数据异常，已停止写入。')
   } else if (response.snapshot.runtime.status === 'COMPLETED') {
-    realtime.suspend('本场活动已结束；互动事实已经冻结。')
+    realtime.suspend('本场活动已结束，你的记录已保存。')
   } else {
     // Synchronization is authoritative recovery, not presentation. Start it
     // immediately so the 2.8s camera never delays current state or writes.
@@ -613,7 +797,7 @@ async function runCommand(command, fields, successMessage) {
       try {
         await refreshSnapshot()
         if (runtime.value?.status === 'COMPLETED') {
-          realtime.suspend('本场活动已结束；互动事实已经冻结。')
+          realtime.suspend('本场活动已结束，你的记录已保存。')
         }
       } catch (refreshError) {
         if (refreshError instanceof ApiError && ['AUTH_REQUIRED', 'STALE_RESET_EPOCH'].includes(refreshError.code)) {
@@ -671,20 +855,53 @@ async function cooperativeLight() {
   await runCommand('COOPERATIVE_LIGHT', {}, '你已完成协同点亮。')
 }
 
-async function postBarrage() {
+async function postBarrage(premiumConfirmed = false) {
   if (!barrageDraft.value.trim() || barrageLength.value > 40) {
     persistentError.value = '请输入 1–40 个可见字符的弹幕。'
     return
   }
-  if (!barrageConsent.value) {
-    persistentError.value = '请先确认弹幕会匿名公开上屏。'
+  if (premiumBarrageNeedsUnlock.value && !premiumConfirmed) {
+    if ((participant.value?.powerBalance ?? 0) < 10) {
+      persistentError.value = '动力不足，暂时不能解锁这款高级弹幕。'
+      return
+    }
+    persistentError.value = ''
+    barrageConfirmOpen.value = true
+    colorPickerOpen.value = false
+    document.activeElement?.blur?.()
+    await nextTick()
+    barrageConfirmCancel.value?.focus({ preventScroll: true })
     return
   }
-  const next = await runCommand('POST_BARRAGE', { text: barrageDraft.value.trim() }, '匿名弹幕已送往现场。')
+  const next = await runCommand('POST_BARRAGE', { text: barrageDraft.value.trim(), colorStyle: barrageColor.value }, '弹幕已送往现场。')
   if (next) {
     barrageDraft.value = ''
-    barrageConsent.value = false
+    await nextTick()
+    if (!compactKeyboard.value) window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }
+}
+
+async function confirmPremiumBarrage() {
+  barrageConfirmOpen.value = false
+  await postBarrage(true)
+  await nextTick()
+  if (mounted) barrageSend.value?.focus({ preventScroll: true })
+}
+
+async function closePremiumBarrage() {
+  barrageConfirmOpen.value = false
+  await nextTick()
+  barrageSend.value?.focus({ preventScroll: true })
+}
+
+async function buzzIn() {
+  await runCommand('BUZZ_IN', {}, '已提交')
+}
+
+async function castAudienceVote() {
+  if (!voteChoice.value) return
+  const next = await runCommand('CAST_AUDIENCE_VOTE', { candidateStarId: voteChoice.value }, '已投票')
+  if (next) voteChoice.value = ''
 }
 
 async function sendGift(gift) {
@@ -692,22 +909,27 @@ async function sendGift(gift) {
   const next = await runCommand('SEND_GIFT', {
     programId: currentProgram.value.id,
     giftId: gift.id,
-  }, `${gift.name}已送出。`)
-  if (next) await closeGift()
+    quantity: giftQuantity.value,
+  }, `${gift.name} × ${giftQuantity.value} 已送出。`)
+  if (next) { giftQuantity.value = 1; await closeGift() }
 }
 
 async function openGift() {
   document.activeElement?.blur?.()
+  colorPickerOpen.value = false
+  selectedGiftId.value = currentProgram.value?.giftCatalog?.[0]?.id ?? 'gift-glimmer'
   giftOpen.value = true
+  giftQuantity.value = 1
   await nextTick()
   giftClose.value?.focus()
 }
 
 async function closeGift(restore = true) {
   giftOpen.value = false
+  giftQuantity.value = 1
   if (restore) {
     await nextTick()
-    giftTrigger.value?.focus()
+    giftTrigger.value?.focus({ preventScroll: true })
   }
 }
 
@@ -723,7 +945,7 @@ async function closeLogout(restore = true) {
   logoutOpen.value = false
   if (restore) {
     await nextTick()
-    logoutTrigger.value?.focus()
+    logoutTrigger.value?.focus({ preventScroll: true })
   }
 }
 
@@ -764,15 +986,23 @@ function trapDialog(event) {
 
 function onEscape(event) {
   if (event.key !== 'Escape') return
+  finishMobileProgramOpening()
   if (logoutOpen.value) void closeLogout()
   else if (giftOpen.value) void closeGift()
+  else if (barrageConfirmOpen.value) void closePremiumBarrage()
   else archiveMetricHelp.value = ''
 }
 
 function selectTab(tab) {
   if (!navigationAvailable.value) return
   if (tab !== 'archive') archiveMetricHelp.value = ''
+  if (mainDockBody.value) tabScroll[activeTab.value] = mainDockBody.value.scrollTop
+  colorPickerOpen.value = false
   activeTab.value = tab
+  void nextTick(() => {
+    if (mainDockBody.value) mainDockBody.value.scrollTop = tabScroll[tab] ?? 0
+    if (!compactKeyboard.value) window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  })
 }
 
 function toggleArchiveMetricHelp(metric) {
@@ -784,10 +1014,12 @@ function programStateLabel(state) {
 }
 
 watch(() => runtime.value?.currentScene, (next, previous) => {
+  toast.value = ''
+  colorPickerOpen.value = false
   const focused = document.activeElement
   if (previous === 'PROGRAM_SUPPORT' && next !== 'PROGRAM_SUPPORT') {
     barrageDraft.value = ''
-    barrageConsent.value = false
+    barrageConfirmOpen.value = false
     dockTextInputFocused.value = false
     giftOpen.value = false
   }
@@ -799,18 +1031,25 @@ watch(() => runtime.value?.currentScene, (next, previous) => {
 })
 
 watch(() => runtime.value?.status, (next, previous) => {
+  toast.value = ''
   if (next === 'COMPLETED' && previous !== 'COMPLETED') {
     finishCinematic()
-    realtime.suspend('本场活动已结束；互动事实已经冻结。')
+    realtime.suspend('本场活动已结束，你的记录已保存。')
     void nextTick(() => sceneHeading.value?.focus())
   }
 })
 
 watch(reducedMotion, (next) => {
-  if (next) finishCinematic()
+  if (next) { finishCinematic(); finishMobileProgramOpening() }
 })
 
 function onVisibilityChange() {
+  pageHidden.value = document.hidden
+  if (document.hidden) {
+    finishMobileProgramOpening()
+    clearLiveBarrages()
+    clearGiftFlights()
+  }
   if (document.hidden && shouldFinishCinematicOnHidden(cinematic.value)) {
     finishCinematic()
   }
@@ -831,7 +1070,7 @@ onMounted(async () => {
     if (!galaxyCapacityValid.value) {
       realtime.suspend('星系容量数据异常，已停止写入。')
     } else if (runtime.value?.status === 'COMPLETED') {
-      realtime.suspend('本场活动已结束；互动事实已经冻结。')
+      realtime.suspend('本场活动已结束，你的记录已保存。')
     } else {
       await realtime.connect()
     }
@@ -857,6 +1096,10 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  finishMobileProgramOpening()
+  titleObserver?.disconnect()
+  clearLiveBarrages()
+  clearGiftFlights()
   mounted = false
   abortSnapshotRequests()
   if (toastTimer !== null) clearTimeout(toastTimer)
@@ -876,6 +1119,8 @@ onBeforeUnmount(() => {
     class="v2-welcome"
     :class="{
       'is-keyboard': compactKeyboard && dockTextInputFocused,
+      'is-content-page': navigationAvailable && (activeTab !== 'scene' || runtime?.currentScene === 'PROGRAM_SUPPORT'),
+      'is-live-chat': admitted && activeTab === 'scene' && runtime?.currentScene === 'PROGRAM_SUPPORT' && runtime?.status === 'RUNNING' && snapshot?.presentation.type === 'NONE',
       'is-onboarding': snapshot && !admitted,
       'is-completed': runtime?.status === 'COMPLETED',
       'is-discovery-active': discoveryActive,
@@ -886,15 +1131,29 @@ onBeforeUnmount(() => {
     }"
     :style="welcomeStyle"
     data-visual-palette="orbital-signal-spectrum"
+    :data-program-opening="mobileProgramOpening ? 'playing' : 'settled'"
   >
+    <OpeningMusic :scene="runtime?.currentScene" :status="runtime?.status" />
     <PersonalJourneyStage
+      v-if="!programBackgroundVisible"
       ref="journeyStage"
       :phase="journeyPhase"
       :playing="journeyPlaying"
       :reduced="reducedMotion"
+      :paused="pageHidden || runtime?.status === 'PAUSED'"
       :color="selectedColor"
       :own-star="journeyOwnStar"
     />
+    <ProgramStageBackground v-else compact :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED'" />
+    <MobileProgramOpening v-if="mobileProgramOpening && programBackgroundVisible" @finish="finishMobileProgramOpening" />
+    <GiftStarshipFlight
+      v-for="flight in giftFlights"
+      :key="flight.id"
+      surface="phone"
+      :quantity="flight.quantity"
+      :reduced="reducedMotion"
+    />
+    <span class="sr-only" aria-live="assertive">{{ giftAnnouncement }}</span>
 
     <header
       class="v2-welcome__header"
@@ -986,7 +1245,6 @@ onBeforeUnmount(() => {
             :animate="titleMotionEnabled && !discoveryActive"
             :reduced="reducedMotion"
           />
-          <p>确认后本场不可更改，它会保留你选择的色温。</p>
         </div>
       </section>
 
@@ -998,7 +1256,7 @@ onBeforeUnmount(() => {
 
       <section v-else-if="cinematic === 'orbit-handoff'" class="cinematic cinematic--orbit-handoff" aria-live="polite">
         <p class="kicker">轨道接入</p>
-        <h2>镜头正在拉远</h2>
+        <h2>从一颗星，到一片星河</h2>
         <p>你的星正沿着自己的轨道，汇入流动星系。</p>
       </section>
 
@@ -1008,18 +1266,19 @@ onBeforeUnmount(() => {
           id="view-title"
           ref="sceneHeading"
           tabindex="-1"
-          :text="viewCopy.title"
+          :text="viewCopy.displayTitle ?? viewCopy.title"
+          :accessible-label="viewCopy.title"
           :replay-key="viewRevealKey"
-          :animate="titleMotionEnabled"
+          :animate="false"
           :reduced="reducedMotion"
         />
-        <p>{{ viewCopy.subtitle }}</p>
+        <p v-if="viewCopy.subtitle">{{ viewCopy.subtitle }}</p>
       </section>
     </main>
 
     <aside
       class="operation-dock"
-      :class="{ 'operation-dock--expanded': dockExpanded, 'operation-dock--keyboard': compactKeyboard && dockTextInputFocused }"
+      :class="{ 'operation-dock--chat': admitted && activeTab === 'scene' && runtime?.currentScene === 'PROGRAM_SUPPORT', 'operation-dock--expanded': dockExpanded, 'operation-dock--keyboard': compactKeyboard && dockTextInputFocused }"
       :inert="modalOpen ? true : undefined"
       :aria-hidden="modalOpen ? 'true' : undefined"
       @focusin="onDockFocusIn"
@@ -1029,10 +1288,9 @@ onBeforeUnmount(() => {
       <p v-else-if="connectionMessage && participant?.onboardingState !== 'NEEDS_COLOR'" class="dock-message dock-message--warning" role="status">{{ connectionMessage }}</p>
       <p v-else-if="runtime?.status === 'PAUSED'" class="dock-message dock-message--warning" role="status">现场已暂停，输入会保留在本页，但不会排队或自动提交。</p>
       <p v-else-if="persistentNotice" class="dock-message" role="status">{{ persistentNotice }}</p>
-      <p v-if="toast" class="dock-toast" role="status">{{ toast }}</p>
 
       <div v-if="!snapshot && (entryState === 'checking' || busy === 'activation')" class="dock-body dock-waiting" role="status">
-        <span aria-hidden="true"></span><p>正在核验邀请并恢复权威状态…</p>
+        <span aria-hidden="true"></span><p>正在核验邀请，找回你的星…</p>
       </div>
 
       <form v-else-if="!snapshot" class="dock-body entry-form" novalidate @submit.prevent="activateAssisted">
@@ -1041,7 +1299,7 @@ onBeforeUnmount(() => {
         <button class="dock-primary" type="submit" :disabled="busy === 'activation'">
           {{ busy === 'activation' ? '正在核验…' : '核验并重新进入' }}
         </button>
-        <p id="v2-assisted-disclosure" class="dock-disclosure">当前排练仅识别分配的测试姓名与 8 位编号，不会核验真实学籍信息；也可重新轻触 NFC 或扫码。</p>
+        <p id="v2-assisted-disclosure" class="dock-disclosure">{{ protectedRuntime ? '请填写邀请函对应的姓名与 8 位学号以恢复本人档案；也可重新轻触 NFC 或扫码。' : '当前排练仅识别分配的测试姓名与 8 位编号，不会核验真实学籍信息；也可重新轻触 NFC 或扫码。' }}</p>
       </form>
 
       <div
@@ -1074,7 +1332,7 @@ onBeforeUnmount(() => {
             <label for="v2-star-temperature">恒星色温</label>
             <output for="v2-star-temperature" :style="{ color: selectedColor }">{{ colorKelvin.toLocaleString('zh-CN') }} K</output>
           </div>
-          <p class="color-control__connection" role="status" aria-live="polite">{{ colorConnectionMessage }}</p>
+          <p v-if="colorConnectionMessage" class="color-control__connection" role="status" aria-live="polite">{{ colorConnectionMessage }}</p>
           <input
             id="v2-star-temperature"
             v-model.number="colorKelvin"
@@ -1086,6 +1344,7 @@ onBeforeUnmount(() => {
             :aria-valuetext="`${colorKelvin.toLocaleString('zh-CN')} 开尔文`"
           />
           <div id="v2-star-temperature-scale" class="temperature-scale"><span>暖红</span><span>日光</span><span>冷蓝</span></div>
+          <p class="color-control__commitment">确认后本场不可更改</p>
           <button class="dock-primary" type="button" :disabled="!writesReady || Boolean(busy)" @click="lockColor">
             {{ busy === 'LOCK_COLOR' ? '正在确认…' : '确认星色' }}
           </button>
@@ -1097,20 +1356,18 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else-if="cinematic === 'orbit-handoff'" class="dock-body dock-handoff-status" role="status">
-        <small>轨道接入</small><strong>星色已确认</strong><p>身份与星星已经绑定，镜头正在回到你的星系。</p>
+        <small>轨道接入</small><strong>星色已确认</strong><p>带着你选择的光，汇入今夜的星河。</p>
       </div>
 
       <template v-else>
-        <div class="dock-body admitted-panel">
+        <div ref="mainDockBody" :key="viewRevealKey" class="dock-body admitted-panel page-reveal">
           <template v-if="activeTab === 'scene'">
-            <div v-if="runtime?.status === 'COMPLETED'" class="terminal-copy">
-              <strong>本场活动已结束</strong><p>参与事实已经冻结，你仍可查看个人档案。</p>
-            </div>
+            <PersonalMemento v-if="runtime?.status === 'COMPLETED'" :participant="participant" :star-code="personalStarCode" :color="selectedColor" @open-archive="selectTab('archive')" />
             <div v-else-if="runtime?.status === 'PAUSED'" class="terminal-copy">
               <strong>互动暂时停止</strong><p>恢复后会从当前现场环节继续。</p>
             </div>
             <div v-else-if="runtime?.status === 'READY'" class="terminal-copy">
-              <strong>{{ snapshot.aggregate.publicStarCount }} 颗真实星已抵达</strong><p>等待后台开启星海集结。</p>
+              <strong>{{ snapshot.aggregate.publicStarCount }} 颗星，已在这里相遇</strong><p>入场已完成，稍后一起启程。</p>
             </div>
             <button
               v-else-if="runtime?.currentScene === 'ASSEMBLY' && actionAllowed(snapshot, 'START_STAR')"
@@ -1123,22 +1380,59 @@ onBeforeUnmount(() => {
               <strong>{{ participant.started ? '星星已启动' : '已进入星海集结' }}</strong><p>等待现场进入下一环节。</p>
             </div>
 
-            <form v-else-if="runtime?.currentScene === 'PROGRAM_SUPPORT'" class="program-composer" @submit.prevent="postBarrage">
-              <div class="now-playing"><div><small>当前节目</small><strong>{{ currentProgram?.title ?? '等待主控选择节目' }}</strong></div><span>热度 {{ currentProgram?.heat ?? 0 }}</span></div>
-              <label class="sr-only" for="v2-barrage">匿名弹幕</label>
+            <section v-else-if="snapshot.presentation.type === 'RAFFLE'" class="phone-raffle" aria-label="正在抽取上台观众"><span class="phone-raffle__star" aria-hidden="true">✦</span><small>互动环节二</small><h3>正在抽取上台观众</h3><p></p><span class="phone-raffle__code">{{ personalStarCode }}</span></section>
+            <form v-else-if="runtime?.currentScene === 'PROGRAM_SUPPORT'" class="program-composer" @submit.prevent="postBarrage()">
+              <div class="now-playing"><span>现场聊天</span><span v-if="currentProgram?.kind === 'PERFORMANCE' && currentProgram.giftsEnabled !== false">热度 {{ currentProgram.heat }}</span></div>
+
+              <div v-if="currentProgramGiftSummary.length" class="current-program-gifts" aria-label="当前节目收到的礼物">
+                <span>本节目收到</span>
+                <ul>
+                  <li v-for="gift in currentProgramGiftSummary" :key="gift.id + '-' + gift.sentCount" class="gift-received" :data-gift-id="gift.id"><GiftSignalIcon :gift-id="gift.id" aria-hidden="true" /><span>{{ gift.name }}</span><strong>{{ gift.id === 'gift-starship' ? `${(gift.sentCount ?? 0) * gift.powerCost} 礼物值` : `×${gift.sentCount ?? 0}` }}</strong></li>
+                </ul>
+              </div>
+              <MobileBarrage :items="liveBarrages" />
+              <section v-if="liveInteraction && liveInteraction.phase !== 'IDLE'" class="live-interaction-card" :class="`is-${liveInteraction.phase.toLowerCase()}`" aria-live="polite">
+                <small>{{ interactionLabel(liveInteraction.segmentCode) }} · 第 {{ liveInteraction.roundNumber }} 轮</small>
+                <h3 v-if="liveInteraction.prompt">{{ liveInteraction.prompt }}</h3>
+                <template v-if="liveInteraction.phase === 'BUZZER_OPEN'">
+                  <output v-if="buzzerCountdown" class="buzzer-countdown" aria-label="抢答倒计时">{{ buzzerCountdown }}</output>
+                  <button class="buzzer-button" type="button" :disabled="buzzerCountdown > 0 || !actionAllowed(snapshot, 'BUZZ_IN') || Boolean(busy)" @click="buzzIn">{{ buzzerCountdown ? '准备抢答' : busy === 'BUZZ_IN' ? '提交中…' : '立即抢答' }}</button>
+                </template>
+                <template v-else-if="liveInteraction.phase === 'BUZZER_LOCKED'">
+                  <strong class="buzzer-result">{{ liveInteraction.leader?.publicStarId ?? '结果锁定中' }}</strong>
+                  <p>{{ liveInteraction.participation.hasBuzzed ? `你的顺位：${liveInteraction.participation.buzzPosition}` : '本轮已结束' }}</p>
+                </template>
+                <template v-else-if="liveInteraction.phase === 'VOTE_OPEN'">
+
+                  <div class="vote-options" role="radiogroup" aria-label="上台观众候选">
+                    <label v-for="candidate in liveInteraction.voteCandidates" :key="candidate.publicStarId" :style="{ '--candidate-color': candidate.displayColor }"><input v-model="voteChoice" type="radio" name="audience-vote" :value="candidate.publicStarId" :disabled="liveInteraction.participation.hasVoted"><span>{{ candidate.publicStarId }}</span></label>
+                  </div>
+                  <button class="dock-primary" type="button" :disabled="!voteChoice || !actionAllowed(snapshot, 'CAST_AUDIENCE_VOTE') || Boolean(busy)" @click="castAudienceVote">{{ liveInteraction.participation.hasVoted ? '本轮已投票' : '确定' }}</button>
+                </template>
+                <template v-else>
+                  <div class="vote-results"><div v-for="candidate in liveInteraction.voteCandidates" :key="candidate.publicStarId"><span>{{ candidate.publicStarId }}</span><i :style="{ transform: `scaleX(${liveInteraction.totalVotes ? (candidate.voteCount ?? 0) / liveInteraction.totalVotes : 0})` }"></i><strong>{{ candidate.voteCount ?? 0 }}</strong></div></div>
+                  <p>共收到 {{ liveInteraction.totalVotes }} 票</p>
+                </template>
+              </section>
+              <div v-show="colorPickerOpen" id="barrage-style-picker" class="barrage-style-picker"><div class="barrage-colors" role="group" aria-label="弹幕星色">
+                <button v-for="color in BARRAGE_COLORS" :key="color.id" type="button" :aria-pressed="barrageColor === color.id" :aria-label="`${color.name}，${color.cost && !participant.unlockedBarrageStyles?.includes(color.id) ? '首次发送解锁需 10 动力' : '免费'}`" :title="color.name" :style="{'--swatch':barrageSwatch(color)}" @click="barrageColor = color.id"></button>
+              </div>
+              <p class="barrage-color-help">{{ BARRAGE_COLORS.find(c => c.id === barrageColor)?.name }} · {{ ['aurora','sunset','nebula'].includes(barrageColor) && !participant.unlockedBarrageStyles?.includes(barrageColor) ? '10 动力 · 本场解锁' : '免费使用' }}</p></div>
+              <label class="sr-only" for="v2-barrage">弹幕</label>
               <div class="composer-row">
                 <input
                   id="v2-barrage"
                   v-model="barrageDraft"
                   :disabled="!actionAllowed(snapshot, 'POST_BARRAGE') || snapshot.interaction.barragePaused"
-                  :placeholder="snapshot.interaction.barragePaused ? '现场暂停接收弹幕' : '说点什么…'"
+                  :placeholder="snapshot.interaction.barragePaused ? '现场暂停接收弹幕' : '发送弹幕…'"
                 />
-                <button class="dock-primary dock-primary--compact" type="submit" :disabled="!writesReady || !actionAllowed(snapshot, 'POST_BARRAGE') || snapshot.interaction.barragePaused || !barrageConsent || Boolean(busy)">发送</button>
+                <button ref="barrageSend" class="dock-primary dock-primary--compact" type="submit" :disabled="!writesReady || !actionAllowed(snapshot, 'POST_BARRAGE') || snapshot.interaction.barragePaused || Boolean(busy)">发送</button>
               </div>
               <div class="composer-tools">
-                <label class="check-row"><input v-model="barrageConsent" type="checkbox" />匿名公开上屏（{{ barrageLength }}/40）</label>
+                <div class="composer-identity"><button class="style-trigger" type="button" aria-controls="barrage-style-picker" :aria-expanded="colorPickerOpen" @click="colorPickerOpen = !colorPickerOpen">星色 <span :style="{ background: barrageSwatch(selectedBarrageStyle) }"></span></button><small>{{ personalStarCode }} · {{ barrageLength }} / 40</small></div>
                 <button
                   ref="giftTrigger"
+                  v-if="currentProgram?.kind === 'PERFORMANCE' && currentProgram.giftsEnabled !== false"
                   class="gift-trigger"
                   type="button"
                   aria-label="送礼物"
@@ -1149,48 +1443,70 @@ onBeforeUnmount(() => {
               </div>
             </form>
 
-            <button
-              v-else-if="runtime?.currentScene === 'COOPERATIVE_LIGHT' && actionAllowed(snapshot, 'COOPERATIVE_LIGHT')"
-              class="dock-primary"
-              type="button"
-              :disabled="!writesReady || Boolean(busy)"
-              @click="cooperativeLight"
-            >{{ busy === 'COOPERATIVE_LIGHT' ? '正在点亮…' : '参与全场点亮' }}</button>
-            <div v-else-if="runtime?.currentScene === 'COOPERATIVE_LIGHT'" class="terminal-copy">
-              <strong>{{ participant.cooperativeLightAt ? '点亮已完成' : '已进入协同点亮' }}</strong><p>你的参与事实已被记录。</p>
-            </div>
+            <section v-else-if="runtime?.currentScene === 'COOPERATIVE_LIGHT'" class="cooperative-card">
+              <div class="cooperative-count"><span>此刻，与你一起点亮</span><strong>{{ snapshot.aggregate.cooperativeLightCount }}<small> / {{ snapshot.aggregate.admittedCount }}</small></strong></div>
+              <progress :value="snapshot.aggregate.cooperativeLightCount" :max="Math.max(1,snapshot.aggregate.admittedCount)" aria-label="全场点亮进度"></progress>
+              <button v-if="actionAllowed(snapshot, 'COOPERATIVE_LIGHT')" class="dock-primary" type="button" :disabled="!writesReady || Boolean(busy)" @click="cooperativeLight">{{ busy === 'COOPERATIVE_LIGHT' ? '正在点亮…' : '参与全场点亮' }}</button>
+              <div v-else class="terminal-copy"><strong>{{ participant.cooperativeLightAt ? '点亮已完成' : '已进入协同点亮' }}</strong><p>{{ participant.cooperativeLightAt ? '你的光，已与全场相连。' : '等待现场发出点亮信号。' }}</p></div>
+            </section>
           </template>
 
           <section v-else-if="activeTab === 'programs'" class="program-list" aria-labelledby="view-title">
-            <header><div><small>节目顺序</small><strong class="panel-context">现场编排</strong></div><span v-if="nextProgram">下一节目：{{ nextProgram.title }}</span></header>
+            <header><span>{{ snapshot.programs.filter(item => item.kind === 'PERFORMANCE').length }} 个节目 · {{ snapshot.programs.filter(item => ['INTERLUDE','DEFERRED'].includes(item.kind)).length }} 个互动环节</span></header>
             <ol>
-              <li v-for="program in snapshot.programs" :key="program.id" :class="`is-${program.state.toLowerCase()}`">
-                <span>{{ String(program.order).padStart(2, '0') }}</span><div><small>{{ programStateLabel(program.state) }}</small><strong>{{ program.title }}</strong></div><em v-if="program.state === 'CURRENT'">进行中</em>
+              <li v-for="program in snapshot.programs" :key="program.id" :class="[`is-${program.state.toLowerCase()}`, { 'is-segment': program.kind !== 'PERFORMANCE' }]">
+                <span v-if="program.kind === 'PERFORMANCE'">{{ program.displayCode }}</span>
+                <div><strong>{{ program.title }}</strong><small v-if="program.kind === 'PERFORMANCE' && programCredits(program)" class="program-performers">{{ programCredits(program) }}</small></div>
+                <em v-if="program.state === 'CURRENT'">进行中</em>
               </li>
             </ol>
           </section>
 
-          <section v-else class="archive" aria-labelledby="view-title">
+          <section v-else class="archive" aria-labelledby="view-title" :style="{ '--identity-color': selectedColor }">
             <header>
-              <div><small>档案归属</small><strong class="archive-owner">{{ participantDisplayName }}</strong></div>
+              <div><small>这一束光，属于</small><strong class="archive-owner">{{ participantDisplayName }}</strong></div>
               <strong>{{ personalStarCode }}</strong>
             </header>
             <dl>
-              <div><dt>星星编号</dt><dd>{{ personalStarCode }}</dd></div>
-              <div><dt>星色</dt><dd>{{ participant.colorTemperatureKelvin?.toLocaleString('zh-CN') }} K</dd></div>
+
+              <div><dt>星色</dt><dd>{{ participant.colorTemperatureKelvin ? `${participant.colorTemperatureKelvin.toLocaleString('zh-CN')} K` : '未选色' }}</dd></div>
               <div class="archive-metric archive-metric--interactive" :class="{ 'is-open': archiveMetricHelp === 'power' }">
                 <dt><button type="button" aria-controls="archive-metric-help" :aria-expanded="archiveMetricHelp === 'power'" :aria-describedby="archiveMetricHelp === 'power' ? 'archive-metric-help' : undefined" @click="toggleArchiveMetricHelp('power')">动力<i aria-hidden="true">?</i></button></dt>
                 <dd>{{ participant.powerBalance }}</dd>
               </div>
-              <div class="archive-metric archive-metric--interactive" :class="{ 'is-open': archiveMetricHelp === 'starlight' }">
-                <dt><button type="button" aria-controls="archive-metric-help" :aria-expanded="archiveMetricHelp === 'starlight'" :aria-describedby="archiveMetricHelp === 'starlight' ? 'archive-metric-help' : undefined" @click="toggleArchiveMetricHelp('starlight')">星光<i aria-hidden="true">?</i></button></dt>
-                <dd>{{ participant.starlight }}</dd>
-              </div>
+
             </dl>
             <div id="archive-metric-help" class="archive-metric-help" :class="{ 'is-visible': archiveMetricMessage }" :role="archiveMetricMessage ? 'tooltip' : undefined" :aria-hidden="archiveMetricMessage ? undefined : 'true'" aria-live="polite">
               <p v-if="archiveMetricMessage">{{ archiveMetricMessage }}</p>
-              <p v-else aria-hidden="true">点击动力或星光，查看它们的含义。</p>
+
             </div>
+            <section class="archive-activity" aria-labelledby="archive-gifts-title">
+              <header>
+                <div><small>今晚的应援</small><strong id="archive-gifts-title" class="archive-activity-title">礼物足迹</strong></div>
+                <strong>{{ archiveGiftQuantity }} 份</strong>
+              </header>
+              <ul v-if="participant.giftHistory?.length" class="archive-gift-list">
+                <li v-for="item in participant.giftHistory" :key="`${item.programId}-${item.giftId}`">
+                  <span class="archive-gift-icon" aria-hidden="true"><GiftSignalIcon :gift-id="item.giftId" /></span>
+                  <div><strong>{{ item.programTitle }}</strong><small>{{ item.giftName }} × {{ item.quantity }}</small></div>
+                  <span>{{ item.totalPower }} 动力</span>
+                </li>
+              </ul>
+              <p v-else class="archive-empty">暂无礼物记录</p>
+            </section>
+            <section class="archive-activity" aria-labelledby="archive-barrages-title">
+              <header>
+                <div><small>今晚说过的话</small><strong id="archive-barrages-title" class="archive-activity-title">我的弹幕</strong></div>
+                <strong>{{ participant.barrageHistory?.length ?? 0 }} 条</strong>
+              </header>
+              <ul v-if="participant.barrageHistory?.length" class="archive-barrage-list">
+                <li v-for="item in participant.barrageHistory" :key="item.barrageId">
+                  <p :style="barragePaint(item.colorStyle, item.customColor)">{{ item.text }}</p>
+                  <small>{{ formatArchiveTime(item.createdAt) }}<span v-if="item.status === 'REMOVED'"> · 已撤下</span></small>
+                </li>
+              </ul>
+              <p v-else class="archive-empty">暂无弹幕记录</p>
+            </section>
           </section>
         </div>
 
@@ -1199,46 +1515,77 @@ onBeforeUnmount(() => {
         </nav>
       </template>
     </aside>
+    <p v-if="toast && !modalOpen" class="dock-toast" role="status">{{ toast }}</p>
 
-    <div v-if="giftOpen" class="modal-backdrop">
+    <Transition name="mobile-sheet"><div v-if="giftOpen" class="modal-backdrop">
       <section id="v2-gift-sheet" class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="gift-title" :aria-describedby="giftAvailabilityMessage ? 'gift-description gift-availability' : 'gift-description'" @keydown.tab="trapDialog">
-        <header><div><small>节目应援</small><h2 id="gift-title">为节目送出礼物</h2></div><button ref="giftClose" type="button" aria-label="关闭礼物面板" @click="closeGift()">关闭</button></header>
+        <header><div><small>节目应援</small><h2 id="gift-title">送礼物</h2></div><button ref="giftClose" type="button" aria-label="关闭礼物面板" @click="closeGift()">返回</button></header>
         <div class="gift-balance" aria-label="当前动力余额">
-          <span><small>可用额度</small><b>我的动力</b></span>
+          <span>可用动力</span>
           <output>{{ participant.powerBalance }}<small>动力</small></output>
         </div>
-        <p id="gift-description">{{ currentProgram ? `当前节目：${currentProgram.title}。` : '' }}礼物只代表现场互动，不涉及真实支付。</p>
-        <p v-if="giftAvailabilityMessage" id="gift-availability" class="modal-status" role="status">{{ giftAvailabilityMessage }}</p>
+        <p id="gift-description">{{ currentProgram?.title }} · 虚拟礼物</p>
+
+        <p v-if="giftAvailabilityMessage && currentProgram?.giftCatalog?.length" id="gift-availability" class="modal-status" role="status">{{ giftAvailabilityMessage }}</p>
         <div v-if="currentProgram?.giftCatalog?.length" class="gift-grid">
           <button
             v-for="gift in currentProgram.giftCatalog"
             :key="gift.id"
             type="button"
             :class="`gift-${gift.id.replace('gift-', '')}`"
-            :aria-label="`${gift.name}，${gift.powerCost} 动力${participant.powerBalance < gift.powerCost ? '，动力不足' : ''}`"
-            :disabled="!giftInteractionReady || participant.powerBalance < gift.powerCost || Boolean(busy)"
-            @click="sendGift(gift)"
+            :aria-label="`${gift.name}，单个 ${gift.powerCost} 动力，本次 ${giftQuantity} 个共 ${gift.powerCost * giftQuantity} 动力，本节目已送 ${gift.sentCount ?? 0} 份${participant.powerBalance < gift.powerCost * giftQuantity ? '，动力不足' : ''}`"
+            :aria-pressed="selectedGiftId === gift.id"
+            :disabled="!giftInteractionReady || Boolean(busy)"
+            @click="selectedGiftId = gift.id"
           >
             <span class="gift-icon-shell" aria-hidden="true"><GiftSignalIcon :gift-id="gift.id" /></span>
-            <span class="gift-copy"><strong>{{ gift.name }}</strong><small>{{ gift.id === 'gift-starship' ? '高能轨道信号' : '现场应援信号' }}</small></span>
-            <output>{{ gift.powerCost }}<small>动力</small></output>
+            <span v-if="selectedGiftId === gift.id" class="gift-selection-mark" aria-hidden="true">✓</span>
+            <span class="gift-copy"><strong>{{ gift.name }}</strong></span>
+            <output>{{ gift.powerCost }}<small>动力 / 个</small></output>
           </button>
         </div>
-        <p v-else class="gift-empty" role="status">主控选择当前节目后，礼物目录与价格会在这里开放。</p>
+        <p v-else id="gift-availability" class="gift-empty" role="status">{{ giftAvailabilityMessage || '等待节目开始' }}</p>
+        <template v-if="currentProgram?.giftCatalog?.length">
+        <div class="gift-amount" role="group" aria-label="选择赠送数量">
+          <span>数量</span>
+          <div><button type="button" aria-label="减少礼物数量" :disabled="giftQuantity <= 1" @click="giftQuantity--">−</button><output>{{ giftQuantity }}</output><button type="button" aria-label="增加礼物数量" :disabled="giftQuantity >= 20" @click="giftQuantity++">＋</button></div>
+        </div>
+          <div class="gift-send-row"><span><small class="gift-total-label">{{ selectedGift?.name }} × {{ giftQuantity }}</small>{{ giftTotal }} 动力<small v-if="participant.powerBalance < giftTotal">动力不足</small></span><button class="dock-primary" type="button" :disabled="!selectedGift || !giftInteractionReady || participant.powerBalance < giftTotal || Boolean(busy)" @click="sendGift(selectedGift)">发送</button></div>
+        </template>
       </section>
     </div>
 
+    </Transition>
+    <div v-if="barrageConfirmOpen" class="modal-backdrop modal-backdrop--dialog">
+      <section class="confirm-dialog premium-barrage-confirm" role="alertdialog" aria-modal="true" aria-labelledby="premium-barrage-title" aria-describedby="premium-barrage-description" @keydown.tab="trapDialog">
+
+        <h2 id="premium-barrage-title">解锁「{{ selectedBarrageStyle.name }}」</h2>
+        <p id="premium-barrage-description">10 动力 · 本场解锁并发送</p>
+        <blockquote :style="barragePaint(barrageColor, barrageColor === 'personal' ? selectedColor : null)">{{ barrageDraft }}</blockquote>
+        <p class="premium-balance">剩余 {{ participant.powerBalance - 10 }} 动力</p>
+        <div class="dock-actions"><button ref="barrageConfirmCancel" class="dock-secondary" type="button" @click="closePremiumBarrage()">返回</button><button class="dock-primary" type="button" :disabled="Boolean(busy)" @click="confirmPremiumBarrage">确定</button></div>
+      </section>
+    </div>
     <div v-if="logoutOpen" class="modal-backdrop modal-backdrop--dialog">
       <section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="logout-title" aria-describedby="logout-description" @keydown.tab="trapDialog">
         <h2 id="logout-title">退出当前身份？</h2>
-        <p id="logout-description">退出后可输入学生姓名与 8 位学号重新核验，也可以再次轻触 NFC 或扫码。{{ barrageDraft ? '未提交的弹幕草稿将丢失。' : '' }}</p>
-        <div class="dock-actions"><button ref="logoutCancel" class="dock-secondary" type="button" @click="closeLogout()">取消</button><button class="dock-danger" type="button" :disabled="busy === 'logout'" @click="confirmLogout">退出登录</button></div>
+        <p id="logout-description">退出后可重新核验或扫码进入。{{ barrageDraft ? '未提交的弹幕草稿将丢失。' : '' }}</p>
+        <div class="dock-actions"><button ref="logoutCancel" class="dock-secondary" type="button" @click="closeLogout()">返回</button><button class="dock-danger" type="button" :disabled="busy === 'logout'" @click="confirmLogout">确定</button></div>
       </section>
     </div>
   </section>
 </template>
 
 <style scoped>
+.barrage-colors{display:flex;gap:12px;padding:6px 2px}.barrage-colors button{width:22px;height:22px;border-radius:50%;border:2px solid transparent;outline-offset:3px}.barrage-colors button[aria-pressed="true"]{outline:1px solid #d5e7ff}.barrage-color-help,.gift-allowance{color:#9eafc9;font-size:11px;line-height:1.6}
+.live-interaction-card{display:grid;gap:12px;margin:0 0 14px;padding:16px;border:1px solid rgba(122,180,255,.24);border-radius:14px;background:radial-gradient(circle at 100% 0,rgba(92,148,255,.16),transparent 45%),rgba(5,18,38,.78);box-shadow:0 16px 40px rgba(0,6,20,.28)}
+.live-interaction-card>small{color:#86baff;font:650 10px var(--font-data);letter-spacing:.17em}.live-interaction-card h3{margin:0;color:#eef6ff;font-size:18px;line-height:1.45}.live-interaction-card p{margin:0;color:#9fb1c9;font-size:12px;line-height:1.65}
+.buzzer-button{min-height:82px;border:1px solid rgba(145,202,255,.58);border-radius:50%;color:#f5fbff;background:radial-gradient(circle at 45% 36%,#6bbaff,#2c66d9 52%,#0d2c74);box-shadow:0 0 0 8px rgba(84,145,255,.09),0 14px 34px rgba(19,81,205,.38);font:700 20px var(--font-ui);letter-spacing:.08em}.buzzer-button:active{transform:scale(.96)}.buzzer-button:disabled{opacity:.52}
+.buzzer-result{display:block;color:#e9f4ff;font:720 30px var(--font-data);letter-spacing:.14em;text-align:center;text-shadow:0 0 22px rgba(114,181,255,.62)}
+.vote-options{display:grid;grid-template-columns:1fr 1fr;gap:8px}.vote-options label{position:relative;min-height:48px}.vote-options input{position:absolute;opacity:0}.vote-options span{display:grid;min-height:48px;place-items:center;border:1px solid rgba(146,184,231,.2);border-radius:10px;background:rgba(7,23,46,.72);color:#cbdaf0;font:600 13px var(--font-data);box-shadow:inset 3px 0 0 var(--candidate-color,#7bb4ff)}.vote-options input:checked+span{border-color:#9dccff;background:rgba(49,103,194,.3);color:#fff;box-shadow:0 0 0 2px rgba(104,174,255,.14),inset 3px 0 0 var(--candidate-color,#7bb4ff)}.vote-options input:focus-visible+span{outline:2px solid #d9ebff;outline-offset:2px}
+.vote-results{display:grid;gap:9px}.vote-results>div{display:grid;grid-template-columns:72px minmax(0,1fr) 28px;align-items:center;gap:8px;font:600 11px var(--font-data)}.vote-results i{height:7px;border-radius:99px;background:linear-gradient(90deg,#6aaeff,#a8dcff);transform-origin:left;transition:transform .45s ease}
+.gift-amount{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;border:1px solid rgba(147,190,244,.16);border-radius:12px;background:rgba(8,25,49,.56)}.gift-amount>span{display:grid;gap:2px}.gift-amount small{color:#8fa4bf;font-size:10px}.gift-amount strong{font-size:13px}.gift-amount>div{display:grid;grid-template-columns:44px 42px 44px;align-items:center}.gift-amount button{min-height:44px;border:1px solid rgba(155,198,249,.18);color:#dcecff;background:#102746;font-size:20px}.gift-amount output{text-align:center;font:700 16px var(--font-data)}
+.premium-barrage-confirm{border-color:rgba(197,164,255,.35);background:radial-gradient(circle at 85% 0,rgba(125,83,229,.24),transparent 42%),#081326}.premium-barrage-confirm>small{color:#c4a7ff;font:650 10px var(--font-data);letter-spacing:.2em}.premium-barrage-confirm blockquote{margin:4px 0;padding:18px;border:1px solid rgba(197,179,255,.18);border-radius:12px;background:rgba(8,17,38,.72);font-size:18px;line-height:1.5;text-align:center}.premium-barrage-confirm dl{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0}.premium-barrage-confirm dl div{padding:10px;border-radius:10px;background:rgba(126,151,204,.08)}.premium-barrage-confirm dt{color:#8fa4bf;font-size:10px}.premium-barrage-confirm dd{margin:4px 0 0;color:#eef5ff;font:650 14px var(--font-data)}
 .v2-welcome {
   /* Cross-surface Orbital Signal tokens: primitive → semantic → component. */
   --primitive-midnight-950: var(--color-orbit-deep);
@@ -1261,19 +1608,23 @@ onBeforeUnmount(() => {
   --ink: var(--color-orbit-text-primary);
   --muted: var(--color-orbit-text-secondary);
   --accent: var(--color-orbit-signal-soft);
-  --font-ui: var(--font-family-cjk);
-  --font-display: var(--font-family-display);
-  --font-signal: var(--font-family-signal);
-  --font-data: var(--font-family-data);
+  --font-ui: "Welcome Sans SC", var(--font-family-cjk);
+  --font-display: var(--font-ui);
+  --font-signal: var(--font-ui);
+  --font-data: "Welcome Sans SC", var(--font-family-data);
+  --mobile-title-size: clamp(1.8rem, 8.2vw, 2rem);
   position: relative;
   isolation: isolate;
   width: 100%;
+  height: var(--visual-height, 100vh);
   height: var(--visual-height, 100dvh);
   min-height: min(420px, var(--visual-height, 100dvh));
   overflow: hidden;
   color: var(--ink);
   background: var(--color-orbit-midnight);
   font-family: var(--font-ui);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -1324,7 +1675,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: max(18px, env(safe-area-inset-top)) 20px 12px;
+  padding: max(20px, env(safe-area-inset-top)) 28px 12px;
   background: linear-gradient(180deg, rgba(2, 5, 12, 0.64), rgba(2, 5, 12, 0.12) 58%, transparent);
   pointer-events: none;
 }
@@ -1367,8 +1718,8 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: 2px;
   color: rgba(220, 234, 255, 0.84);
-  background: linear-gradient(90deg, transparent, rgba(84, 139, 217, 0.08));
-  font: 500 var(--font-size-xs) var(--font-display);
+  background: transparent;
+  font: 500 var(--font-size-xs) var(--font-ui);
   letter-spacing: 0.08em;
   cursor: pointer;
 }
@@ -1404,7 +1755,7 @@ onBeforeUnmount(() => {
 .v2-welcome__main {
   position: absolute;
   z-index: 2;
-  inset: 78px 22px 214px;
+  inset: 108px 28px 214px;
   display: grid;
   place-items: center;
   text-align: center;
@@ -1415,18 +1766,19 @@ onBeforeUnmount(() => {
 .v2-welcome__main h2 {
   margin: 8px 0 9px;
   font-family: var(--font-display);
-  font-size: clamp(2rem, 8.4vw, 2.35rem);
+  font-size: var(--mobile-title-size);
   font-weight: 500;
-  line-height: 1.13;
-  letter-spacing: 0.015em;
+  line-height: 1.45;
+  letter-spacing: 0.045em;
   font-variant-ligatures: none;
-  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.55);
+  text-shadow: none;
 }
 .v2-welcome__main p:not(.kicker) {
   margin: 0;
-  color: #bdc8de;
-  font-size: 0.88rem;
-  line-height: 1.6;
+  color: var(--color-orbit-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.8;
 }
 .v2-welcome__main small {
   display: inline-block;
@@ -1435,28 +1787,28 @@ onBeforeUnmount(() => {
 }
 
 .v2-welcome:not(.is-onboarding):not(.is-orbit-handoff) .v2-welcome__main {
-  inset: 88px 22px auto;
+  inset: 108px 28px auto;
   display: block;
   height: auto;
   text-align: left;
 }
 .v2-welcome:not(.is-onboarding):not(.is-orbit-handoff) .scene-copy {
-  width: min(272px, calc(100vw - 44px));
+  width: 100%;
   max-width: none;
   text-align: left;
 }
 .v2-welcome:not(.is-onboarding):not(.is-orbit-handoff) .scene-copy h2 {
-  margin: 7px 0 6px;
-  font-size: clamp(1.38rem, 5.8vw, 1.62rem);
+  margin: 12px 0 12px;
+  font-size: var(--mobile-title-size);
   font-weight: 500;
-  line-height: 1.16;
-  letter-spacing: 0.02em;
+  line-height: 1.45;
+  letter-spacing: 0.045em;
 }
 .v2-welcome:not(.is-onboarding):not(.is-orbit-handoff) .scene-copy p:not(.kicker) {
-  max-width: 244px;
-  color: rgba(208, 220, 241, 0.74);
-  font-size: 0.76rem;
-  line-height: 1.52;
+  max-width: 300px;
+  color: var(--color-orbit-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.8;
 }
 .v2-welcome:not(.is-onboarding):not(.is-orbit-handoff) .scene-copy small {
   margin-top: 8px;
@@ -1471,11 +1823,11 @@ onBeforeUnmount(() => {
 }
 .kicker {
   margin: 0;
-  color: #8bb8ff;
-  font-family: var(--font-data);
+  color: var(--color-orbit-text-secondary);
+  font-family: var(--font-ui);
   font-size: var(--font-size-xs);
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-weight: 400;
+  letter-spacing: 0.08em;
 }
 
 .color-onboarding {
@@ -1635,10 +1987,10 @@ onBeforeUnmount(() => {
 .selection-copy {
   position: absolute;
   z-index: 3;
-  top: 12px;
+  top: 0;
   right: auto;
-  left: 2px;
-  width: min(286px, calc(100vw - 48px));
+  left: 0;
+  width: 100%;
   margin: 0;
   text-align: left;
   transform: translate3d(0, 0, 0);
@@ -1646,17 +1998,17 @@ onBeforeUnmount(() => {
   will-change: transform, opacity;
 }
 .selection-copy h2 {
-  margin: 9px 0 10px;
-  font-size: clamp(2rem, 8.4vw, 2.35rem);
+  margin: 12px 0 16px;
+  font-size: var(--mobile-title-size);
   font-weight: 500;
-  line-height: 1.08;
-  letter-spacing: 0.012em;
+  line-height: 1.45;
+  letter-spacing: 0.045em;
 }
 .selection-copy p:not(.kicker) {
-  max-width: 268px;
-  color: rgba(207, 219, 241, 0.72);
-  font-size: 0.76rem;
-  line-height: 1.52;
+  max-width: 300px;
+  color: var(--color-orbit-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.8;
 }
 
 .discovery-copy {
@@ -1766,24 +2118,25 @@ onBeforeUnmount(() => {
 .operation-dock {
   position: absolute;
   z-index: 6;
+  display: flex;
+  flex-direction: column;
   left: 16px;
   right: 16px;
   bottom: max(16px, env(safe-area-inset-bottom));
   max-height: min(52%, 430px);
   overflow: hidden;
-  border: 1px solid var(--dock-border);
-  border-top-color: rgba(215, 237, 255, 0.22);
-  border-left-color: rgba(143, 194, 255, 0.19);
+  border: 1px solid transparent;
+  border-top-color: var(--dock-border);
   border-radius: var(--shape-panel);
-  background: linear-gradient(118deg, rgba(25, 56, 92, 0.16), rgba(2, 8, 21, 0.18) 56%, rgba(10, 31, 57, 0.13));
-  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.2), inset 0 1px rgba(255, 255, 255, 0.1), inset 1px 0 rgba(103, 173, 232, 0.04);
+  background: var(--color-orbit-surface-1);
+  box-shadow: none;
 }
 
 @supports ((-webkit-backdrop-filter: blur(18px)) or (backdrop-filter: blur(18px))) {
   .operation-dock {
-    background: linear-gradient(118deg, rgba(35, 71, 111, 0.095), rgba(2, 8, 21, 0.13) 56%, rgba(9, 32, 61, 0.08));
-    -webkit-backdrop-filter: blur(11px) saturate(124%);
-    backdrop-filter: blur(11px) saturate(124%);
+    background: linear-gradient(180deg, rgba(7, 16, 31, 0.16), rgba(2, 8, 21, 0.54));
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
   }
 }
 
@@ -1791,10 +2144,10 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 2;
   top: 0;
-  right: 28px;
-  left: 28px;
+  right: 12px;
+  left: 12px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(215, 238, 255, 0.42), transparent);
+  background: linear-gradient(90deg, var(--selected-color, #d7eeff), transparent 36%);
   pointer-events: none;
   content: "";
 }
@@ -1803,7 +2156,7 @@ onBeforeUnmount(() => {
   z-index: 2;
   right: 9px;
   bottom: 9px;
-  width: 22px;
+  width: 12px;
   height: 9px;
   border-right: 1px solid rgba(116, 197, 255, 0.32);
   border-bottom: 1px solid rgba(116, 197, 255, 0.24);
@@ -1820,19 +2173,25 @@ onBeforeUnmount(() => {
 }
 
 .operation-dock--expanded { max-height: min(61%, 520px); }
+.operation-dock.operation-dock--chat { max-height: min(72%, 620px); }
+.operation-dock--chat .dock-body { max-height: none; }
 .dock-body,
 .program-list,
 .archive {
+  min-height: 0;
   max-height: calc(min(61vh, 520px) - 58px);
-  padding: 17px 17px 14px;
+  padding: 20px 12px 16px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
-.operation-dock:not(.operation-dock--expanded) .dock-body { padding-block: 15px; }
+.operation-dock:not(.operation-dock--expanded) .dock-body { padding-block: 20px 16px; }
+.admitted-panel > .program-list,
+.admitted-panel > .archive { padding: 0; max-height: none; overflow: visible; }
 
 .dock-message,
 .dock-toast {
+  flex: 0 0 auto;
   margin: 0;
   padding: 11px 17px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -1850,13 +2209,13 @@ onBeforeUnmount(() => {
 }
 
 .entry-form,
-.program-composer { display: grid; gap: 11px; }
+.program-composer { display: grid; gap: 16px; }
 .entry-form label {
   display: grid;
   gap: 6px;
   color: #dce5f9;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 500;
 }
 .entry-form input,
 .program-composer input {
@@ -1870,7 +2229,7 @@ onBeforeUnmount(() => {
   font: inherit;
 }
 .entry-form input,
-.program-composer input { padding: 0 13px; }
+.program-composer input { padding: 0 13px; font: 400 1rem var(--font-ui); }
 .entry-form input:focus,
 .program-composer input:focus {
   border-color: var(--color-orbit-focus);
@@ -1882,7 +2241,7 @@ onBeforeUnmount(() => {
 .counter.invalid { color: #ff9caa; }
 .check-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 9px;
   min-height: 44px;
   padding-block: 5px;
@@ -1892,6 +2251,8 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .check-row input { width: 22px; height: 22px; flex: 0 0 auto; margin: 0; accent-color: #76a9ff; }
+.program-composer .check-row input { min-height: 22px; padding: 0; }
+.check-row span > small { display: block; margin-top: 3px; color: var(--color-orbit-text-secondary); font: 400 var(--font-size-xs) var(--font-data); }
 
 .dock-primary,
 .dock-secondary,
@@ -1904,16 +2265,18 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: var(--shape-control);
   font: inherit;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
 }
 .dock-primary {
+  min-height: 48px;
   padding: 0 18px;
-  border: 1px solid color-mix(in srgb, var(--color-orbit-signal-soft) 58%, transparent);
-  color: var(--color-orbit-text-primary);
-  background: color-mix(in srgb, var(--color-orbit-signal) 62%, var(--color-orbit-surface-2));
-  box-shadow: inset 3px 0 var(--color-orbit-cyan), 0 9px 24px rgba(2, 8, 22, 0.16);
+  border: 1px solid var(--color-orbit-text-primary);
+  color: var(--color-orbit-midnight);
+  background: var(--color-orbit-text-primary);
+  box-shadow: none;
 }
+.dock-primary:hover:not(:disabled) { background: #fff; }
 .dock-secondary,
 .gift-trigger,
 .text-action {
@@ -1958,7 +2321,8 @@ button:active:not(:disabled) { opacity: 0.82; }
 
 .color-stage {
   display: grid;
-  min-height: 214px;
+  flex: 0 1 auto;
+  min-height: 0;
 }
 .color-stage > * { grid-area: 1 / 1; }
 .dock-discovery-status {
@@ -1966,7 +2330,7 @@ button:active:not(:disabled) { opacity: 0.82; }
   place-content: center;
   justify-items: center;
   gap: 12px;
-  min-height: 180px;
+  min-height: 0;
   color: #aebfdd;
   text-align: center;
   opacity: 0;
@@ -1980,7 +2344,7 @@ button:active:not(:disabled) { opacity: 0.82; }
 .dock-discovery-status p { margin: 0; font-size: 0.78rem; line-height: 1.5; }
 .color-control {
   display: grid;
-  gap: 11px;
+  gap: 8px;
   transform: translate3d(0, 0, 0);
   opacity: 1;
   will-change: transform, opacity;
@@ -2000,22 +2364,63 @@ button:active:not(:disabled) { opacity: 0.82; }
 .color-control__connection {
   display: grid;
   align-items: center;
-  height: 36px;
+  min-height: 36px;
   margin: 0;
   color: var(--semantic-status-muted);
   font-size: var(--font-size-xs);
   line-height: 1.35;
 }
-.color-control__summary label { color: #dce5f9; font-size: 0.78rem; font-weight: 700; }
+.color-control__summary label { color: var(--color-orbit-text-secondary); font-size: 0.8rem; font-weight: 400; }
 .color-control__summary output {
   color: var(--selected-color, #eef4ff);
   font-family: var(--font-data);
-  font-size: 1.16rem;
-  font-weight: 600;
+  font-size: 1.12rem;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
-.color-control input[type="range"] { width: 100%; min-height: 44px; accent-color: #87b7ff; }
-.temperature-scale { display: flex; justify-content: space-between; color: #8694b2; font-size: var(--font-size-xs); }
+.color-control input[type="range"] {
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.color-control input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--temperature-spectrum);
+}
+.color-control input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--temperature-spectrum);
+}
+.color-control input[type="range"]::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+  margin-top: -9px;
+  border: 6px solid var(--color-orbit-midnight);
+  border-radius: 50%;
+  background: var(--selected-color);
+  box-shadow: 0 0 0 1px var(--selected-color), 0 0 18px color-mix(in srgb, var(--selected-color) 25%, transparent);
+  appearance: none;
+  -webkit-appearance: none;
+}
+.color-control input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 6px solid var(--color-orbit-midnight);
+  border-radius: 50%;
+  background: var(--selected-color);
+  box-shadow: 0 0 0 1px var(--selected-color);
+}
+.temperature-scale { display: flex; justify-content: space-between; margin-top: -10px; color: var(--color-orbit-text-secondary); font-size: var(--font-size-xs); }
+.color-control__commitment { margin: 12px 0 4px; color: var(--color-orbit-text-secondary); font-size: var(--font-size-xs); text-align: center; }
 
 .terminal-copy { text-align: left; }
 .terminal-copy strong { display: block; font-size: 0.9rem; font-weight: 600; }
@@ -2035,9 +2440,11 @@ button:active:not(:disabled) { opacity: 0.82; }
 .program-list small,
 .archive small,
 .modal-sheet small { display: block; color: #82aef5; font-size: var(--font-size-xs); letter-spacing: 0.13em; }
-.now-playing strong { display: block; margin-top: 3px; font-size: 0.9rem; }
+.now-playing > div { min-width: 0; }
+.now-playing strong { display: block; margin-top: 8px; font-size: 1rem; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
 .now-playing > span {
-  color: #ffcb89;
+  flex: 0 0 auto;
+  color: var(--color-orbit-text-primary);
   font-family: var(--font-data);
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
@@ -2067,16 +2474,17 @@ button:active:not(:disabled) { opacity: 0.82; }
 
 .dock-tabs {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: repeat(3, 1fr);
-  padding: 4px 7px 5px;
+  padding: 6px 0 2px;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 .dock-tabs button {
   position: relative;
   color: #8795b1;
   background: transparent;
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 500;
 }
 .dock-tabs button[aria-current="page"] { color: #fff; background: transparent; }
 .dock-tabs button[aria-current="page"]::after {
@@ -2135,7 +2543,8 @@ button:active:not(:disabled) { opacity: 0.82; }
 .program-list li strong { display: block; margin-top: 2px; color: #b8c2d5; font-size: 0.8rem; }
 .program-list li em { color: #8dbaff; font-size: var(--font-size-xs); font-style: normal; }
 .program-list li.is-current { color: #fff; background: rgba(107, 157, 255, 0.13); }
-.program-list li.is-current strong { color: #fff; }
+.program-list li.is-current strong { color: #8dbaff; }
+.program-list li .program-performers { display:block; margin-top:6px; color:#91a0b7; font-size:12px; line-height:1.6 }
 
 .archive header > strong {
   color: #a9c8ff;
@@ -2506,6 +2915,7 @@ textarea:focus-visible {
 }
 
 @media (max-height: 620px) {
+  .v2-welcome { --mobile-title-size: 1.5rem; }
   .v2-welcome__header { padding-top: max(8px, env(safe-area-inset-top)); }
   .v2-welcome__college-link img { width: clamp(148px, 46vw, 172px); }
   .v2-welcome__main { inset: 58px 18px 176px; }
@@ -2514,8 +2924,8 @@ textarea:focus-visible {
   .scene-copy small { display: none; }
   .discovery-copy .discovery-person { display: block; }
   .discovery-copy .discovery-welcome { display: grid; }
-  .v2-welcome__main h2 { font-size: 1.35rem; }
-  .selection-copy h2 { font-size: 1.55rem; }
+  .v2-welcome__main h2 { font-size: var(--mobile-title-size); }
+  .selection-copy h2 { font-size: var(--mobile-title-size); }
   .focus-star { width: 54px; }
   .operation-dock { max-height: min(64%, 390px); bottom: max(6px, env(safe-area-inset-bottom)); }
   .operation-dock--expanded { max-height: min(72%, 430px); }
@@ -2539,4 +2949,216 @@ textarea:focus-visible {
     transition: none !important;
   }
 }
+
+.cooperative-count { display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px; }
+.cooperative-count > span { font-size:13px;color:#a8b9d0; }
+.cooperative-count strong { color:#e2efff;font-size:28px;font-weight:500; }
+.cooperative-count small { color:#9eafc9;font-size:13px; }
+.cooperative-card progress { display:block;width:100%;height:3px;margin-bottom:24px;border:0;accent-color:#b4d4fa;border-radius:3px; }
+.cooperative-card .dock-primary { width:100%;border-radius:10px; }
+/* D-070: content-first phone pages; input remains outside the chat scroller. */
+.v2-welcome.is-content-page .v2-welcome__main { inset: 96px 28px auto; }
+.scene-copy :deep(.signal-type-title__caret) { display: none; }
+.v2-welcome.is-content-page .scene-copy h2 { font-size: 26px; line-height: 1.4; letter-spacing: .02em; }
+.v2-welcome.is-content-page .scene-copy > p:last-child { font-size: 13px; line-height: 1.6; margin-top: 8px; }
+.v2-welcome.is-content-page .operation-dock { top: 228px; max-height: none; background: linear-gradient(180deg,rgba(4,14,29,.38),rgba(2,9,21,.2)); border-color: rgba(170,211,255,.1); border-radius: 16px; box-shadow: inset 0 1px rgba(218,239,255,.035),0 16px 42px rgba(0,4,14,.14); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.v2-welcome.is-live-chat .operation-dock { border-color: transparent; border-radius: 0; background: linear-gradient(180deg,transparent 0%,rgba(2,9,21,.04) 58%,rgba(2,8,19,.34) 100%); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.v2-welcome.is-live-chat .operation-dock::before { opacity: .28; }
+.v2-welcome.is-live-chat .operation-dock::after { opacity: 0; }
+.v2-welcome.is-content-page .admitted-panel { flex: 1; min-height: 0; max-height: none; padding: 18px 16px; }
+.v2-welcome.is-live-chat .admitted-panel { display: flex; overflow: hidden; padding: 14px 12px 8px; }
+.v2-welcome.is-live-chat .program-composer { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 8px; }
+.v2-welcome.is-live-chat .now-playing { flex: 0 0 auto; color: #9eafc9; font-size: 12px; margin: 0; padding: 0 4px 8px; border-bottom: 1px solid #a3bdd51a; }
+.current-program-gifts { flex: 0 0 auto; min-width: 0; padding: 1px 4px 3px; color: #8ea3bf; font-size: 10px; }
+.current-program-gifts > span { display: block; margin-bottom: 5px; letter-spacing: .08em; }
+.current-program-gifts ul { display: flex; gap: 6px; margin: 0; padding: 0 0 3px; overflow-x: auto; list-style: none; scrollbar-width: none; }
+.current-program-gifts li { display: inline-grid; flex: 0 0 auto; grid-template-columns: 18px auto auto; align-items: center; gap: 4px; min-height: 30px; padding: 4px 8px; border: 1px solid rgba(164,207,255,.1); border-radius: 999px; color: #c8d7eb; background: rgba(8,25,45,.28); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.current-program-gifts li :deep(svg) { width: 16px; height: 16px; }
+.current-program-gifts li strong { color: #f0f7ff; font: 600 11px var(--font-data); }
+.v2-welcome.is-live-chat :deep(.mobile-live-barrage) { flex: 1; min-height: 40px; margin: 0; padding: 0 4px; border: 0; background: transparent; display: flex; flex-direction: column; }
+.v2-welcome.is-live-chat :deep(.mobile-live-barrage header) { display: none; }
+.v2-welcome.is-live-chat :deep(.mobile-chat-scroll) { height: auto; flex: 1; min-height: 0; }
+.v2-welcome.is-live-chat :deep(.mobile-chat-message) { padding-block: 8px; font-size: 14px; }
+.v2-welcome.is-live-chat :deep(.mobile-chat-empty) { padding: 30px 8px; }
+.composer-row,.composer-tools,.barrage-style-picker { flex: 0 0 auto; }
+.composer-row input { min-width: 0; border-radius: 10px; font-size: 14px; }
+.composer-row .dock-primary { border-radius: 10px; }
+.composer-tools { gap: 8px; }
+.composer-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.composer-identity > small { color: #9eafc9; font-size: 11px; white-space: nowrap; }
+.style-trigger { display: flex; gap: 7px; align-items: center; min-width: 60px; min-height: 44px; border: 0; background: transparent; color: #dae4f4; font: inherit; font-size: 12px; padding: 0 4px; }
+.style-trigger span { width: 14px; height: 14px; border-radius: 50%; }
+.barrage-style-picker { padding: 6px; border: 1px solid rgba(155,202,255,.1); border-radius: 12px; background: rgba(10,30,52,.42); -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px); }
+.barrage-colors { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 0; padding: 0; }
+.barrage-colors button { width: 100%; min-width: 0; height: 44px; border: 0; border-radius: 8px; background: transparent; display: grid; place-items: center; outline: none; }
+.barrage-colors button::after { content: ''; width: 22px; height: 22px; border-radius: 50%; background: var(--swatch); }
+.barrage-colors button[aria-pressed="true"]::after { outline: 1px solid #edf4ff; outline-offset: 3px; }
+.barrage-colors button:focus-visible { outline: 2px solid #8dbaff; }
+.barrage-style-picker .barrage-color-help { margin: 6px 4px 2px; }
+.composer-tools .gift-trigger { min-height: 44px; border-radius: 10px; padding: 6px 10px; }
+.program-list header { color: #94a6c1; font-size: 12px; margin-bottom: 14px; }
+.program-list li { padding: 15px 2px; background: transparent; border-bottom: 1px solid #a7c1de18; border-radius: 0; }
+.program-list li strong { font-size: 16px; font-weight: 500; line-height: 1.5; color: #dae3f1; }
+.program-list li .program-performers { color: #93a3bc; letter-spacing: 0; font-size: 12px; margin-top: 6px; }
+.program-list li.is-current { background: #599eef10; border-radius: 10px; padding-inline: 10px; }
+.program-list li.is-current strong,.program-list li.is-current .program-performers { color: #8dbaff; }
+.program-list li.is-segment { grid-template-columns: minmax(0, 1fr); gap: 5px; margin: 1px 0; padding: 11px 2px; border: 0; border-radius: 0; background: transparent; text-align: center; }
+.program-list li.is-segment > div { display: flex; align-items: center; gap: 10px; }
+.program-list li.is-segment > div::before,.program-list li.is-segment > div::after { content: ''; flex: 1 0 20px; height: 1px; background: linear-gradient(90deg, transparent, #a8bedc45); }
+.program-list li.is-segment > div::after { transform: rotate(180deg); }
+.program-list li.is-segment strong { flex: 0 1 auto; color: #b9c9df; font-size: 13px; letter-spacing: .04em; line-height: 1.6; }
+.program-list li.is-segment.is-current strong { color: #8dbaff; }
+.program-list li.is-segment em { justify-self: center; }
+.archive header { padding: 18px 14px; border: 1px solid #c6d7ef20; border-left: 2px solid var(--identity-color); border-radius: 12px; background: linear-gradient(120deg,#263d5844,transparent); }
+.archive header > strong { color: var(--identity-color); font-size: 18px; }
+.archive dl { grid-template-columns: repeat(3,minmax(0,1fr)); margin-top: 18px; }
+.archive dl > div:first-child { grid-column: auto; }
+.archive dl > div { border: 0!important; padding: 12px 6px; }
+.archive dl > div + div { border-left: 1px solid rgba(157,201,255,.1)!important; }
+.archive-metric-help:not(.is-visible) { display: none; }
+.archive dl dt { min-height: 44px; display: flex; align-items: center; }
+.archive dl dd { font-size: 20px; font-weight: 500; }
+.archive header small { letter-spacing: 0; color: #9eafc9; }
+.archive-activity { margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(174,211,255,.12); }
+.archive-activity > header { padding: 0; border: 0; border-left: 0; border-radius: 0; background: transparent; }
+.archive-activity-title { display: block; margin: 3px 0 0; color: #edf5ff; font-size: 15px; font-weight: 560; }
+.archive-activity > header > strong { color: #a9c8ef; font-size: 12px; }
+.archive-gift-list,.archive-barrage-list { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+.archive-gift-list li { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 9px; min-height: 54px; padding: 8px 10px; border: 1px solid rgba(164,207,255,.09); border-radius: 10px; background: rgba(8,25,45,.28); }
+.archive-gift-icon { display: grid; width: 32px; height: 32px; place-items: center; color: #a7d9ff; }
+.archive-gift-icon :deep(svg) { width: 28px; height: 28px; }
+.archive-gift-list li div { min-width: 0; }
+.archive-gift-list li div strong { display: block; overflow: hidden; color: #dbe9fa; font-size: 13px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
+.archive-gift-list li div small { margin-top: 3px; color: #92a7c2; font-size: 11px; letter-spacing: 0; }
+.archive-gift-list li > span:last-child { color: #9eb5d0; font: 500 11px var(--font-data); white-space: nowrap; }
+.archive-barrage-list li { padding: 9px 11px; border: 1px solid rgba(164,207,255,.09); border-radius: 5px 12px 12px 12px; background: rgba(8,25,45,.25); }
+.archive-barrage-list p { margin: 0; color: #edf6ff; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.archive-barrage-list small { margin-top: 5px; color: #7f95b2; font: 10px var(--font-data); letter-spacing: .02em; }
+.archive-barrage-list small span { color: #c8a6a6; }
+.archive-empty { margin: 12px 0 0; padding: 14px 10px; color: #8298b4; background: rgba(8,25,45,.15); font-size: 12px; line-height: 1.6; }
+.dock-toast { position: absolute; left: 24px; right: 24px; top: 64px; bottom: auto; z-index: 12; pointer-events: none; border-radius: 10px; border: 1px solid #bfd8ff2b; background: #10243bef; font-size: 12px; box-shadow: 0 8px 28px #0005; }
+.phone-raffle { display: grid; justify-items: center; align-content: center; min-height: 280px; text-align: center; padding: 24px 8px; }
+.phone-raffle__star { color: #c8ddfa; font-size: 68px; line-height: 1.4; }
+.phone-raffle h3 { font-size: 22px; font-weight: 500; margin: 10px 0; }
+.phone-raffle p,.phone-raffle small { color: #9eafc9; font-size: 13px; line-height: 1.8; }
+.phone-raffle__code { margin-top: 22px; letter-spacing: .12em; color: #d6e6ff; }
+.gift-balance { display: flex; flex-wrap: nowrap; justify-content: space-between; gap: 12px; }
+.gift-balance > span { flex: 1; min-width: 100px; }
+.gift-balance output { flex: 0 0 auto; white-space: nowrap; }
+.modal-sheet .gift-allowance { margin: 12px 0 8px; color: #c0d7ed; font-size: 12px; }
+.modal-backdrop { background: rgba(0,3,10,.46); }
+.modal-sheet { border-radius: 18px; max-height: calc(100dvh - 96px); background: linear-gradient(145deg,rgba(17,39,65,.78),rgba(3,11,25,.72)); -webkit-backdrop-filter: blur(12px) saturate(116%); backdrop-filter: blur(12px) saturate(116%); }
+.gift-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.gift-grid button { grid-template-columns: 1fr auto; gap: 8px; min-height: 124px; border-radius: 12px; }
+.gift-icon-shell { grid-column: 1 / -1; }
+.gift-grid button small { font-size: 11px; letter-spacing: 0; }
+.gift-copy .gift-quantity { display: block; margin-top: 6px; color: #aac2df; font-size: 10px; line-height: 1.3; white-space: nowrap; }
+.page-reveal { animation: mobile-page-enter 200ms ease-out both; }
+@keyframes mobile-page-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+.mobile-sheet-enter-active,.mobile-sheet-leave-active { transition: opacity 220ms ease; }
+.mobile-sheet-enter-active .modal-sheet,.mobile-sheet-leave-active .modal-sheet { transition: transform 240ms cubic-bezier(.2,.8,.2,1); }
+.mobile-sheet-enter-from,.mobile-sheet-leave-to { opacity: 0; }
+.mobile-sheet-enter-from .modal-sheet,.mobile-sheet-leave-to .modal-sheet { transform: translateY(22px); }
+.v2-welcome.is-completed .personal-memento { padding: 8px 2px; }
+.v2-welcome.is-completed .operation-dock { border-radius: 16px; background: #081425db; }
+@media (max-width: 380px) { .barrage-colors { grid-template-columns: repeat(4,minmax(0,1fr)); } }
+@media (max-height: 620px) {
+ .v2-welcome.is-content-page .v2-welcome__main { inset: 68px 22px auto; }
+ .v2-welcome.is-content-page .operation-dock { top: 140px; }
+ .v2-welcome.is-content-page .scene-copy h2 { font-size: 22px; }
+ .gift-grid button { min-height: 92px; }
+ .gift-icon-shell { grid-column: auto; }
+}
+.v2-welcome.is-keyboard.is-content-page .operation-dock { top: 58px; bottom: max(6px,env(safe-area-inset-bottom)); max-height: none; }
+.v2-welcome.is-keyboard .dock-tabs,.v2-welcome.is-keyboard .barrage-style-picker,.v2-welcome.is-keyboard .style-trigger { display: none; }
+.v2-welcome.is-keyboard.is-live-chat .admitted-panel { padding: 8px 12px; }
+.v2-welcome.is-keyboard .composer-tools { min-height: 20px; }
+.v2-welcome.is-keyboard .dock-toast { top: 64px; bottom: auto; }
+@media (prefers-reduced-motion: reduce) {
+ .page-reveal { animation: none; }
+ .mobile-sheet-enter-active,.mobile-sheet-leave-active,.mobile-sheet-enter-active .modal-sheet,.mobile-sheet-leave-active .modal-sheet { transition: none; }
+ .mobile-sheet-enter-from .modal-sheet,.mobile-sheet-leave-to .modal-sheet { transform: none; }
+}
+
+
+
+/* D-092: one visual language, compact interactions above the composer. */
+.v2-welcome.is-content-page .operation-dock{top:var(--content-top,228px)}
+.v2-welcome.is-content-page .admitted-panel{overflow-y:auto;overscroll-behavior:contain}
+.v2-welcome.is-live-chat .admitted-panel{overflow:hidden;padding-top:8px}
+.v2-welcome.is-live-chat .program-composer{gap:6px}
+.v2-welcome.is-live-chat .scene-copy h2{font-size:26px;line-height:1.3}
+.v2-welcome.is-live-chat :deep(.mobile-chat-message){padding:4px 8px;font-size:13px;line-height:1.4}
+.v2-welcome.is-live-chat :deep(.mobile-chat-stack){gap:4px;padding-block:6px}
+.v2-welcome.is-live-chat :deep(.mobile-chat-sender){display:inline;margin-right:7px;font-size:10px}
+.composer-row input,.composer-row .dock-primary{min-height:44px;border-radius:5px}
+.live-interaction-card{flex:0 0 auto;display:grid;grid-template-columns:1fr auto;gap:6px 12px;margin:2px 0;padding:11px 12px;border:1px solid #a4bdd127;border-left:2px solid #a4c4d9;border-radius:4px;background:rgba(6,15,27,.88);box-shadow:none;max-height:210px;overflow:auto}
+.live-interaction-card>small{grid-column:1/-1;color:#8b9eae;font-size:9px;letter-spacing:.08em;font-weight:400}
+.live-interaction-card h3{font-size:13px;line-height:1.45;font-weight:500;max-width:230px}
+.live-interaction-card>p{grid-column:1/-1;font-size:11px}
+.live-interaction-card .buzzer-button{grid-column:1/-1;min-height:44px;border-radius:4px;border:1px solid #94afc049;background:#dae5ec;color:#0a1521;font:500 15px var(--font-ui);box-shadow:none;letter-spacing:.06em}
+.buzzer-countdown{grid-column:2;grid-row:2;color:#dceaf3;font:500 28px/1 var(--font-data);align-self:center}
+.live-interaction-card .buzzer-result{grid-column:1/-1;font:500 23px var(--font-data);text-shadow:none;text-align:left}
+.live-interaction-card .vote-options,.live-interaction-card .vote-results,.live-interaction-card .dock-primary{grid-column:1/-1}
+.vote-options span{border-radius:4px;background:#0e1b2a;font-weight:400}
+.vote-options input:checked+span{background:#283b4b;border-color:#afc6d7;box-shadow:none}
+.current-program-gifts>span{display:none}
+.current-program-gifts li{border-radius:4px;min-height:25px;padding:3px 6px}
+.gift-received{animation:gift-received-pop .72s cubic-bezier(.2,.7,.25,1) both;transform-origin:center}
+@keyframes gift-received-pop{0%{transform:scale(.84)}24%{transform:scale(1.17)}44%{transform:scale(.94)}64%{transform:scale(1.07)}82%{transform:scale(.98)}100%{transform:scale(1)}}
+.modal-sheet{border-radius:12px!important}
+.modal-backdrop{background:rgba(0,3,10,.24)}
+.modal-sheet,.confirm-dialog{background:linear-gradient(135deg,rgba(30,48,65,.55),rgba(6,16,28,.48));border:1px solid rgba(197,223,244,.32);-webkit-backdrop-filter:blur(22px) saturate(145%);backdrop-filter:blur(22px) saturate(145%);box-shadow:inset 0 1px rgba(255,255,255,.14),0 20px 60px rgba(0,0,0,.28)}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.modal-sheet,.confirm-dialog{background:rgba(8,19,32,.88)}}
+
+.gift-grid{margin:10px 0 14px;gap:8px}
+.gift-grid button{min-height:92px;border-radius:5px;box-shadow:none}
+.gift-grid button[aria-pressed=true]{border-color:#bfd2df;background:#293c4f;box-shadow:inset 0 0 0 1px #bfd2df66}
+.gift-grid .gift-icon-shell{width:27px;height:27px;border-radius:0;background:transparent;box-shadow:none}
+.gift-amount{border-radius:5px;padding:6px 10px;background:#0b1928}
+.gift-amount button{background:#132333}
+.gift-send-row{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:14px}
+.gift-send-row>span{font:500 18px var(--font-data)}
+.gift-send-row small{font-size:11px;color:#d7a691;letter-spacing:0}
+.gift-send-row .dock-primary{min-width:120px;min-height:44px;border-radius:5px}
+.premium-barrage-confirm{gap:12px;border-radius:12px}
+.premium-barrage-confirm h2{font-size:21px}
+.premium-barrage-confirm blockquote{padding:12px;border-radius:4px;background:#101d2b;border-color:#8ba3b822;font-size:16px}
+.premium-barrage-confirm .premium-balance{margin:0;color:#96a9ba;font-size:12px}
+.premium-barrage-confirm .dock-actions button{border-radius:4px}
+@media(max-height:680px){.v2-welcome.is-content-page .v2-welcome__main{top:83px}.v2-welcome.is-live-chat .scene-copy h2{font-size:22px}.live-interaction-card{max-height:155px;padding:8px 10px}.live-interaction-card h3{font-size:12px}.live-interaction-card>small{font-size:9px}.v2-welcome.is-content-page .admitted-panel{padding:10px 12px}.v2-welcome.is-live-chat .now-playing{padding-bottom:4px}.composer-tools .gift-trigger{padding-block:2px}}
+@media(prefers-reduced-motion:reduce){.gift-received{animation:none}}
+
+
+/* D-094: consistent rounded glass and one brief gift-color pulse. */
+.current-program-gifts li{position:relative;isolation:isolate;border-radius:10px;--gift-tint:#ffe1a1}
+.current-program-gifts li[data-gift-id="gift-beacon"]{--gift-tint:#76d8ff}
+.current-program-gifts li[data-gift-id="gift-orbit"]{--gift-tint:#9db6ff}
+.current-program-gifts li[data-gift-id="gift-starship"]{--gift-tint:#ddc5ff}
+.current-program-gifts li::after{content:'';position:absolute;inset:-1px;z-index:-1;pointer-events:none;border-radius:inherit;border:1px solid var(--gift-tint);background:radial-gradient(ellipse at 50% 100%,var(--gift-tint),transparent 85%);box-shadow:0 0 20px color-mix(in srgb,var(--gift-tint) 35%,transparent);opacity:0}
+.current-program-gifts li.gift-received::after{animation:gift-color-flash .72s ease-out both}
+@keyframes gift-color-flash{0%{opacity:0}18%{opacity:.58}100%{opacity:0}}
+
+.modal-sheet{border-radius:22px!important}
+.modal-sheet,.confirm-dialog{border-radius:22px;background:linear-gradient(135deg,rgba(30,48,65,.36),rgba(6,16,28,.30));border-color:rgba(197,223,244,.24);-webkit-backdrop-filter:blur(18px) saturate(145%);backdrop-filter:blur(18px) saturate(145%)}
+.modal-backdrop{background:rgba(0,3,10,.16)}
+.gift-grid button,.gift-amount,.premium-barrage-confirm blockquote,.live-interaction-card{border-radius:14px}
+.gift-grid button[aria-pressed=true]{background:rgba(54,80,102,.50)}
+.gift-amount{background:rgba(11,25,40,.48)}
+.gift-amount button,.gift-send-row .dock-primary,.confirm-dialog .dock-actions button,.modal-sheet header button,.composer-row input,.composer-row .dock-primary,.live-interaction-card .buzzer-button,.vote-options span{border-radius:10px}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.modal-sheet,.confirm-dialog{background:rgba(8,19,32,.88)}}
+@media(prefers-reduced-motion:reduce){.current-program-gifts li::after{animation:none;opacity:0}}
+
+/* D-099: local glass controls share the same hierarchy and comfortable edges. */
+.v2-welcome:not(.is-content-page) .operation-dock{border:1px solid rgba(180,210,239,.15);border-radius:18px;background:linear-gradient(150deg,rgba(20,37,55,.4),rgba(3,10,20,.28));box-shadow:inset 0 1px rgba(230,244,255,.035)}
+.entry-form input{border-radius:12px;min-height:48px;background:rgba(3,10,19,.36);border-color:rgba(157,191,224,.24)}
+.entry-form .dock-primary,.color-control .dock-primary{border-radius:12px}
+.v2-welcome__logout{border:1px solid rgba(158,193,226,.17);border-radius:12px;background:rgba(8,20,34,.3)}
+.v2-welcome__logout::before,.v2-welcome__logout::after{display:none}
+.gift-grid button{position:relative}.gift-grid .gift-icon-shell{border:0}
+.gift-selection-mark{position:absolute;right:10px;top:10px;display:grid;place-items:center;width:18px;height:18px;border-radius:50%;color:#0b1c2b;background:#cee4f4;font-size:12px;font-weight:600}
+.gift-send-row>span{line-height:1.35}.gift-send-row .gift-total-label{display:block;margin-bottom:3px;color:#9fb6cc;font:400 11px/1.5 var(--font-ui)}
+.live-interaction-card{border-color:rgba(177,205,227,.19);background:linear-gradient(130deg,rgba(25,43,60,.5),rgba(5,16,28,.48));-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.v2-welcome.is-completed .operation-dock{background:linear-gradient(150deg,rgba(20,37,55,.55),rgba(3,10,20,.5));border-radius:18px}
+
 </style>

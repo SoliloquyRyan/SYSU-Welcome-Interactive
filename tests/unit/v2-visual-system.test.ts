@@ -120,7 +120,7 @@ describe('V2 mobile visual system contracts', () => {
     const openGift = script.match(/async function openGift\(\)[\s\S]*?\n\}/u)?.[0] ?? ''
     const sendGift = script.match(/async function sendGift\(gift\)[\s\S]*?\n\}/u)?.[0] ?? ''
     const readyGate = script.match(
-      /const giftInteractionReady = computed\(\(\) =>[\s\S]*?Boolean\(currentProgram\.value\),\s*\)/u,
+      /const giftInteractionReady = computed\(\(\) =>[\s\S]*?Boolean\(currentProgram\.value[^\n]+\),\s*\)/u,
     )?.[0] ?? ''
 
     expect(trigger).toContain('aria-haspopup="dialog"')
@@ -132,20 +132,35 @@ describe('V2 mobile visual system contracts', () => {
 
     expect(readyGate).toContain('writesReady.value')
     expect(readyGate).toContain("actionAllowed(snapshot.value, 'SEND_GIFT')")
-    expect(readyGate).toContain('Boolean(currentProgram.value)')
-    expect(sendButton).toContain(':disabled="!giftInteractionReady || participant.powerBalance < gift.powerCost || Boolean(busy)"')
-    expect(sendButton).toContain('@click="sendGift(gift)"')
+    expect(readyGate).toContain("currentProgram.value.kind === 'PERFORMANCE'")
+    expect(template).toContain(':disabled="!selectedGift || !giftInteractionReady || participant.powerBalance < giftTotal || Boolean(busy)"')
+    expect(template).not.toContain('首礼减免')
+    expect(sendButton).toContain('@click="selectedGiftId = gift.id"')
+    expect(template).toContain('@click="sendGift(selectedGift)"')
     expect(sendGift).toContain('if (!currentProgram.value) return')
     expect(sendGift).toContain("await runCommand('SEND_GIFT'")
     expect(sendGift).toContain('programId: currentProgram.value.id')
     expect(sendGift).toContain('giftId: gift.id')
+    expect(sendGift).toContain('quantity: giftQuantity.value')
+    expect(template).toContain('aria-label="减少礼物数量"')
+    expect(template).toContain('aria-label="增加礼物数量"')
     expect(template).toContain('v-if="currentProgram?.giftCatalog?.length"')
     expect(template).toContain('{{ gift.powerCost }}')
     expect(template).toContain('{{ participant.powerBalance }}')
     expect(template).toContain('id="gift-availability"')
+    expect(template).toContain('aria-label="当前节目收到的礼物"')
+    expect(template).toContain('participant.giftHistory')
+    expect(template).toContain('participant.barrageHistory')
+    expect(template).toContain('<GiftStarshipFlight')
+    const barrage = read('frontend/src/pages/student/MobileBarrage.vue')
+    expect(barrage).toMatch(/<TransitionGroup\b[^>]*\bname="chat-rise"/u)
+    expect(barrage).toContain('background:linear-gradient(105deg,rgba(9,25,46,.5),rgba(11,28,48,.24))')
+    const screen = read('frontend/src/pages/screen/V2ScreenExperience.vue')
+    expect(screen).toContain('<GiftStarshipFlight')
+    expect(screen).toContain('applyGiftEvent(payload.gift)')
   })
 
-  it('defines a code-like display face, restrained body typography and small asymmetric corners', () => {
+  it('uses a local mobile font with system fallback and retains small asymmetric corners', () => {
     const page = read('frontend/src/pages/student/V2WelcomeExperience.vue')
     const style = sfcBlock(page, 'style')
     const tokens = read('frontend/src/styles/tokens.css')
@@ -158,10 +173,15 @@ describe('V2 mobile visual system contracts', () => {
     expect(display).toMatch(/Cascadia Code|Cascadia Mono|ui-monospace/u)
     expect(signal).toMatch(/Bahnschrift|Segoe UI Variable/u)
     expect(data).toMatch(/Cascadia Mono|SFMono-Regular|Consolas/u)
-    expect(style).toContain('--font-ui: var(--font-family-cjk)')
-    expect(style).toContain('--font-display: var(--font-family-display)')
-    expect(style).toContain('--font-signal: var(--font-family-signal)')
-    expect(style).toContain('--font-data: var(--font-family-data)')
+    expect(customProperty(style, '--font-ui')).toMatch(/^"Welcome Sans SC",\s*var\(--font-family-cjk\)$/u)
+    expect(customProperty(style, '--font-display')).toBe('var(--font-ui)')
+    expect(customProperty(style, '--font-signal')).toBe('var(--font-ui)')
+    expect(customProperty(style, '--font-data')).toContain('var(--font-family-data)')
+    const mobileFont = read('frontend/src/styles/mobile-font.css')
+    expect(mobileFont).toContain('font-display: swap')
+    expect(mobileFont).toContain('font-weight: 400 700')
+    expect(mobileFont).toMatch(/src:\s*url\("\.\.\/assets\/fonts\/[^"\n]+\.woff2"\)/u)
+    expect(mobileFont).not.toMatch(/url\(["']?(?:https?:|data:)/u)
     expect(cssRule(style, '.v2-welcome__main h2')).toContain('font-family: var(--font-display)')
 
     for (const token of ['--shape-panel', '--shape-control', '--shape-item']) {
@@ -209,7 +229,7 @@ describe('V2 mobile visual system contracts', () => {
     expect(admin).toContain("NONE: '无活动投影'")
     expect(admin).toContain('{{ presentationLabel }}')
     expect(admin).not.toContain('{{ presentation.type }}')
-    expect(admin).toContain("protectedRuntime ? '现场后台登录' : '共用 Demo 后台登录'")
+    expect(admin).toContain("protectedRuntime ? '现场后台登录' : '排练后台登录'")
     expect(admin).toContain('<BaseCard v-if="!protectedRuntime"')
     expect(app).toContain('import.meta.env.VITE_SITE_EDITION')
     expect(app).toContain("deploymentCopy(import.meta.env.VITE_SITE_NOTICE, '仅使用固定合成数据')")
@@ -225,12 +245,14 @@ describe('V2 mobile visual system contracts', () => {
     const archive = page.match(/<section v-else class="archive"[\s\S]*?<\/section>/u)?.[0] ?? ''
 
     expect(page.match(/id="view-title"/gu)).toHaveLength(1)
-    expect(page).toContain(':text="viewCopy.title"')
+    // Visible line breaks preserve the canonical, complete accessible heading.
+    expect(page).toContain(':text="viewCopy.displayTitle ?? viewCopy.title"')
+    expect(page).toContain(':accessible-label="viewCopy.title"')
     for (const panel of [program, archive]) {
       expect(panel).toContain('aria-labelledby="view-title"')
       expect(panel).not.toMatch(/<h[1-3]\b/u)
     }
-    expect(program).toContain('<strong class="panel-context">现场编排</strong>')
+    expect(program).not.toContain('class="panel-context"')
     expect(archive).toContain('<strong class="archive-owner">{{ participantDisplayName }}</strong>')
   })
 
@@ -258,12 +280,13 @@ describe('V2 mobile visual system contracts', () => {
     const archive = page.match(/<section v-else class="archive"[\s\S]*?<\/section>/u)?.[0] ?? ''
     const escapeHandler = script.match(/function onEscape\(event\)[\s\S]*?\n\}/u)?.[0] ?? ''
 
-    expect(archive.indexOf('<dt>星星编号</dt>')).toBeGreaterThanOrEqual(0)
-    expect(archive.indexOf('<dt>星星编号</dt>')).toBeLessThan(archive.indexOf('<dt>星色</dt>'))
+    expect(archive).not.toContain('<dt>星星编号</dt>')
+    expect(archive.indexOf('archive-owner')).toBeLessThan(archive.indexOf('<dt>星色</dt>'))
     expect(archive).toContain('{{ participantDisplayName }}')
     expect(archive).toContain('{{ personalStarCode }}')
     expect(archive).not.toContain('<dt>入场</dt>')
-    for (const metric of ['power', 'starlight']) {
+    expect(archive).not.toContain('participant.starlight')
+    for (const metric of ['power']) {
       const trigger = archive.match(
         new RegExp(`<button type="button"[^>]*archiveMetricHelp === '${metric}'[^>]*>`, 'u'),
       )?.[0] ?? ''

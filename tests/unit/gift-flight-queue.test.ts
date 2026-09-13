@@ -1,0 +1,33 @@
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { createGiftFlightQueue } from "../../frontend/src/rendering/gift-flight-queue"
+describe("gift flight queue", () => {
+  afterEach(() => vi.useRealTimers())
+  it("never overlaps flights and preserves the gap even for arrivals during the gap", () => {
+    vi.useFakeTimers()
+    const change = vi.fn()
+    const queue = createGiftFlightQueue({ duration: () => 7200, gap: 2000, onChange: change })
+    queue.enqueue({ id: "a", quantity: 3 })
+    vi.advanceTimersByTime(7200)
+    expect(change.mock.calls.map(c => c[0])).toEqual([{ id: "a", quantity: 3 }, null])
+    queue.enqueue({ id: "b", quantity: 2 })
+    vi.advanceTimersByTime(1999)
+    expect(change).toHaveBeenCalledTimes(2)
+    vi.advanceTimersByTime(1)
+    expect(change).toHaveBeenLastCalledWith({ id: "b", quantity: 2 })
+    queue.clear()
+    vi.advanceTimersByTime(20000)
+    expect(change).toHaveBeenLastCalledWith(null)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+  it("clears queued flights on scene interruption and can restart", () => {
+    vi.useFakeTimers()
+    const change = vi.fn()
+    const queue = createGiftFlightQueue({ duration: () => 2800, gap: 2000, onChange: change })
+    queue.enqueue({ id: "a" }); queue.enqueue({ id: "b" })
+    queue.clear(); vi.advanceTimersByTime(20000)
+    expect(change.mock.calls.map(c => c[0])).toEqual([{ id: "a" }, null])
+    queue.enqueue({ id: "c" })
+    expect(change).toHaveBeenLastCalledWith({ id: "c" })
+    queue.clear()
+  })
+})

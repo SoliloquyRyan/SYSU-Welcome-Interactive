@@ -24,7 +24,7 @@ import {
   readProtocolRuntime,
   resetSyntheticV2Database,
   switchSyntheticDemoToV2,
-  upgradeSyntheticV2DatabaseFrom12To14,
+  upgradeSyntheticV2DatabaseFrom12To15,
   V2_DESTRUCTIVE_CONFIRMATION,
   V2_REWARD_RULE_VERSION,
   V2MaintenanceError,
@@ -34,6 +34,10 @@ import {
   activateV2Participant,
   executeV2ParticipantOnboardingCommand,
 } from '../../backend/src/services/v2-participant-onboarding.js'
+import * as programProjections from '../../backend/src/services/v2-program-catalog.js'
+import { executeV2RuntimeCommand } from '../../backend/src/services/v2-runtime-commands.js'
+import { readV2AdminSnapshot } from '../../backend/src/services/v2-snapshots.js'
+import { eventProgramPreset } from '../../frontend/src/pages/admin/program-catalog.js'
 
 const NOW = new Date('2026-08-13T04:00:00.000Z')
 const MIGRATIONS_PATH = path.join(BACKEND_ROOT, 'migrations')
@@ -152,8 +156,8 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
   }
 
   function upgradeOptions(
-    overrides: Partial<Parameters<typeof upgradeSyntheticV2DatabaseFrom12To14>[1]> = {},
-  ): Parameters<typeof upgradeSyntheticV2DatabaseFrom12To14>[1] {
+    overrides: Partial<Parameters<typeof upgradeSyntheticV2DatabaseFrom12To15>[1]> = {},
+  ): Parameters<typeof upgradeSyntheticV2DatabaseFrom12To15>[1] {
     return {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
@@ -269,7 +273,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
 
     const result = migrateDatabase(database, MIGRATIONS_PATH, () => NOW)
 
-    expect(result.applied).toEqual([8, 9, 10, 11, 12, 13, 14])
+    expect(result.applied).toEqual([8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21])
     expect(readProtocolRuntime(database)).toMatchObject({
       activeProtocolVersion: '1',
       activationState: 'V1_ACTIVE',
@@ -325,6 +329,13 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
       12,
       13,
       14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
     ])
 
     await expect(
@@ -563,7 +574,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
       }),
     ).toMatchObject({
       ready: true,
-      schemaVersion: 14,
+      schemaVersion: 21,
       protocolVersion: '2',
       resetEpoch: 2,
       participantCount: 300,
@@ -578,7 +589,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
     seedV2Schema12Baseline()
 
     await expect(
-      upgradeSyntheticV2DatabaseFrom12To14(
+      upgradeSyntheticV2DatabaseFrom12To15(
         database,
         upgradeOptions({ confirmation: 'missing-confirmation' }),
       ),
@@ -593,14 +604,14 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
   it('upgrades an active synthetic schema-12 database only after creating a verified backup', async () => {
     seedV2Schema12Baseline()
 
-    const result = await upgradeSyntheticV2DatabaseFrom12To14(
+    const result = await upgradeSyntheticV2DatabaseFrom12To15(
       database,
       upgradeOptions(),
     )
 
     expect(result).toMatchObject({
       previousSchemaVersion: 12,
-      schemaVersion: 14,
+      schemaVersion: 21,
       resetEpoch: 2,
       participantCount: 300,
     })
@@ -617,7 +628,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
     }
     expect(
       database.prepare('SELECT max(version) FROM _schema_migrations').pluck().get(),
-    ).toBe(14)
+    ).toBe(21)
     expect(
       database.prepare('SELECT count(*) FROM v2_raffle_state').pluck().get(),
     ).toBe(1)
@@ -627,12 +638,17 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
         manifestPath,
         participantCount: 300,
       }),
-    ).toMatchObject({ ready: true, schemaVersion: 14, resetEpoch: 2, issues: [] })
+    ).toMatchObject({ ready: true, schemaVersion: 21, resetEpoch: 2, issues: [] })
   })
 
-  it('reconciles an existing admitted participant projection during schema 12→14 upgrade', async () => {
+  it('reconciles an existing admitted participant projection during schema 12→15 upgrade', async () => {
     seedV2Schema12Baseline()
     const participant = readSeedManifest(manifestPath).participants[0]!
+    // Construct the historical participant with its old, empty program
+    // projection. The schema-15 projection must never run against schema 12.
+    const oldCurrent = vi.spyOn(programProjections, 'readCurrentV2Program').mockReturnValue(null)
+    const oldSchedule = vi.spyOn(programProjections, 'readV2ProgramSchedule').mockReturnValue([])
+    try {
     const activation = activateV2Participant(
       database,
       readDemoCredentialContext(manifestPath),
@@ -659,6 +675,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
       },
       NOW,
     )
+    } finally { oldCurrent.mockRestore(); oldSchedule.mockRestore() }
     const beforeRevision = Number(
       database
         .prepare(
@@ -669,7 +686,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
         .get(participant.id),
     )
 
-    await upgradeSyntheticV2DatabaseFrom12To14(database, upgradeOptions())
+    await upgradeSyntheticV2DatabaseFrom12To15(database, upgradeOptions())
 
     const afterRevision = Number(
       database
@@ -716,14 +733,14 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
         manifestPath,
         participantCount: 300,
       }),
-    ).toMatchObject({ ready: true, schemaVersion: 14, issues: [] })
+    ).toMatchObject({ ready: true, schemaVersion: 21, issues: [] })
   })
 
-  it('rolls schema 12→14 back while retaining the verified v2 backup', async () => {
+  it('rolls schema 12→15 back while retaining the verified v2 backup', async () => {
     seedV2Schema12Baseline()
 
     await expect(
-      upgradeSyntheticV2DatabaseFrom12To14(
+      upgradeSyntheticV2DatabaseFrom12To15(
         database,
         upgradeOptions({
           beforeCommit() {
@@ -838,6 +855,30 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
         .pluck()
       .get(),
     ).toBe(1)
+  })
+
+  it('retains the operational catalog while resetting a synthetic rehearsal epoch', async () => {
+    seedV1Baseline()
+    await switchSyntheticDemoToV2(database, cutoverOptions())
+    const before = readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW)
+    const catalog = eventProgramPreset()
+    executeV2RuntimeCommand(database, { roles: ['STAGE_CONTROLLER'], sessionShortId: 'catalog-reset', requestId: 'catalog-reset-apply' }, {
+      protocolVersion: '2', resetEpoch: before.resetEpoch, idempotencyKey: 'catalog-reset-apply',
+      command: 'UPDATE_PROGRAM_CATALOG', expectedRunRevision: before.runtime.runRevision,
+      expectedInteractionRevision: before.interaction.interactionRevision,
+      expectedCatalogRevision: before.programCatalog.revision, catalog, confirmed: true,
+    }, NOW)
+    resetSyntheticV2Database(database, {
+      migrationsPath: MIGRATIONS_PATH, manifestPath, participantCount: 300,
+      confirmation: V2_DESTRUCTIVE_CONFIRMATION, now: () => NOW,
+    })
+    const after = readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW)
+    expect(after.resetEpoch).toBe(before.resetEpoch + 1)
+    expect(after.programs.map(({ id }) => id)).toEqual(catalog.items.map(({ id }) => id))
+    expect(after.programs.every(({ heat }) => heat === 0)).toBe(true)
+    expect(after.programCatalog).toEqual({ revision: 1, label: catalog.label })
+    expect(after.currentProgram).toBeNull()
+    expect(verifyV2Foundation(database, { migrationsPath: MIGRATIONS_PATH, manifestPath, participantCount: 300 }).ready).toBe(true)
   })
 
   it('rolls a v2 reset back completely when SQLite fails mid-transaction', async () => {

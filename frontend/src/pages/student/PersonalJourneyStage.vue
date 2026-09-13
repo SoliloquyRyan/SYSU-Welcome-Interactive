@@ -1,6 +1,5 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import nebulaUrl from '../../assets/mobile/nebula-master.webp'
 import {
   PERSONAL_JOURNEY_PHASES,
   createPersonalJourneyRenderer,
@@ -13,6 +12,7 @@ const props = defineProps({
   },
   playing: { type: Boolean, default: false },
   reduced: { type: Boolean, default: false },
+  paused: { type: Boolean, default: false },
   color: { type: String, default: '#ffe3ad' },
   ownStar: { type: Object, default: null },
 })
@@ -21,7 +21,6 @@ const emit = defineEmits(['phase-complete'])
 const canvas = ref(null)
 let renderer = null
 let phaseEpoch = 0
-let image = null
 
 function applyVisualState() {
   renderer?.setState({
@@ -51,18 +50,16 @@ function applyPhase() {
 onMounted(() => {
   renderer = createPersonalJourneyRenderer(canvas.value, {
     reduced: props.reduced,
+    paused: props.paused,
   })
   applyVisualState()
   applyPhase()
 
-  image = new Image()
-  image.decoding = 'async'
-  image.addEventListener('load', () => renderer?.setNebulaImage(image), { once: true })
-  image.src = nebulaUrl
 })
 
 watch(() => [props.color, props.ownStar], applyVisualState, { deep: true })
 watch(() => [props.phase, props.playing], applyPhase)
+watch(() => props.paused, (next) => renderer?.setPaused(next))
 watch(() => props.reduced, (next) => {
   renderer?.setReduced(next)
   applyPhase()
@@ -72,7 +69,6 @@ onBeforeUnmount(() => {
   phaseEpoch += 1
   renderer?.destroy()
   renderer = null
-  image = null
 })
 
 defineExpose({
@@ -129,8 +125,8 @@ defineExpose({
 .personal-journey-stage__vignette {
   z-index: 1;
   background:
-    radial-gradient(ellipse at 50% 42%, transparent 18%, rgb(1 3 10 / 7%) 48%, rgb(0 1 5 / 64%) 100%),
-    linear-gradient(180deg, rgb(0 1 7 / 36%), transparent 18%, transparent 70%, rgb(0 1 6 / 58%));
+    radial-gradient(ellipse at 50% 42%, transparent 34%, rgb(6 15 30 / 5%) 68%, rgb(8 12 18 / 12%) 100%),
+    linear-gradient(180deg, rgb(8 12 18 / 12%), transparent 22%, transparent 76%, rgb(8 12 18 / 10%));
 }
 
 .personal-journey-stage__grain {

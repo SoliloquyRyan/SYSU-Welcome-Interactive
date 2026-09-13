@@ -1,3 +1,6 @@
+import { applyV2ProgramHeat } from './v2-program-ranking.js'
+import { applyV2CeremonyCommand, selectV2ProgramStage } from './v2-ceremony.js'
+import { applyV2ProgramCatalog, readCurrentV2Program, readProgramCatalogInfo } from './v2-program-catalog.js'
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 
 import {
@@ -7,6 +10,7 @@ import {
 
 import type { SqliteDatabase } from '../db/open-database.js'
 import { readProtocolRuntime } from '../db/v2-foundation.js'
+import { currentInteractionCode, readLiveInteractionRow, readV2LiveInteraction } from './v2-live-interactions.js'
 
 const EXPIRY = '9999-12-31T23:59:59.999Z'
 
@@ -226,7 +230,7 @@ function appendEvent(
 function appendProgramChanged(
   database: SqliteDatabase,
   runtime: RuntimeRow,
-  program: { id: string; title: string; heat: number; giftCatalog: unknown[] },
+  program: ReturnType<typeof readCurrentV2Program>,
   revision: number,
   timestamp: string,
 ) {
@@ -253,7 +257,7 @@ function appendInteractionEvent(
   database: SqliteDatabase,
   runtime: RuntimeRow,
   revision: number,
-  name: 'barrage.removed' | 'barrage.cleared' | 'barrage.pause.changed',
+  name: 'barrage.removed' | 'barrage.cleared' | 'barrage.pause.changed' | 'live.interaction.changed',
   payload: unknown,
   timestamp: string,
 ) {
@@ -266,6 +270,44 @@ function appendInteractionEvent(
   ).run(runtime.resetEpoch, seq, `${runtime.resetEpoch}:public:${seq}`, name,
     revision, JSON.stringify(payload), timestamp)
   database.prepare('UPDATE v2_runtime_state SET public_seq = ? WHERE id = 1').run(seq)
+}
+
+function setLiveInteraction(
+  database: SqliteDatabase,
+  runtime: RuntimeRow,
+  next: {
+    segmentCode: 'A' | 'B' | 'C' | null
+    phase: 'IDLE' | 'BUZZER_OPEN' | 'BUZZER_LOCKED' | 'VOTE_OPEN' | 'VOTE_REVEALED'
+    roundNumber: number
+    prompt: string
+    openedAt: string | null
+  },
+  timestamp: string,
+) {
+  const interactionRevision = interaction(database, runtime.resetEpoch).interactionRevision + 1
+  database.prepare(`UPDATE v2_live_interaction_state SET segment_code = ?, phase = ?,
+    round_number = ?, prompt = ?, revision = ?, opened_at = ?, updated_at = ?
+    WHERE reset_epoch = ?`).run(next.segmentCode, next.phase, next.roundNumber,
+    next.prompt, interactionRevision, next.openedAt, timestamp, runtime.resetEpoch)
+  database.prepare(`UPDATE v2_screen_interaction_state SET interaction_revision = ?,
+    updated_at = ? WHERE reset_epoch = ?`).run(interactionRevision, timestamp, runtime.resetEpoch)
+  appendInteractionEvent(database, runtime, interactionRevision, 'live.interaction.changed', {
+    interactionRevision,
+    liveInteraction: readV2LiveInteraction(database, runtime.resetEpoch),
+  }, timestamp)
+  return interactionRevision
+}
+
+function closeLiveInteractionIfActive(database: SqliteDatabase, runtime: RuntimeRow, timestamp: string) {
+  const live = readLiveInteractionRow(database, runtime.resetEpoch)
+  if (live.phase === 'IDLE') return
+  setLiveInteraction(database, runtime, {
+    segmentCode: null,
+    phase: 'IDLE',
+    roundNumber: live.roundNumber,
+    prompt: '',
+    openedAt: null,
+  }, timestamp)
 }
 
 function clearPresentation(database: SqliteDatabase, runtime: RuntimeRow, timestamp: string) {
@@ -456,7 +498,71 @@ export function executeV2RuntimeCommand(
     let nextPresentationRevision = runtime.presentationRevision
     let completedAt: string | null = null
     let updateRuntimeTuple = true
-    if (request.command === 'SET_BARRAGE_PAUSED') {
+    if (request.command === 'SET_PROGRAM_HEAT') {
+      updateRuntimeTuple = false
+      applyV2ProgramHeat(database, request, runtime, actor, timestamp, (code, message) => { throw new V2RuntimeCommandError(code, message, 409) })
+      const revision = currentInteraction.interactionRevision + 1
+      database.prepare('UPDATE v2_screen_interaction_state SET interaction_revision = ?, updated_at = ? WHERE id = 1').run(revision, timestamp)
+      appendProgramChanged(database, runtime, readCurrentV2Program(database), revision, timestamp)
+      appendAdminInvalidation(database, runtime, now)
+    } else if (['SAVE_AWARD', 'SET_STAGE_MODE', 'SELECT_AWARD', 'REVEAL_AWARD', 'HIDE_AWARD', 'SET_AWARD_PAGE'].includes(request.command)) {
+      updateRuntimeTuple = false
+      applyV2CeremonyCommand(database, request, runtime, (code, message) => { throw new V2RuntimeCommandError(code, message, 409) })
+      const revision = currentInteraction.interactionRevision + 1
+      database.prepare('UPDATE v2_screen_interaction_state SET interaction_revision = ?, updated_at = ? WHERE id = 1').run(revision, timestamp)
+      appendProgramChanged(database, runtime, readCurrentV2Program(database), revision, timestamp)
+      appendAdminInvalidation(database, runtime, now)
+    } else if (request.command === 'OPEN_BUZZER') {
+      updateRuntimeTuple = false
+      const live = readLiveInteractionRow(database, runtime.resetEpoch)
+      if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' ||
+          runtime.presentationType !== 'NONE' || currentInteractionCode(database) !== request.segmentCode) {
+        throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', `只有互动环节 ${request.segmentCode} 进行中时才能开放本轮抢答。`, 409)
+      }
+      setLiveInteraction(database, runtime, {
+        segmentCode: request.segmentCode,
+        phase: 'BUZZER_OPEN',
+        roundNumber: live.roundNumber + 1,
+        prompt: request.prompt,
+        openedAt: timestamp,
+      }, timestamp)
+      appendAdminInvalidation(database, runtime, now)
+    } else if (request.command === 'OPEN_AUDIENCE_VOTE') {
+      updateRuntimeTuple = false
+      const live = readLiveInteractionRow(database, runtime.resetEpoch)
+      const candidates = Number(database.prepare(`SELECT COUNT(*) FROM v2_raffle_draws
+        WHERE reset_epoch = ? AND draw_sequence <= 12`).pluck().get(runtime.resetEpoch))
+      if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' ||
+          runtime.presentationType !== 'NONE' || currentInteractionCode(database) !== 'B') {
+        throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '只有互动环节 B 进行中且抽取大屏关闭后才能开放投票。', 409)
+      }
+      if (candidates < 2) throw new V2RuntimeCommandError('RESOURCE_NOT_FOUND', '请先抽取至少两位上台观众。', 409)
+      setLiveInteraction(database, runtime, {
+        segmentCode: 'B',
+        phase: 'VOTE_OPEN',
+        roundNumber: live.roundNumber + 1,
+        prompt: request.prompt,
+        openedAt: timestamp,
+      }, timestamp)
+      appendAdminInvalidation(database, runtime, now)
+    } else if (request.command === 'REVEAL_AUDIENCE_VOTE') {
+      updateRuntimeTuple = false
+      const live = readLiveInteractionRow(database, runtime.resetEpoch)
+      if (live.phase !== 'VOTE_OPEN' || live.segmentCode !== 'B') {
+        throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '当前没有进行中的观众投票。', 409)
+      }
+      setLiveInteraction(database, runtime, { ...live, phase: 'VOTE_REVEALED', openedAt: timestamp }, timestamp)
+      appendAdminInvalidation(database, runtime, now)
+    } else if (request.command === 'CLOSE_LIVE_INTERACTION') {
+      updateRuntimeTuple = false
+      const live = readLiveInteractionRow(database, runtime.resetEpoch)
+      if (live.phase === 'IDLE') throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '当前没有开放的互动轮次。', 409)
+      setLiveInteraction(database, runtime, {
+        segmentCode: null, phase: 'IDLE', roundNumber: live.roundNumber,
+        prompt: '', openedAt: null,
+      }, timestamp)
+      appendAdminInvalidation(database, runtime, now)
+    } else if (request.command === 'SET_BARRAGE_PAUSED') {
       updateRuntimeTuple = false
       if (runtime.status === 'COMPLETED') {
         throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '活动结束后无需变更弹幕接收状态。', 409)
@@ -657,8 +763,9 @@ export function executeV2RuntimeCommand(
         JSON.stringify({ capsuleId: request.capsuleId, reason: request.reason }), actor.requestId, timestamp)
     } else if (request.command === 'OPEN_RAFFLE') {
       updateRuntimeTuple = false
-      if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' || runtime.presentationType !== 'NONE') {
-        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '抽奖只能在节目支持阶段且当前无其他投影时开启。', 409)
+      if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' || runtime.presentationType !== 'NONE' ||
+          currentInteractionCode(database) !== 'B' || readLiveInteractionRow(database, runtime.resetEpoch).phase !== 'IDLE') {
+        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '抽取上台观众只能在互动环节 B 且当前无其他互动时开启。', 409)
       }
       const raffle = database.prepare(
         `SELECT raffle_revision AS raffleRevision FROM v2_raffle_state WHERE reset_epoch = ?`,
@@ -679,7 +786,13 @@ export function executeV2RuntimeCommand(
     } else if (request.command === 'DRAW_RAFFLE') {
       updateRuntimeTuple = false
       if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' || runtime.presentationType !== 'RAFFLE') {
-        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '请先在节目支持阶段开启抽奖大屏。', 409)
+        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '请先在互动环节 B 开启上台观众抽取大屏。', 409)
+      }
+      const selectedCount = Number(database.prepare(
+        `SELECT COUNT(*) FROM v2_raffle_draws WHERE reset_epoch = ?`,
+      ).pluck().get(runtime.resetEpoch))
+      if (selectedCount >= 12) {
+        throw new V2RuntimeCommandError('RESOURCE_NOT_FOUND', '本轮已达到 12 位上台候选上限。', 409)
       }
       const candidates = database.prepare(
         `SELECT participant.identity_id AS identityId
@@ -690,7 +803,7 @@ export function executeV2RuntimeCommand(
            AND draw.id IS NULL ORDER BY participant.identity_id`,
       ).all(runtime.resetEpoch) as Array<{ identityId: string }>
       if (candidates.length === 0) {
-        throw new V2RuntimeCommandError('RESOURCE_NOT_FOUND', '没有尚未中奖的已入场新生。', 409)
+        throw new V2RuntimeCommandError('RESOURCE_NOT_FOUND', '没有尚未抽取的已入场观众。', 409)
       }
       const selected = candidates[randomInt(candidates.length)]!
       const drawSequence = Number(database.prepare(
@@ -715,16 +828,20 @@ export function executeV2RuntimeCommand(
     } else if (request.command === 'CLOSE_RAFFLE') {
       updateRuntimeTuple = false
       if (runtime.presentationType !== 'RAFFLE') {
-        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '抽奖大屏当前未开启。', 409)
+        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '上台观众抽取大屏当前未开启。', 409)
       }
       nextPresentationRevision = clearPresentation(database, runtime, timestamp)
       appendAdminInvalidation(database, runtime, now)
     } else if (request.command === 'CLEAR_RAFFLE') {
       updateRuntimeTuple = false
       if (runtime.mode !== 'REHEARSAL') {
-        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '只有排练模式可以清空抽奖记录。', 409)
+        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '只有排练模式可以清空观众抽取记录。', 409)
+      }
+      if (readLiveInteractionRow(database, runtime.resetEpoch).phase !== 'IDLE') {
+        throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '请先关闭当前投票或抢答，再清空观众抽取记录。', 409)
       }
       database.prepare(`DELETE FROM v2_raffle_draws WHERE reset_epoch = ?`).run(runtime.resetEpoch)
+      database.prepare(`DELETE FROM v2_audience_votes WHERE reset_epoch = ?`).run(runtime.resetEpoch)
       database.prepare(
         `UPDATE v2_raffle_state SET display_active = 0,
            raffle_revision = raffle_revision + 1, updated_at = ? WHERE reset_epoch = ?`,
@@ -747,49 +864,79 @@ export function executeV2RuntimeCommand(
     } else if (request.command === 'START') {
       if (runtime.status !== 'READY' || runtime.currentScene !== null) throw new V2RuntimeCommandError('SCENE_TRANSITION_INVALID', '只能从 READY 启动。', 409)
       nextStatus = 'RUNNING'; nextScene = 'ASSEMBLY'; nextRunRevision += 1
+    } else if (request.command === 'UPDATE_PROGRAM_CATALOG') {
+      updateRuntimeTuple = false
+      if (runtime.status !== 'READY' || runtime.currentScene !== null) {
+        throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '节目目录只能在活动开始前维护。', 409)
+      }
+      if (request.expectedCatalogRevision !== readProgramCatalogInfo(database).revision) {
+        throw new V2RuntimeCommandError('REVISION_CONFLICT', '节目目录已被其他主控更新，请重新预览。', 409)
+      }
+      const history = Number(database.prepare('SELECT COUNT(*) FROM v2_gift_transactions').pluck().get())
+      const heat = Number(database.prepare('SELECT COALESCE(SUM(heat), 0) FROM v2_program_catalog').pluck().get())
+      if (history !== 0 || heat !== 0) {
+        throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '已有应援记录，不能替换其节目归属。', 409)
+      }
+      const count = Number(database.prepare('SELECT COUNT(*) FROM v2_program_catalog').pluck().get())
+      const existing = new Set(database.prepare('SELECT id FROM v2_program_catalog').pluck().all())
+      if (count + request.catalog.items.filter(({ id }) => !existing.has(id)).length > 256) {
+        throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '保留的节目已达维护上限，请联系维护人员。', 409)
+      }
+      applyV2ProgramCatalog(database, request.catalog, timestamp)
+      const interactionRevision = currentInteraction.interactionRevision + 1
+      database.prepare('UPDATE v2_screen_interaction_state SET interaction_revision = ?, updated_at = ? WHERE reset_epoch = ?')
+        .run(interactionRevision, timestamp, runtime.resetEpoch)
+      appendProgramChanged(database, runtime, null, interactionRevision, timestamp)
+      appendAdminInvalidation(database, runtime, now)
     } else if (request.command === 'SET_PROGRAM') {
       updateRuntimeTuple = false
-      if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT') {
+      if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' || runtime.presentationType !== 'NONE') {
         throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '只有节目支持场景可以切换当前节目。', 409)
       }
+      if (readLiveInteractionRow(database, runtime.resetEpoch).phase !== 'IDLE') {
+        throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '请先结束当前互动轮次，再切换节目或互动环节。', 409)
+      }
       const program = database.prepare(
-        `SELECT id, title, heat FROM program_catalog WHERE id = ? AND enabled = 1`,
+        `SELECT id, title, heat FROM v2_program_catalog WHERE id = ? AND enabled = 1`,
       ).get(request.programId) as { id: string; title: string; heat: number } | undefined
       if (!program) {
         throw new V2RuntimeCommandError('RESOURCE_NOT_FOUND', '节目不存在或尚未启用。', 404)
       }
       const previousProgramId = database.prepare(
-        'SELECT current_program_id FROM program_runtime_state WHERE id = 1',
+        'SELECT current_program_id FROM v2_program_catalog_state WHERE id = 1',
       ).pluck().get() as string | null
       if (previousProgramId !== program.id) {
         database.prepare(
-          `UPDATE program_runtime_state SET current_program_id = ?, updated_at = ? WHERE id = 1`,
+          `UPDATE v2_program_catalog_state SET current_program_id = ?, updated_at = ? WHERE id = 1`,
         ).run(program.id, timestamp)
+        selectV2ProgramStage(database)
         const interactionRevision = currentInteraction.interactionRevision + 1
         database.prepare(
           `UPDATE v2_screen_interaction_state SET interaction_revision = ?, updated_at = ?
            WHERE reset_epoch = ?`,
         ).run(interactionRevision, timestamp, runtime.resetEpoch)
-        const giftCatalog = database.prepare(
-          `SELECT id, name, power_cost AS powerCost
-           FROM gift_catalog WHERE enabled = 1 ORDER BY sort_order`,
-        ).all()
-        appendProgramChanged(database, runtime, { ...program, giftCatalog }, interactionRevision, timestamp)
+        appendProgramChanged(database, runtime, readCurrentV2Program(database), interactionRevision, timestamp)
         appendAdminInvalidation(database, runtime, now)
       }
     } else if (request.command === 'SET_SCENE') {
       if (runtime.mode !== 'REHEARSAL' || runtime.status !== 'RUNNING') throw new V2RuntimeCommandError('SCENE_TRANSITION_INVALID', '排练运行时才可切换场景。', 409)
       nextPresentationRevision = clearPresentation(database, runtime, timestamp)
+      closeLiveInteractionIfActive(database, runtime, timestamp)
+      selectV2ProgramStage(database)
       nextScene = request.targetScene
       if (nextScene !== runtime.currentScene) nextRunRevision += 1
     } else if (request.command === 'ADVANCE') {
       if (runtime.mode !== 'LIVE' || runtime.status !== 'RUNNING' || runtime.currentScene === 'COOPERATIVE_LIGHT') throw new V2RuntimeCommandError('SCENE_TRANSITION_INVALID', 'LIVE 只能顺序推进三个场景。', 409)
       nextPresentationRevision = clearPresentation(database, runtime, timestamp)
+      closeLiveInteractionIfActive(database, runtime, timestamp)
+      selectV2ProgramStage(database)
       nextScene = runtime.currentScene === 'ASSEMBLY' ? 'PROGRAM_SUPPORT' : 'COOPERATIVE_LIGHT'
       nextRunRevision += 1
     } else if (request.command === 'PAUSE') {
       if (runtime.status !== 'RUNNING') throw new V2RuntimeCommandError('SCENE_TRANSITION_INVALID', '仅 RUNNING 可暂停。', 409)
       nextPresentationRevision = clearPresentation(database, runtime, timestamp)
+      closeLiveInteractionIfActive(database, runtime, timestamp)
+      database.prepare('UPDATE v2_ceremony_state SET revealed = 0, page = 0, revision = revision + 1 WHERE id = 1').run()
       nextStatus = 'PAUSED'; nextRunRevision += 1
     } else if (request.command === 'RESUME') {
       if (runtime.status !== 'PAUSED') throw new V2RuntimeCommandError('SCENE_TRANSITION_INVALID', '仅 PAUSED 可恢复。', 409)

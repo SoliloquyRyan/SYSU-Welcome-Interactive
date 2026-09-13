@@ -50,9 +50,9 @@
     scroll-behavior: auto;
   }
 
-  *,
-  *::before,
-  *::after {
+  html:not(.v2-stage-motion-full) *,
+  html:not(.v2-stage-motion-full) *::before,
+  html:not(.v2-stage-motion-full) *::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
@@ -60,10 +60,10 @@
     transition-delay: 0s !important;
   }
 
-  [data-ambient-motion],
-  [data-ambient-motion] *,
-  [data-motion="decorative"],
-  [data-motion="decorative"] * {
+  html:not(.v2-stage-motion-full) [data-ambient-motion],
+  html:not(.v2-stage-motion-full) [data-ambient-motion] *,
+  html:not(.v2-stage-motion-full) [data-motion="decorative"],
+  html:not(.v2-stage-motion-full) [data-motion="decorative"] * {
     animation: none !important;
   }
 }

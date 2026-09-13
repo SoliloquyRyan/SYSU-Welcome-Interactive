@@ -117,6 +117,7 @@ export const G2RealtimeEventEnvelopeSchema = z.discriminatedUnion('type', [
         programId: z.string().min(1).max(64),
         giftId: z.string().min(1).max(64),
         powerCost: z.union([
+          z.literal(1),
           z.literal(5),
           z.literal(10),
           z.literal(20),

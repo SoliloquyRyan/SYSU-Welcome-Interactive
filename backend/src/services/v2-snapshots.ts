@@ -1,3 +1,5 @@
+import { readV2Stage, readV2AwardSummaries, readV2Awards } from './v2-ceremony.js'
+import { readCurrentV2Program, readV2ProgramSchedule, readProgramCatalogInfo } from './v2-program-catalog.js'
 import {
   V2AdminSnapshotSchema,
   V2ScreenSnapshotSchema,
@@ -7,6 +9,8 @@ import {
 
 import type { SqliteDatabase } from '../db/open-database.js'
 import { readV2ParticipantSnapshot as readParticipantSnapshot } from './v2-participant-onboarding.js'
+import { readV2ClosingRecap } from './v2-closing-recap.js'
+import { readV2LiveInteraction } from './v2-live-interactions.js'
 
 interface RuntimeRow {
   resetEpoch: number
@@ -148,44 +152,8 @@ function funnel(database: SqliteDatabase, epoch: number, now: Date) {
   }
 }
 
-function currentProgram(database: SqliteDatabase) {
-  const program = database.prepare(
-    `SELECT program.id, program.title, program.heat FROM program_runtime_state state
-     JOIN program_catalog program ON program.id = state.current_program_id
-     WHERE state.id = 1`,
-  ).get() as { id: string; title: string; heat: number } | undefined
-  if (!program) return null
-  const giftCatalog = database.prepare(
-    `SELECT id, name, power_cost AS powerCost
-     FROM gift_catalog WHERE enabled = 1 ORDER BY sort_order`,
-  ).all()
-  return { ...program, giftCatalog }
-}
 
-function programSchedule(database: SqliteDatabase) {
-  const currentProgramId = database.prepare(
-    'SELECT current_program_id FROM program_runtime_state WHERE id = 1',
-  ).pluck().get() as string | null
-  const programs = database.prepare(
-    `SELECT id, title, sort_order AS sortOrder, heat
-     FROM program_catalog WHERE enabled = 1 ORDER BY sort_order`,
-  ).all() as Array<{ id: string; title: string; sortOrder: number; heat: number }>
-  const currentIndex = programs.findIndex(({ id }) => id === currentProgramId)
-  return programs.map((program, index) => ({
-    id: program.id,
-    title: program.title,
-    order: program.sortOrder,
-    heat: program.heat,
-    state:
-      index === currentIndex
-        ? ('CURRENT' as const)
-        : currentIndex >= 0 && index === currentIndex + 1
-          ? ('NEXT' as const)
-          : currentIndex >= 0 && index < currentIndex
-            ? ('CLOSED' as const)
-            : ('UPCOMING' as const),
-  }))
-}
+
 
 function interaction(database: SqliteDatabase, epoch: number) {
   const row = database.prepare(
@@ -200,10 +168,14 @@ function publishedBarrages(database: SqliteDatabase, epoch: number, includeSourc
   const source = includeSource ? ', publication.source_id AS sourceId' : ''
   return database.prepare(
     `SELECT barrage.id AS barrageId, barrage.text,
+            CASE WHEN barrage.custom_color IS NOT NULL THEN 'personal' ELSE barrage.color_style END AS colorStyle,
+            barrage.custom_color AS customColor,
+            star.public_star_id AS publicStarId,
             publication.display_seq AS displaySeq,
             publication.published_at AS publishedAt${source}
      FROM v2_barrage_publications publication
      JOIN v2_barrages barrage ON barrage.id = publication.barrage_id
+     JOIN v2_public_stars star ON star.identity_id = barrage.identity_id AND star.reset_epoch = barrage.reset_epoch
      JOIN v2_screen_interaction_state state ON state.reset_epoch = publication.reset_epoch
      WHERE publication.reset_epoch = ? AND publication.status = 'PUBLISHED'
        AND publication.display_batch = state.display_batch
@@ -282,11 +254,17 @@ function readScreen(database: SqliteDatabase, now: Date): V2ScreenSnapshot {
     presentation: presentation(database, row), presentationRevision: row.presentationRevision,
     rewardRuleVersion: row.rewardRuleVersion, publicSeq: row.publicSeq,
     publicStars: stars(database, row.resetEpoch), aggregateRevision: row.publicAggregateRevision,
-    aggregate: aggregate(database, row.resetEpoch), currentProgram: currentProgram(database),
+    aggregate: aggregate(database, row.resetEpoch), currentProgram: readCurrentV2Program(database),
+    programs: readV2ProgramSchedule(database),
+    stage: readV2Stage(database),
+    awards: readV2AwardSummaries(database),
     interaction: interaction(database, row.resetEpoch),
     publishedBarrages: publishedBarrages(database, row.resetEpoch, false),
     raffle: raffleState(database, row.resetEpoch, false),
+    liveInteraction: readV2LiveInteraction(database, row.resetEpoch),
     finalRecap: capsuleRows(database, row, true),
+    closingRecap: readV2ClosingRecap(database, row.resetEpoch,
+      row.status === 'COMPLETED' || row.presentationType === 'FINALE_PREVIEW'),
   })
 }
 
@@ -322,10 +300,16 @@ function readAdminSnapshot(
     readinessWarnings: warnings, interaction: interaction(database, row.resetEpoch),
     publishedBarrages: publishedBarrages(database, row.resetEpoch, true),
     raffle: raffleState(database, row.resetEpoch, true),
+    liveInteraction: readV2LiveInteraction(database, row.resetEpoch, { showHiddenResults: true }),
     capsuleCandidates: candidateRows,
     lastControlReceipt: lastReceipt,
-    currentProgram: currentProgram(database), programs: programSchedule(database),
+    currentProgram: readCurrentV2Program(database), programs: readV2ProgramSchedule(database),
+    stage: readV2Stage(database),
+    awards: readV2Awards(database),
+    programCatalog: readProgramCatalogInfo(database),
     finalRecap: capsuleRows(database, row, true),
+    closingRecap: readV2ClosingRecap(database, row.resetEpoch,
+      row.status === 'COMPLETED' || row.presentationType === 'FINALE_PREVIEW'),
   })
 }
 

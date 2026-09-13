@@ -313,16 +313,16 @@ test('keeps two participants independent across stage locks, four gift tiers, re
     await participantAPage.getByRole('button', { name: '星程', exact: true }).click()
 
     for (const [giftName, expectedPower] of [
-      ['微光 · 5', 95],
-      ['信标 · 10', 85],
-      ['星轨 · 20', 65],
-      ['星舰 · 50', 15],
+      ['微光 · 1', 99],
+      ['信标 · 5', 94],
+      ['星轨 · 10', 84],
+      ['星舰 · 20', 64],
     ] as const) {
       await participantAPage.getByRole('button', { name: '礼物' }).click()
       await participantAPage.getByRole('button', { name: giftName }).click()
       await expectPersonalValues(participantAPage, expectedPower, 70)
     }
-    await expect(screenPage.getByText('热度 85', { exact: true })).toBeVisible()
+    await expect(screenPage.getByText('热度 36', { exact: true })).toBeVisible()
     safeCheckpoint = 'four gift tiers'
 
     const rejectedBarrage = `https://invalid-${crypto.randomUUID().slice(0, 8)}.example`
@@ -332,14 +332,14 @@ test('keeps two participants independent across stage locks, four gift tiers, re
       .click()
     await participantAPage.getByRole('button', { name: '匿名发送' }).click()
     await expect(participantAPage.getByRole('alert')).toBeVisible()
-    await expectPersonalValues(participantAPage, 15, 70)
+    await expectPersonalValues(participantAPage, 64, 70)
     await expectNoForbiddenDomText([screenPage], [rejectedBarrage])
     safeCheckpoint = 'rejected barrage reward guard'
 
     const publishedBarrage = `并肩启航-${crypto.randomUUID().slice(0, 8)}`
     await participantAPage.getByLabel('弹幕内容').fill(publishedBarrage)
     await participantAPage.getByRole('button', { name: '匿名发送' }).click()
-    await expectPersonalValues(participantAPage, 15, 80)
+    await expectPersonalValues(participantAPage, 64, 80)
     await expect(
       screenPage.locator('.barrage-board li').filter({ hasText: publishedBarrage }),
     ).toBeVisible()
@@ -349,7 +349,7 @@ test('keeps two participants independent across stage locks, four gift tiers, re
     await participantAPage.getByRole('button', { name: '星程', exact: true }).click()
     await expectStage(participantAPage, '协同点亮')
     await participantAPage.getByRole('button', { name: '参与全场点亮' }).click()
-    await expectPersonalValues(participantAPage, 15, 100)
+    await expectPersonalValues(participantAPage, 64, 100)
     await expect(
       participantAPage.getByRole('button', { name: '点亮已完成' }),
     ).toBeDisabled()
@@ -374,7 +374,7 @@ test('keeps two participants independent across stage locks, four gift tiers, re
     await expectStage(participantAPage, '星际档案')
     await participantAPage.getByRole('button', { name: '查看个人档案' }).click()
     const archive = participantAPage.locator('.archive-card')
-    await expect(archive).toContainText('动力值15')
+    await expect(archive).toContainText('动力值64')
     await expect(archive).toContainText('星光值100 / 100')
     await expect(archive).toContainText('互动次数7')
     await expect(archive).toContainText('礼物次数4')
@@ -400,8 +400,8 @@ test('keeps two participants independent across stage locks, four gift tiers, re
       ],
     )
     safeCheckpoint = 'final private and collective archives'
-  } catch {
-    throw new Error(`G3 participant evidence failed at ${safeCheckpoint}`)
+  } catch (error) {
+    throw new Error(`G3 participant evidence failed at ${safeCheckpoint}`, { cause: error })
   } finally {
     await screenContext?.close()
     await adminContext?.close()

@@ -6,10 +6,11 @@ import { z } from 'zod'
 
 import { migrateDatabase } from './migrate.js'
 import type { SqliteDatabase } from './open-database.js'
+import { publicStarIdsForRoster } from './public-star-id.js'
 import {
   credentialDigest,
   fingerprintProtectedDirectoryDatabase,
-  GIFTS,
+  V2_GIFTS,
   invitationTokenDigest,
   PROGRAMS,
   PROTECTED_ROSTER_SEED_VERSION,
@@ -22,6 +23,7 @@ export const ProtectedRosterRecordSchema = z
   .object({
     displayName: z.string().trim().min(1).max(40),
     studentNumber: z.string().regex(/^\d{8}$/),
+    surnameInitial: z.string().regex(/^[A-Z]$/).optional(),
   })
   .strict()
 
@@ -72,28 +74,15 @@ interface GeneratedParticipant {
   visualSeed: string
 }
 
-function uniquePublicStarId(used: Set<string>): string {
-  for (;;) {
-    const bytes = randomBytes(3)
-    const letter = String.fromCharCode(65 + (bytes[0]! % 26))
-    const number = ((bytes[1]! << 8) | bytes[2]!) % 10_000
-    const id = `${letter}-${number.toString().padStart(4, '0')}`
-    if (!used.has(id)) {
-      used.add(id)
-      return id
-    }
-  }
-}
-
 function generateParticipants(input: ProtectedRosterInput): GeneratedParticipant[] {
-  const publicStarIds = new Set<string>()
+  const publicStarIds = publicStarIdsForRoster(input.records)
   return input.records.map((record, index) => ({
     id: `roster-${randomBytes(12).toString('hex')}`,
     seedIndex: index + 1,
     displayName: record.displayName,
     studentNumber: record.studentNumber,
     inviteToken: randomBytes(32).toString('base64url'),
-    publicStarId: uniquePublicStarId(publicStarIds),
+    publicStarId: publicStarIds[index]!,
     visualSeed: randomBytes(16).toString('hex'),
   }))
 }
@@ -256,7 +245,7 @@ export function importProtectedRoster(
          id, sort_order, name, power_cost, enabled, created_at, updated_at
        ) VALUES (?, ?, ?, ?, 1, ?, ?)`,
     )
-    for (const gift of GIFTS) {
+    for (const gift of V2_GIFTS) {
       insertGift.run(
         gift.id,
         gift.sortOrder,

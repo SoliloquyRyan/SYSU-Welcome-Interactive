@@ -24,6 +24,10 @@ const TSX_CLI = path.join(
 )
 const TEST_HOST = '127.0.0.1'
 const DEFAULT_STARTUP_TIMEOUT_MS = 30_000
+// Chromium's blocked-port list currently tops out at 10080. Windows can hand
+// port 2049 (NFS) back for an ephemeral listener, which is valid for Node but
+// rejected by page.goto with ERR_UNSAFE_PORT.
+const MIN_BROWSER_SAFE_TEST_PORT = 10_081
 const MAX_CAPTURED_OUTPUT = 32 * 1024
 
 export interface DemoParticipantCredentials {
@@ -267,34 +271,29 @@ async function assertPortAvailable(
   })
 }
 
-async function reserveEphemeralPort(host = TEST_HOST): Promise<number> {
-  return await new Promise<number>((resolve, reject) => {
-    const server = net.createServer()
-    server.unref()
-    server.once('error', reject)
-    server.listen({ host, port: 0, exclusive: true }, () => {
-      const address = server.address()
-      if (!address || typeof address === 'string') {
-        server.close()
-        reject(new Error('Unable to reserve an isolated loopback port'))
-        return
-      }
-      const port = address.port
-      server.close((error) => (error ? reject(error) : resolve(port)))
-    })
-  })
-}
-
 async function selectPort(
   requested: number | undefined,
   label: string,
   host = TEST_HOST,
 ): Promise<number> {
   if (requested !== undefined) {
+    if (requested < MIN_BROWSER_SAFE_TEST_PORT) {
+      throw new Error(`${label} port must be at least ${MIN_BROWSER_SAFE_TEST_PORT} for Chromium navigation`)
+    }
     await assertPortAvailable(requested, label, host)
     return requested
   }
-  return reserveEphemeralPort(host)
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const port = MIN_BROWSER_SAFE_TEST_PORT
+      + Math.floor(Math.random() * (65_535 - MIN_BROWSER_SAFE_TEST_PORT + 1))
+    try {
+      await assertPortAvailable(port, label, host)
+      return port
+    } catch {
+      // Try another isolated high port; the strict listener remains the final guard.
+    }
+  }
+  throw new Error(`Unable to reserve a Chromium-safe ${label} port`)
 }
 
 async function waitForPortRelease(

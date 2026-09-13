@@ -58,6 +58,7 @@ export const GiftOptionSchema = z
     name: z.string().min(1).max(40),
     order: z.number().int().positive(),
     powerCost: z.union([
+      z.literal(1),
       z.literal(5),
       z.literal(10),
       z.literal(20),
@@ -97,6 +98,7 @@ export const ParticipantGiftHistorySchema = z
     programTitle: z.string().min(1).max(80),
     giftName: z.string().min(1).max(40),
     powerCost: z.union([
+      z.literal(1),
       z.literal(5),
       z.literal(10),
       z.literal(20),

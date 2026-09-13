@@ -1,12 +1,20 @@
+import { readV2Awards, readV2Stage } from '../services/v2-ceremony.js'
 import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
 import Database from 'better-sqlite3'
-import { V2RealtimeEventEnvelopeSchema } from '@sysu-welcome/contracts'
+import { V2ProgramCatalogSchema, V2RealtimeEventEnvelopeSchema } from '@sysu-welcome/contracts'
 
 import {
-  migrateActiveV2DatabaseFrom12To14,
+  migrateActiveV2DatabaseFrom12To15,
+  migrateActiveV2GiftExperienceFrom16To17,
+  migrateActiveV2LiveInteractionsFrom18To19,
+  migrateActiveV2AwardsFrom19To20,
+  migrateActiveV2ProgramRankingFrom20To21,
+  migrateActiveV2ProgramCreditsFrom17To18,
+  migrateActiveV2ProgramCatalogFrom14To15,
+  migrateActiveV2InteractionsFrom15To16,
   migrateDatabase,
   verifyMigrationHistoryAtVersion,
   verifyMigrations,
@@ -124,7 +132,7 @@ export interface V2UpgradeOptions extends Omit<SeedOptions, 'now'> {
 
 export interface V2UpgradeResult {
   previousSchemaVersion: 12
-  schemaVersion: 14
+  schemaVersion: 21
   resetEpoch: number
   backupPath: string
   backupSha256: string
@@ -171,6 +179,8 @@ const V1_MUTABLE_TABLES = [
 ] as const
 
 const V2_EPOCH_MUTABLE_TABLES = [
+  'v2_audience_votes',
+  'v2_buzzer_entries',
   'v2_raffle_draws',
   'v2_screen_moderation_audit',
   'v2_barrage_publications',
@@ -178,6 +188,7 @@ const V2_EPOCH_MUTABLE_TABLES = [
   'v2_control_audit_context',
   'v2_final_recap_capsules',
   'v2_barrages',
+  'v2_interaction_unlocks',
   'v2_gift_transactions',
   'v2_domain_events',
   'v2_stream_cursors',
@@ -194,6 +205,8 @@ const V2_PRE_CUTOVER_TABLES = [
   ...V2_EPOCH_MUTABLE_TABLES,
   'v2_raffle_state',
   'v2_screen_interaction_state',
+  'v2_live_interaction_state',
+  'v2_ceremony_state',
   'v2_identity_slots',
   'v2_runtime_state',
 ] as const
@@ -234,6 +247,7 @@ const EXPECTED_TABLES = new Set([
   'v2_control_receipts',
   'v2_gift_transactions',
   'v2_barrages',
+  'v2_interaction_unlocks',
   'v2_final_recap_capsules',
   'v2_control_audit_context',
   'v2_screen_interaction_state',
@@ -242,6 +256,14 @@ const EXPECTED_TABLES = new Set([
   'v2_screen_moderation_audit',
   'v2_raffle_state',
   'v2_raffle_draws',
+  'v2_live_interaction_state',
+  'v2_buzzer_entries',
+  'v2_audience_votes',
+  'v2_program_catalog',
+  'v2_program_catalog_state',
+  'v2_awards',
+  'v2_ceremony_state',
+  'v2_program_heat_adjustments',
 ])
 
 const EXPECTED_CUTOVER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
@@ -384,8 +406,10 @@ const EXPECTED_CUTOVER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
     'id', 'reset_epoch', 'identity_id', 'program_id', 'gift_id',
     'power_cost', 'created_at',
   ],
+  v2_interaction_unlocks: ['reset_epoch', 'identity_id', 'kind', 'item_key', 'power_delta', 'created_at'],
   v2_barrages: [
-    'id', 'reset_epoch', 'identity_id', 'text', 'created_at',
+    'id', 'reset_epoch', 'identity_id', 'text', 'created_at', 'color_style',
+    'custom_color',
   ],
   v2_final_recap_capsules: [
     'reset_epoch', 'position', 'capsule_id', 'public_star_id',
@@ -418,12 +442,28 @@ const EXPECTED_CUTOVER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   v2_raffle_draws: [
     'id', 'reset_epoch', 'draw_sequence', 'identity_id', 'drawn_at',
   ],
+  v2_program_heat_adjustments: ['id', 'reset_epoch', 'program_id', 'raw_heat', 'target_heat', 'previous_adjustment', 'heat_adjustment', 'revision', 'session_short_id', 'request_id', 'created_at'],
+  v2_awards: ['id', 'group_code', 'title', 'description', 'sort_order', 'entries_json', 'confirmed', 'revision'],
+  v2_ceremony_state: ['id', 'reset_epoch', 'revision', 'mode', 'award_id', 'page', 'revealed'],
+  v2_live_interaction_state: [
+    'id', 'reset_epoch', 'segment_code', 'phase', 'round_number', 'prompt',
+    'revision', 'opened_at', 'updated_at',
+  ],
+  v2_buzzer_entries: [
+    'id', 'reset_epoch', 'round_number', 'segment_code', 'identity_id',
+    'response_sequence', 'responded_at',
+  ],
+  v2_audience_votes: [
+    'id', 'reset_epoch', 'round_number', 'identity_id',
+    'candidate_identity_id', 'created_at',
+  ],
 }
 
 function countTableRows(
   database: SqliteDatabase,
   tableName: string,
 ): number {
+  if (!databaseTableExists(database, tableName)) return 0
   return Number(
     database.prepare(`SELECT count(*) FROM ${tableName}`).pluck().get(),
   )
@@ -463,9 +503,14 @@ function unknownTables(database: SqliteDatabase): string[] {
 
 function schemaDriftIssues(database: SqliteDatabase): string[] {
   const issues: string[] = []
+  const schemaVersion = Number(database.prepare('SELECT MAX(version) FROM _schema_migrations').pluck().get())
   for (const [tableName, expectedColumns] of Object.entries(
     EXPECTED_CUTOVER_COLUMNS,
   )) {
+    if (tableName === 'v2_program_heat_adjustments' && schemaVersion < 21) continue
+    if (['v2_awards', 'v2_ceremony_state'].includes(tableName) && schemaVersion < 20) continue
+    if (tableName === 'v2_interaction_unlocks' && schemaVersion < 16) continue
+    if (['v2_live_interaction_state', 'v2_buzzer_entries', 'v2_audience_votes'].includes(tableName) && schemaVersion < 19) continue
     const actualColumns = (
       database
         .prepare(`PRAGMA table_xinfo(${tableName})`)
@@ -473,7 +518,10 @@ function schemaDriftIssues(database: SqliteDatabase): string[] {
     )
       .map(({ name }) => name)
       .sort()
-    const expected = [...expectedColumns].sort()
+    const expected = expectedColumns.filter(column => !(
+      tableName === 'v2_barrages' &&
+      ((column === 'color_style' && schemaVersion < 16) || (column === 'custom_color' && schemaVersion < 19))
+    )).sort()
     if (JSON.stringify(actualColumns) !== JSON.stringify(expected)) {
       issues.push(`Unexpected schema for ${tableName}`)
     }
@@ -508,7 +556,7 @@ function schemaDefinition(database: SqliteDatabase): string {
 function schemaMatchesMigrations(
   database: SqliteDatabase,
   migrationsPath: string,
-  throughVersion = 14,
+  throughVersion = 21,
 ): boolean {
   const pristine = new Database(':memory:')
   try {
@@ -809,10 +857,10 @@ function assertMigrationsReady(
   migrationsPath: string,
 ): void {
   const verification = verifyMigrations(database, migrationsPath)
-  if (!verification.ready || verification.currentVersion !== 14) {
+  if (!verification.ready || verification.currentVersion !== 21) {
     maintenanceError(
       'V2_MIGRATIONS_NOT_READY',
-      `V2 cutover requires the complete schema through migration 0014: ${verification.issues.join('; ')}`,
+      `V2 cutover requires the complete schema through migration 0021: ${verification.issues.join('; ')}`,
     )
   }
 }
@@ -886,7 +934,7 @@ function assessSyntheticDemoData(
   if (!schemaMatchesMigrations(database, options.migrationsPath)) {
     maintenanceError(
       'V2_DATA_CLASSIFICATION_UNSAFE',
-      'The live SQLite schema does not exactly match migrations 0001-0014',
+      'The live SQLite schema does not exactly match the requested migration baseline',
     )
   }
 
@@ -976,10 +1024,10 @@ function assessSyntheticV2UpgradeSource(
     options.migrationsPath,
     12,
   )
-  if (!migrations.ready || migrations.availableVersion !== 14) {
+  if (!migrations.ready || migrations.availableVersion !== 21) {
     maintenanceError(
       'V2_MIGRATIONS_NOT_READY',
-      `V2 upgrade requires an exact schema-12 database with migrations 0013-0014 as the repository tip: ${migrations.issues.join('; ')}`,
+      `V2 upgrade requires an exact schema-12 database with migrations 0013-0021 as the repository tip: ${migrations.issues.join('; ')}`,
     )
   }
 
@@ -1129,6 +1177,7 @@ async function createVerifiedBackup(
   )
   try {
     await database.backup(partialBackupPath)
+    fs.chmodSync(partialBackupPath, 0o600)
     const backup = new Database(partialBackupPath, {
       readonly: true,
       fileMustExist: true,
@@ -1215,6 +1264,10 @@ function clearV1MutableState(database: SqliteDatabase): void {
 
 function clearV2MutableState(database: SqliteDatabase): void {
   database.exec(`
+    DELETE FROM v2_audience_votes;
+    DELETE FROM v2_buzzer_entries;
+    DELETE FROM v2_live_interaction_state;
+    DELETE FROM v2_ceremony_state;
     DELETE FROM v2_raffle_draws;
     DELETE FROM v2_raffle_state;
     DELETE FROM v2_screen_moderation_audit;
@@ -1264,6 +1317,12 @@ export function initializeV2Runtime(
   resetEpoch: number,
   timestamp: string,
 ): void {
+  if (Number(database.prepare('SELECT COUNT(*) FROM v2_program_catalog').pluck().get()) === 0) {
+    database.exec(`INSERT INTO v2_program_catalog (id, sort_order, title, heat, enabled, created_at, updated_at)
+      SELECT id, sort_order, title, 0, enabled, created_at, updated_at FROM program_catalog`)
+  }
+  database.prepare('UPDATE v2_program_catalog SET heat = 0, updated_at = ?').run(timestamp)
+  database.prepare('UPDATE v2_program_catalog_state SET current_program_id = NULL, updated_at = ? WHERE id = 1').run(timestamp)
   database
     .prepare(
       `INSERT INTO v2_runtime_state (
@@ -1283,6 +1342,13 @@ export function initializeV2Runtime(
        id, reset_epoch, interaction_revision, barrage_paused,
        display_batch, next_display_seq, updated_at
      ) VALUES (1, ?, 0, 0, 0, 1, ?)`,
+  ).run(resetEpoch, timestamp)
+  database.prepare('INSERT INTO v2_ceremony_state(id, reset_epoch) VALUES (1, ?)').run(resetEpoch)
+  database.prepare(
+    `INSERT INTO v2_live_interaction_state (
+       id, reset_epoch, segment_code, phase, round_number, prompt,
+       revision, opened_at, updated_at
+     ) VALUES (1, ?, NULL, 'IDLE', 0, '', 0, NULL, ?)`,
   ).run(resetEpoch, timestamp)
   database.prepare(
     `INSERT INTO v2_raffle_state (
@@ -1404,7 +1470,7 @@ export async function switchSyntheticDemoToV2(
   }
 }
 
-export async function upgradeSyntheticV2DatabaseFrom12To14(
+export async function upgradeSyntheticV2DatabaseFrom12To15(
   database: SqliteDatabase,
   options: V2UpgradeOptions,
 ): Promise<V2UpgradeResult> {
@@ -1424,7 +1490,7 @@ export async function upgradeSyntheticV2DatabaseFrom12To14(
       )
     }
     assessSyntheticV2UpgradeSource(database, options)
-    const migration = migrateActiveV2DatabaseFrom12To14(
+    const migration = migrateActiveV2DatabaseFrom12To15(
       database,
       options.migrationsPath,
       options.now,
@@ -1448,7 +1514,7 @@ export async function upgradeSyntheticV2DatabaseFrom12To14(
 
     return {
       previousSchemaVersion: migration.previousVersion as 12,
-      schemaVersion: migration.currentVersion as 14,
+      schemaVersion: migration.currentVersion as 21,
       resetEpoch: assessment.resetEpoch,
       backupPath: backup.backupPath,
       backupSha256: backup.sha256,
@@ -1463,9 +1529,9 @@ export async function upgradeSyntheticV2DatabaseFrom12To14(
   }
 }
 
-/** @deprecated Use upgradeSyntheticV2DatabaseFrom12To14. */
+/** @deprecated Use upgradeSyntheticV2DatabaseFrom12To15. */
 export const upgradeSyntheticV2DatabaseFrom12To13 =
-  upgradeSyntheticV2DatabaseFrom12To14
+  upgradeSyntheticV2DatabaseFrom12To15
 
 export function resetSyntheticV2Database(
   database: SqliteDatabase,
@@ -1548,23 +1614,68 @@ export function resetSyntheticV2Database(
 
 export function verifyV2Foundation(
   database: SqliteDatabase,
-  options: Omit<V2CutoverOptions, 'backupPath' | 'confirmation' | 'now'>,
+  options: Omit<V2CutoverOptions, 'backupPath' | 'confirmation' | 'now'> & { throughSchemaVersion?: 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 },
 ): V2FoundationVerification {
   const issues: string[] = []
-  const migrations = verifyMigrations(database, options.migrationsPath)
+  const target = options.throughSchemaVersion ?? 21
+  const migrations = target < 21
+    ? verifyMigrationHistoryAtVersion(database, options.migrationsPath, target)
+    : verifyMigrations(database, options.migrationsPath)
   if (!migrations.ready) issues.push(...migrations.issues)
   const extraTables = unknownTables(database)
   if (extraTables.length > 0) {
     issues.push(`Unknown tables are present: ${extraTables.join(', ')}`)
   }
   issues.push(...schemaDriftIssues(database))
-  if (migrations.ready && !schemaMatchesMigrations(database, options.migrationsPath)) {
-    issues.push('The live SQLite schema does not exactly match migrations 0001-0014')
+  if (migrations.ready && !schemaMatchesMigrations(database, options.migrationsPath, target)) {
+    issues.push('The live SQLite schema does not exactly match the requested migration baseline')
   }
 
   const seed = verifyIdentityDirectory(database, options)
   if (!seed.ready) issues.push(...seed.issues)
 
+  if (target >= 15) {
+    try {
+      const catalog = database.prepare(`SELECT catalog_label AS label, current_program_id AS currentId
+        FROM v2_program_catalog_state WHERE id = 1`).get() as { label: string; currentId: string | null } | undefined
+      const items = database.prepare(`SELECT id, sort_order AS "order", title, ${target >= 20 ? "CASE WHEN ceremony_type != '' THEN ceremony_type ELSE kind END" : 'kind'} AS kind,
+        format_label AS formatLabel, duration_label AS durationLabel${target >= 18 ? ', performers' : ''}
+        FROM v2_program_catalog WHERE enabled = 1 ORDER BY sort_order`).all() as Array<{ id: string }>
+      if (!catalog || !V2ProgramCatalogSchema.safeParse({ label: catalog.label, items }).success) {
+        issues.push('The active v2 program catalog is invalid')
+      }
+      if (catalog?.currentId && !items.some(({ id }) => id === catalog.currentId)) {
+        issues.push('The current v2 program is not in the active catalog')
+      }
+      const heatMismatch = Number(database.prepare(`SELECT COUNT(*) FROM v2_program_catalog program
+        WHERE program.heat != (SELECT COALESCE(SUM(gift.power_cost), 0) FROM v2_gift_transactions gift WHERE gift.program_id = program.id)`).pluck().get())
+      if (heatMismatch > 0) issues.push('V2 program heat does not match retained gift transactions')
+    } catch { issues.push('The v2 program catalog is unavailable') }
+  }
+
+  if (target >= 20) {
+    try {
+      const awards = readV2Awards(database)
+      const stage = readV2Stage(database)
+      if (awards.length < 7 || awards.length > 32) issues.push('Award catalogue size is invalid')
+      if (stage.mode === 'AWARD' && !stage.award) issues.push('Award stage has no selected award')
+      const valid = Number(database.prepare('SELECT COUNT(*) FROM v2_ceremony_state WHERE reset_epoch = (SELECT reset_epoch FROM v2_runtime_state WHERE id = 1)').pluck().get())
+      if (valid !== 1) issues.push('Ceremony epoch does not match runtime')
+    } catch { issues.push('Awards or ceremony state are invalid') }
+  }
+  if (target >= 21) {
+    try {
+      const invalid = Number(database.prepare(`SELECT COUNT(*) FROM v2_program_heat_adjustments a
+        WHERE a.heat_adjustment != a.target_heat - a.raw_heat
+        OR a.revision != (SELECT COUNT(*) FROM v2_program_heat_adjustments b WHERE b.reset_epoch=a.reset_epoch AND b.program_id=a.program_id AND b.revision <= a.revision)
+        OR a.previous_adjustment != COALESCE((SELECT b.heat_adjustment FROM v2_program_heat_adjustments b WHERE b.reset_epoch=a.reset_epoch AND b.program_id=a.program_id AND b.revision=a.revision-1),0)
+        OR a.reset_epoch > (SELECT reset_epoch FROM v2_runtime_state WHERE id=1)`).pluck().get())
+      const negative = Number(database.prepare(`SELECT COUNT(*) FROM v2_program_catalog p
+        WHERE p.heat + COALESCE((SELECT heat_adjustment FROM v2_program_heat_adjustments a
+          WHERE a.program_id=p.id AND a.reset_epoch=(SELECT reset_epoch FROM v2_runtime_state WHERE id=1) ORDER BY revision DESC LIMIT 1),0) < 0`).pluck().get())
+      if (invalid || negative) issues.push('Programme heat adjustment audit is inconsistent')
+    } catch { issues.push('Programme heat adjustment audit is unavailable') }
+  }
   const protocol = readProtocolRuntime(database)
   if (
     protocol?.activeProtocolVersion !== '2' ||
@@ -1658,6 +1769,40 @@ export function verifyV2Foundation(
       issues.push('The v2 raffle contains an invalid epoch, participant or draw sequence')
     }
 
+    if (target >= 19) {
+      const liveStateMismatchCount = Number(database.prepare(
+        `SELECT COUNT(*) FROM v2_live_interaction_state
+         WHERE id != 1 OR reset_epoch != ? OR revision < 0 OR round_number < 0`,
+      ).pluck().get(currentEpoch))
+      const liveStateCount = countTableRows(database, 'v2_live_interaction_state')
+      if (liveStateCount !== 1 || liveStateMismatchCount !== 0) {
+        issues.push('The live interaction state does not match the current epoch')
+      }
+      const invalidBuzzerCount = Number(database.prepare(
+        `SELECT COUNT(*) FROM v2_buzzer_entries entry
+         LEFT JOIN v2_participant_states participant
+           ON participant.reset_epoch = entry.reset_epoch AND participant.identity_id = entry.identity_id
+         WHERE entry.reset_epoch != ? OR participant.identity_id IS NULL
+           OR participant.onboarding_state != 'ADMITTED'`,
+      ).pluck().get(currentEpoch))
+      if (invalidBuzzerCount !== 0) {
+        issues.push('A buzzer response does not belong to an admitted current participant')
+      }
+      const invalidVoteCount = Number(database.prepare(
+        `SELECT COUNT(*) FROM v2_audience_votes vote
+         LEFT JOIN v2_participant_states participant
+           ON participant.reset_epoch = vote.reset_epoch AND participant.identity_id = vote.identity_id
+         LEFT JOIN v2_raffle_draws candidate
+           ON candidate.reset_epoch = vote.reset_epoch AND candidate.identity_id = vote.candidate_identity_id
+         WHERE vote.reset_epoch != ? OR participant.identity_id IS NULL
+           OR participant.onboarding_state != 'ADMITTED'
+           OR candidate.identity_id IS NULL OR candidate.draw_sequence > 12`,
+      ).pluck().get(currentEpoch))
+      if (invalidVoteCount !== 0) {
+        issues.push('An audience vote does not match an admitted voter and an extracted candidate')
+      }
+    }
+
     const slotCount = countTableRows(database, 'v2_identity_slots')
     if (slotCount !== seed.participantCount) {
       issues.push('The deterministic v2 formation-slot directory is incomplete')
@@ -1721,9 +1866,14 @@ export function verifyV2Foundation(
       'v2_control_receipts',
       'v2_gift_transactions',
       'v2_barrages',
+  'v2_interaction_unlocks',
       'v2_final_recap_capsules',
       'v2_raffle_draws',
+      'v2_buzzer_entries',
+      'v2_audience_votes',
     ]) {
+      if (tableName === 'v2_interaction_unlocks' && target < 16) continue
+      if (['v2_buzzer_entries', 'v2_audience_votes'].includes(tableName) && target < 19) continue
       const wrongEpoch = Number(
         database
           .prepare(
@@ -1820,6 +1970,7 @@ export function verifyV2Foundation(
              FROM v2_reward_ledger reward
              WHERE reward.reset_epoch = participant.reset_epoch
                AND reward.identity_id = participant.identity_id
+               AND reward.delta != 0
                AND reward.delta != CASE reward.event_key
                  WHEN 'ACTIVATED' THEN 20
                  WHEN 'CAPSULE_SUBMITTED' THEN 20
@@ -1989,7 +2140,8 @@ export function verifyV2Foundation(
                   WHERE reset_epoch = ? AND stream_id = 'public'
                     AND event_name IN (
                       'barrage.published', 'barrage.removed', 'barrage.cleared',
-                      'barrage.pause.changed', 'gift.sent', 'program.changed'
+                      'barrage.pause.changed', 'gift.sent', 'program.changed',
+                      'live.interaction.changed'
                     )
                   ORDER BY stream_seq DESC LIMIT 1
                 ), 0) AS eventRevision
@@ -2066,7 +2218,8 @@ export function verifyV2Foundation(
            WHERE current.reset_epoch = ? AND current.stream_id = 'public'
              AND current.event_name IN (
                'barrage.published', 'barrage.removed', 'barrage.cleared',
-               'barrage.pause.changed', 'gift.sent', 'program.changed'
+               'barrage.pause.changed', 'gift.sent', 'program.changed',
+               'live.interaction.changed'
              )
              AND EXISTS (
                SELECT 1 FROM v2_domain_events previous
@@ -2075,7 +2228,8 @@ export function verifyV2Foundation(
                  AND previous.stream_seq < current.stream_seq
                  AND previous.event_name IN (
                    'barrage.published', 'barrage.removed', 'barrage.cleared',
-                   'barrage.pause.changed', 'gift.sent', 'program.changed'
+                   'barrage.pause.changed', 'gift.sent', 'program.changed',
+                   'live.interaction.changed'
                  )
                  AND previous.revision >= current.revision
              )`,
@@ -2155,5 +2309,242 @@ export function verifyV2Foundation(
     resetEpoch,
     participantCount: seed.participantCount,
     issues: [...new Set(issues)],
+  }
+}
+
+/** @deprecated Use upgradeSyntheticV2DatabaseFrom12To15. */
+export const upgradeSyntheticV2DatabaseFrom12To14 = upgradeSyntheticV2DatabaseFrom12To15
+
+export const V2_CATALOG_UPGRADE_CONFIRMATION = 'V2_SERVICES_STOPPED' as const
+
+/** Add the operational catalog without resetting epochs, identities or history. */
+export async function upgradeV2ProgramCatalogFrom14To15(database: SqliteDatabase, options: V2UpgradeOptions) {
+  if (options.confirmation !== V2_CATALOG_UPGRADE_CONFIRMATION) {
+    maintenanceError('V2_DESTRUCTIVE_CONFIRMATION_REQUIRED', `Stop the services before confirming ${V2_CATALOG_UPGRADE_CONFIRMATION}`)
+  }
+  const verifySource = () => {
+    const source = verifyV2Foundation(database, { ...options, throughSchemaVersion: 14 })
+    if (!source.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Schema-14 source is inconsistent: ${source.issues.join('; ')}`)
+    const status = database.prepare('SELECT status FROM v2_runtime_state WHERE id = 1').pluck().get()
+    if (status === 'RUNNING') maintenanceError('V2_SERVICE_ACTIVE', 'Pause the event and stop its services before maintenance')
+    return source
+  }
+  const source = verifySource()
+  const backup = await createVerifiedBackup(database, options.backupPath, '2')
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    if (Number(database.pragma('data_version', { simple: true })) !== backup.dataVersion) {
+      maintenanceError('V2_DATA_CHANGED_DURING_UPGRADE', 'The database changed after its verified backup')
+    }
+    verifySource()
+    const migration = migrateActiveV2ProgramCatalogFrom14To15(database, options.migrationsPath, options.now)
+    const verified = verifyV2Foundation(database, options)
+    if (!verified.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Catalog upgrade validation failed: ${verified.issues.join('; ')}`)
+    options.beforeCommit?.()
+    database.exec('COMMIT')
+    return { previousSchemaVersion: migration.previousVersion, schemaVersion: migration.currentVersion,
+      resetEpoch: source.resetEpoch, participantCount: source.participantCount,
+      backupPath: backup.backupPath, backupSha256: backup.sha256 }
+  } catch (error) {
+    if (database.inTransaction) database.exec('ROLLBACK')
+    throw new V2MaintenanceError('V2_UPGRADE_ROLLED_BACK',
+      `Catalog upgrade rolled back; verified backup retained. ${error instanceof Error ? error.message : 'Unknown failure'}`)
+  }
+}
+
+// Caller must stop this application service; runtime scene and epochs are preserved.
+export async function upgradeV2InteractionsFrom15To16(database: SqliteDatabase, options: V2UpgradeOptions) {
+  if (options.confirmation !== V2_CATALOG_UPGRADE_CONFIRMATION) {
+    maintenanceError('V2_DESTRUCTIVE_CONFIRMATION_REQUIRED', `Stop the services before confirming ${V2_CATALOG_UPGRADE_CONFIRMATION}`)
+  }
+  const verifySource = () => {
+    const source = verifyV2Foundation(database, { ...options, throughSchemaVersion: 15 })
+    if (!source.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Schema-15 source is inconsistent: ${source.issues.join('; ')}`)
+    return source
+  }
+  const source = verifySource()
+  const backup = await createVerifiedBackup(database, options.backupPath, '2')
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    if (Number(database.pragma('data_version', { simple: true })) !== backup.dataVersion) {
+      maintenanceError('V2_DATA_CHANGED_DURING_UPGRADE', 'The database changed after its verified backup')
+    }
+    verifySource()
+    const migration = migrateActiveV2InteractionsFrom15To16(database, options.migrationsPath, options.now)
+    const verified = verifyV2Foundation(database, options)
+    if (!verified.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Catalog upgrade validation failed: ${verified.issues.join('; ')}`)
+    options.beforeCommit?.()
+    database.exec('COMMIT')
+    return { previousSchemaVersion: migration.previousVersion, schemaVersion: migration.currentVersion,
+      resetEpoch: source.resetEpoch, participantCount: source.participantCount,
+      backupPath: backup.backupPath, backupSha256: backup.sha256 }
+  } catch (error) {
+    if (database.inTransaction) database.exec('ROLLBACK')
+    throw new V2MaintenanceError('V2_UPGRADE_ROLLED_BACK',
+      `Catalog upgrade rolled back; verified backup retained. ${error instanceof Error ? error.message : 'Unknown failure'}`)
+  }
+}
+
+// Caller must stop this application service; this changes only the active gift prices.
+export async function upgradeV2GiftExperienceFrom16To17(database: SqliteDatabase, options: V2UpgradeOptions) {
+  if (options.confirmation !== V2_CATALOG_UPGRADE_CONFIRMATION) {
+    maintenanceError('V2_DESTRUCTIVE_CONFIRMATION_REQUIRED', `Stop the services before confirming ${V2_CATALOG_UPGRADE_CONFIRMATION}`)
+  }
+  const verifySource = () => {
+    const source = verifyV2Foundation(database, { ...options, throughSchemaVersion: 16 })
+    if (!source.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Schema-16 source is inconsistent: ${source.issues.join('; ')}`)
+    return source
+  }
+  const source = verifySource()
+  const backup = await createVerifiedBackup(database, options.backupPath, '2')
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    if (Number(database.pragma('data_version', { simple: true })) !== backup.dataVersion) {
+      maintenanceError('V2_DATA_CHANGED_DURING_UPGRADE', 'The database changed after its verified backup')
+    }
+    verifySource()
+    const migration = migrateActiveV2GiftExperienceFrom16To17(database, options.migrationsPath, options.now)
+    const verified = verifyV2Foundation(database, options)
+    if (!verified.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Gift experience upgrade validation failed: ${verified.issues.join('; ')}`)
+    options.beforeCommit?.()
+    database.exec('COMMIT')
+    return { previousSchemaVersion: migration.previousVersion, schemaVersion: migration.currentVersion,
+      resetEpoch: source.resetEpoch, participantCount: source.participantCount,
+      backupPath: backup.backupPath, backupSha256: backup.sha256 }
+  } catch (error) {
+    if (database.inTransaction) database.exec('ROLLBACK')
+    throw new V2MaintenanceError('V2_UPGRADE_ROLLED_BACK',
+      `Gift experience upgrade rolled back; verified backup retained. ${error instanceof Error ? error.message : 'Unknown failure'}`)
+  }
+}
+
+// Caller must stop this application service; public credits metadata is the only data change.
+export async function upgradeV2ProgramCreditsFrom17To18(database: SqliteDatabase, options: V2UpgradeOptions) {
+  if (options.confirmation !== V2_CATALOG_UPGRADE_CONFIRMATION) {
+    maintenanceError('V2_DESTRUCTIVE_CONFIRMATION_REQUIRED', `Stop the services before confirming ${V2_CATALOG_UPGRADE_CONFIRMATION}`)
+  }
+  const verifySource = () => {
+    const source = verifyV2Foundation(database, { ...options, throughSchemaVersion: 17 })
+    if (!source.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Schema-17 source is inconsistent: ${source.issues.join('; ')}`)
+    return source
+  }
+  const source = verifySource()
+  const backup = await createVerifiedBackup(database, options.backupPath, '2')
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    if (Number(database.pragma('data_version', { simple: true })) !== backup.dataVersion) {
+      maintenanceError('V2_DATA_CHANGED_DURING_UPGRADE', 'The database changed after its verified backup')
+    }
+    verifySource()
+    const migration = migrateActiveV2ProgramCreditsFrom17To18(database, options.migrationsPath, options.now)
+    const verified = verifyV2Foundation(database, options)
+    if (!verified.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Programme credits upgrade validation failed: ${verified.issues.join('; ')}`)
+    options.beforeCommit?.()
+    database.exec('COMMIT')
+    return { previousSchemaVersion: migration.previousVersion, schemaVersion: migration.currentVersion,
+      resetEpoch: source.resetEpoch, participantCount: source.participantCount,
+      backupPath: backup.backupPath, backupSha256: backup.sha256 }
+  } catch (error) {
+    if (database.inTransaction) database.exec('ROLLBACK')
+    throw new V2MaintenanceError('V2_UPGRADE_ROLLED_BACK',
+      `Programme credits upgrade rolled back; verified backup retained. ${error instanceof Error ? error.message : 'Unknown failure'}`)
+  }
+}
+
+// Caller must stop the application service. The migration only adds live
+// interaction state and a derived barrage colour column; existing facts stay intact.
+export async function upgradeV2LiveInteractionsFrom18To19(database: SqliteDatabase, options: V2UpgradeOptions) {
+  if (options.confirmation !== V2_CATALOG_UPGRADE_CONFIRMATION) {
+    maintenanceError('V2_DESTRUCTIVE_CONFIRMATION_REQUIRED', `Stop the services before confirming ${V2_CATALOG_UPGRADE_CONFIRMATION}`)
+  }
+  const verifySource = () => {
+    const source = verifyV2Foundation(database, { ...options, throughSchemaVersion: 18 })
+    if (!source.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Schema-18 source is inconsistent: ${source.issues.join('; ')}`)
+    return source
+  }
+  const source = verifySource()
+  const backup = await createVerifiedBackup(database, options.backupPath, '2')
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    if (Number(database.pragma('data_version', { simple: true })) !== backup.dataVersion) {
+      maintenanceError('V2_DATA_CHANGED_DURING_UPGRADE', 'The database changed after its verified backup')
+    }
+    verifySource()
+    const migration = migrateActiveV2LiveInteractionsFrom18To19(database, options.migrationsPath, options.now)
+    const verified = verifyV2Foundation(database, options)
+    if (!verified.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Live interaction upgrade validation failed: ${verified.issues.join('; ')}`)
+    options.beforeCommit?.()
+    database.exec('COMMIT')
+    return { previousSchemaVersion: migration.previousVersion, schemaVersion: migration.currentVersion,
+      resetEpoch: source.resetEpoch, participantCount: source.participantCount,
+      backupPath: backup.backupPath, backupSha256: backup.sha256 }
+  } catch (error) {
+    if (database.inTransaction) database.exec('ROLLBACK')
+    throw new V2MaintenanceError('V2_UPGRADE_ROLLED_BACK',
+      `Live interaction upgrade rolled back; verified backup retained. ${error instanceof Error ? error.message : 'Unknown failure'}`)
+  }
+}
+
+export async function upgradeV2AwardsFrom19To20(database: SqliteDatabase, options: V2UpgradeOptions) {
+  if (options.confirmation !== V2_CATALOG_UPGRADE_CONFIRMATION) {
+    maintenanceError('V2_DESTRUCTIVE_CONFIRMATION_REQUIRED', `Stop the services before confirming ${V2_CATALOG_UPGRADE_CONFIRMATION}`)
+  }
+  const verifySource = () => {
+    const source = verifyV2Foundation(database, { ...options, throughSchemaVersion: 19 })
+    if (!source.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Schema-19 source is inconsistent: ${source.issues.join('; ')}`)
+    return source
+  }
+  const source = verifySource()
+  const backup = await createVerifiedBackup(database, options.backupPath, '2')
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    if (Number(database.pragma('data_version', { simple: true })) !== backup.dataVersion) {
+      maintenanceError('V2_DATA_CHANGED_DURING_UPGRADE', 'The database changed after its verified backup')
+    }
+    verifySource()
+    const migration = migrateActiveV2AwardsFrom19To20(database, options.migrationsPath, options.now)
+    const verified = verifyV2Foundation(database, options)
+    if (!verified.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Awards upgrade validation failed: ${verified.issues.join('; ')}`)
+    options.beforeCommit?.()
+    database.exec('COMMIT')
+    return { previousSchemaVersion: migration.previousVersion, schemaVersion: migration.currentVersion,
+      resetEpoch: source.resetEpoch, participantCount: source.participantCount,
+      backupPath: backup.backupPath, backupSha256: backup.sha256 }
+  } catch (error) {
+    if (database.inTransaction) database.exec('ROLLBACK')
+    throw new V2MaintenanceError('V2_UPGRADE_ROLLED_BACK',
+      `Awards upgrade rolled back; verified backup retained. ${error instanceof Error ? error.message : 'Unknown failure'}`)
+  }
+}
+
+export async function upgradeV2ProgramRankingFrom20To21(database: SqliteDatabase, options: V2UpgradeOptions) {
+  if (options.confirmation !== V2_CATALOG_UPGRADE_CONFIRMATION) {
+    maintenanceError('V2_DESTRUCTIVE_CONFIRMATION_REQUIRED', `Stop the services before confirming ${V2_CATALOG_UPGRADE_CONFIRMATION}`)
+  }
+  const verifySource = () => {
+    const source = verifyV2Foundation(database, { ...options, throughSchemaVersion: 20 })
+    if (!source.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Schema-20 source is inconsistent: ${source.issues.join('; ')}`)
+    return source
+  }
+  const source = verifySource()
+  const backup = await createVerifiedBackup(database, options.backupPath, '2')
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    if (Number(database.pragma('data_version', { simple: true })) !== backup.dataVersion) {
+      maintenanceError('V2_DATA_CHANGED_DURING_UPGRADE', 'The database changed after its verified backup')
+    }
+    verifySource()
+    const migration = migrateActiveV2ProgramRankingFrom20To21(database, options.migrationsPath, options.now)
+    const verified = verifyV2Foundation(database, options)
+    if (!verified.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Programme ranking upgrade validation failed: ${verified.issues.join('; ')}`)
+    options.beforeCommit?.()
+    database.exec('COMMIT')
+    return { previousSchemaVersion: migration.previousVersion, schemaVersion: migration.currentVersion,
+      resetEpoch: source.resetEpoch, participantCount: source.participantCount,
+      backupPath: backup.backupPath, backupSha256: backup.sha256 }
+  } catch (error) {
+    if (database.inTransaction) database.exec('ROLLBACK')
+    throw new V2MaintenanceError('V2_UPGRADE_ROLLED_BACK',
+      `Programme ranking upgrade rolled back; verified backup retained. ${error instanceof Error ? error.message : 'Unknown failure'}`)
   }
 }

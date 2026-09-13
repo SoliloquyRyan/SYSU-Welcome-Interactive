@@ -125,6 +125,32 @@ export const V2ActiveCapsuleProjectionListSchema = z
   .max(6)
   .superRefine(uniqueCapsuleIds)
 
+
+// Public award names are explicitly entered by the operator, not resolved from private identities.
+export const V2AwardEntrySchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  detail: z.string().trim().max(300).default(''),
+  rank: z.number().int().min(1).max(20).optional(),
+}).strict()
+// Programme awards include the full catalogue title and performers. Manually
+// entered campus recipients retain the limits used by the award editor.
+const V2AwardEntryInputSchema = V2AwardEntrySchema.extend({
+  name: z.string().trim().min(1).max(60),
+  detail: z.string().trim().max(120).default(''),
+}).strict()
+export const V2AwardSummarySchema = z.object({
+  id: V2EntityIdSchema, group: z.enum(['PROGRAM','CAMPUS']),
+  title: z.string().min(1).max(80), description: z.string().max(160),
+  confirmed: z.boolean(), entryCount: z.number().int().nonnegative(),
+}).strict()
+export const V2AwardAdminSchema = V2AwardSummarySchema.extend({
+  entries: z.array(V2AwardEntrySchema).max(300), revision: V2RevisionSchema,
+}).strict()
+export const V2StageSchema = z.object({
+  revision: V2RevisionSchema, mode: z.enum(['PROGRAM','HOST','AWARD']),
+  revealed: z.boolean(), page: z.number().int().min(0), totalPages: z.number().int().min(1),
+  award: V2AwardSummarySchema.extend({ entries: z.array(V2AwardEntrySchema).max(8) }).nullable(),
+}).strict()
 export const V2PresentationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('NONE') }).strict(),
   z.object({ type: z.literal('RAFFLE') }).strict(),
@@ -169,6 +195,72 @@ export const V2RafflePublicStateSchema = z
 export const V2RaffleAdminStateSchema = V2RafflePublicStateSchema.omit({ winners: true })
   .extend({ winners: z.array(V2RaffleWinnerAdminSchema).max(300) })
   .strict()
+
+export const V2LiveInteractionPhaseSchema = z.enum([
+  'IDLE',
+  'BUZZER_OPEN',
+  'BUZZER_LOCKED',
+  'VOTE_OPEN',
+  'VOTE_REVEALED',
+])
+
+const V2LiveInteractionPersonSchema = z.object({
+  publicStarId: V2PublicStarIdSchema,
+  displayColor: V2DisplayColorSchema.nullable(),
+}).strict()
+
+export const V2LiveVoteCandidateSchema = V2LiveInteractionPersonSchema.extend({
+  voteCount: z.number().int().nonnegative().max(300).nullable(),
+}).strict()
+
+export const V2LiveInteractionPublicStateSchema = z.object({
+  revision: V2RevisionSchema,
+  segmentCode: z.enum(['A', 'B', 'C']).nullable(),
+  phase: V2LiveInteractionPhaseSchema,
+  roundNumber: z.number().int().nonnegative(),
+  prompt: z.string().trim().max(120),
+  opensAt: V2IsoDateTimeSchema.nullable().optional(),
+  buzzCount: z.number().int().nonnegative().max(300),
+  leader: V2LiveInteractionPersonSchema.nullable(),
+  voteCandidates: z.array(V2LiveVoteCandidateSchema).max(12),
+  totalVotes: z.number().int().nonnegative().max(300),
+  resultsVisible: z.boolean(),
+}).strict()
+
+export const V2LiveInteractionParticipantStateSchema = V2LiveInteractionPublicStateSchema.extend({
+  participation: z.object({
+    hasBuzzed: z.boolean(),
+    buzzPosition: z.number().int().positive().max(300).nullable(),
+    hasVoted: z.boolean(),
+    votedFor: V2PublicStarIdSchema.nullable(),
+  }).strict(),
+}).strict()
+
+export const V2ClosingGiftTotalSchema = z.object({
+  giftId: V2EntityIdSchema,
+  giftName: z.string().trim().min(1).max(80),
+  quantity: z.number().int().nonnegative(),
+  totalPower: z.number().int().nonnegative(),
+}).strict()
+
+export const V2ClosingBarrageSchema = z.object({
+  barrageId: V2EntityIdSchema,
+  text: V2BarrageTextSchema,
+  publicStarId: V2PublicStarIdSchema,
+  colorStyle: z.lazy(() => V2BarrageColorSchema),
+  customColor: V2DisplayColorSchema.nullable().default(null),
+  status: z.enum(['PUBLISHED', 'REMOVED']),
+  displaySeq: z.number().int().positive(),
+  publishedAt: V2IsoDateTimeSchema,
+}).strict()
+
+export const V2ClosingRecapSchema = z.object({
+  barrageCount: z.number().int().nonnegative(),
+  barrages: z.array(V2ClosingBarrageSchema),
+  giftTotals: z.array(V2ClosingGiftTotalSchema).max(16),
+  totalGiftQuantity: z.number().int().nonnegative(),
+  totalGiftPower: z.number().int().nonnegative(),
+}).strict()
 
 export const V2PresentationStateSchema = z
   .object({
@@ -223,10 +315,25 @@ export const V2PublicAggregateSchema = z
     }
   })
 
+export const V2BarrageColorSchema = z.enum(['white','warm','gold','blue','violet','aurora','sunset','nebula','personal'])
+
+export const V2GiftPowerCostSchema = z.union([
+  z.literal(1),
+  z.literal(5),
+  z.literal(10),
+  z.literal(20),
+  // Persisted schema <= 16 program/gift events can still carry the former
+  // starship face value. Schema 17 verifies its active catalog separately.
+  z.literal(50),
+])
+
 export const V2PublicBarrageSchema = z
   .object({
     barrageId: V2EntityIdSchema,
     text: V2BarrageTextSchema,
+    publicStarId: V2PublicStarIdSchema.optional(),
+    colorStyle: V2BarrageColorSchema.default('white'),
+    customColor: V2DisplayColorSchema.nullable().default(null),
     displaySeq: z.number().int().positive(),
     publishedAt: V2IsoDateTimeSchema,
   })
@@ -239,9 +346,37 @@ export const V2AdminBarrageSchema = V2PublicBarrageSchema.extend({
 export const V2PublicGiftEventSchema = z
   .object({
     giftEventId: V2EntityIdSchema,
+    showStarship: z.boolean().optional(),
     programId: V2EntityIdSchema,
     giftId: V2EntityIdSchema,
     giftName: z.string().trim().min(1).max(80),
+    powerCost: V2GiftPowerCostSchema.optional(),
+    quantity: z.number().int().positive().max(20).default(1),
+    totalPower: z.number().int().positive().optional(),
+    sentCount: z.number().int().positive().optional(),
+    createdAt: V2IsoDateTimeSchema,
+  })
+  .strict()
+
+export const V2ParticipantGiftHistoryItemSchema = z
+  .object({
+    programId: V2EntityIdSchema,
+    programTitle: z.string().trim().min(1).max(120),
+    giftId: V2EntityIdSchema,
+    giftName: z.string().trim().min(1).max(80),
+    quantity: z.number().int().positive(),
+    totalPower: z.number().int().nonnegative(),
+    lastSentAt: V2IsoDateTimeSchema,
+  })
+  .strict()
+
+export const V2ParticipantBarrageHistoryItemSchema = z
+  .object({
+    barrageId: V2EntityIdSchema,
+    text: V2BarrageTextSchema,
+    colorStyle: V2BarrageColorSchema.default('white'),
+    customColor: V2DisplayColorSchema.nullable().default(null),
+    status: z.enum(['PUBLISHED', 'REMOVED']),
     createdAt: V2IsoDateTimeSchema,
   })
   .strict()
@@ -416,10 +551,17 @@ export const V2RealtimeEventEnvelopeSchema = z.union([
     z.object({ interactionRevision: V2RevisionSchema, gift: V2PublicGiftEventSchema }).strict(),
   ),
   publicEvent(
+    'live.interaction.changed',
+    z.object({
+      interactionRevision: V2RevisionSchema,
+      liveInteraction: V2LiveInteractionPublicStateSchema,
+    }).strict(),
+  ),
+  publicEvent(
     'program.changed',
     z.object({
       interactionRevision: V2RevisionSchema,
-      currentProgram: z.lazy(() => V2ProgramProjectionSchema),
+      currentProgram: z.lazy(() => V2ProgramProjectionSchema).nullable(),
     }).strict(),
   ),
   z
@@ -493,6 +635,8 @@ export const V2_ALLOWED_ACTIONS = [
   'START_STAR',
   'SEND_GIFT',
   'POST_BARRAGE',
+  'BUZZ_IN',
+  'CAST_AUDIENCE_VOTE',
   'COOPERATIVE_LIGHT',
 ] as const
 export const V2AllowedActionSchema = z.enum(V2_ALLOWED_ACTIONS)
@@ -557,6 +701,10 @@ export const V2ParticipantProjectionSchema = z
     firstBarrageRewardedAt: V2IsoDateTimeSchema.nullable(),
     cooperativeLightAt: V2IsoDateTimeSchema.nullable(),
     powerBalance: z.number().int().min(0).max(100),
+    unlockedBarrageStyles: z.array(V2BarrageColorSchema).default([]),
+    programAllowance: z.number().int().min(0).max(10).default(0),
+    giftHistory: z.array(V2ParticipantGiftHistoryItemSchema).max(128).optional(),
+    barrageHistory: z.array(V2ParticipantBarrageHistoryItemSchema).max(100).optional(),
     starlight: z.number().int().nonnegative(),
     rewards: z.array(V2RewardSummaryItemSchema).max(6),
     allowedActions: V2AllowedActionsSchema,
@@ -664,6 +812,8 @@ export const V2ParticipantProjectionSchema = z
 function expectedAllowedActions(input: {
   runtime: z.infer<typeof V2RuntimeTupleSchema>
   participant: z.infer<typeof V2ParticipantProjectionSchema>
+  currentProgram?: { kind: 'PERFORMANCE' | 'INTERLUDE' | 'DEFERRED' | 'AWARD' | 'SPEECH'; giftsEnabled?: boolean } | null
+  liveInteraction?: z.infer<typeof V2LiveInteractionParticipantStateSchema>
 }): V2AllowedAction[] {
   const { runtime, participant } = input
   if (runtime.status === 'PAUSED' || runtime.status === 'COMPLETED') return []
@@ -685,7 +835,14 @@ function expectedAllowedActions(input: {
       participant.admittedScene === 'ASSEMBLY' ||
       participant.admittedScene === 'PROGRAM_SUPPORT'
     ) {
-      actions.push('SEND_GIFT', 'POST_BARRAGE')
+      if (!input.currentProgram || input.currentProgram.kind === 'PERFORMANCE' && input.currentProgram.giftsEnabled !== false) actions.push('SEND_GIFT')
+      actions.push('POST_BARRAGE')
+      if (input.liveInteraction?.phase === 'BUZZER_OPEN' && !input.liveInteraction.participation.hasBuzzed) {
+        actions.push('BUZZ_IN')
+      }
+      if (input.liveInteraction?.phase === 'VOTE_OPEN' && !input.liveInteraction.participation.hasVoted) {
+        actions.push('CAST_AUDIENCE_VOTE')
+      }
     }
   }
   if (
@@ -697,18 +854,60 @@ function expectedAllowedActions(input: {
   return actions
 }
 
+export const V2ProgramKindSchema = z.enum(['PERFORMANCE', 'INTERLUDE', 'DEFERRED', 'AWARD', 'SPEECH'])
+const programText = (maximum: number) => z.string().trim().max(maximum).refine(
+  (text) => !/[\u0000-\u001f\u007f]/u.test(text), 'Program text must be a single readable line',
+)
+export const V2ProgramCatalogEntrySchema = z.object({
+  id: V2EntityIdSchema,
+  order: z.number().int().positive().max(64),
+  title: programText(120).pipe(z.string().min(1)),
+  kind: V2ProgramKindSchema,
+  formatLabel: programText(40),
+  durationLabel: programText(40),
+  // Omitted by historical clients; an explicit empty string clears the credits.
+  performers: programText(240).optional(),
+  giftsEnabled: z.boolean().optional(),
+  awardGroup: z.enum(['PROGRAM','CAMPUS']).nullable().optional(),
+}).strict()
+export const V2ProgramCatalogSchema = z.object({
+  label: programText(80).pipe(z.string().min(1)),
+  items: z.array(V2ProgramCatalogEntrySchema).min(1).max(64),
+}).strict().superRefine(({ items }, context) => {
+  if (new Set(items.map(({ id }) => id)).size !== items.length) {
+    context.addIssue({ code: 'custom', path: ['items'], message: 'Program ids must be unique' })
+  }
+  if (items.some((item, index) => item.order !== index + 1)) {
+    context.addIssue({ code: 'custom', path: ['items'], message: 'Program order must be consecutive from 1' })
+  }
+  if (items.filter(({ kind }) => ['INTERLUDE','DEFERRED'].includes(kind)).length > 3) {
+    context.addIssue({ code: 'custom', path: ['items'], message: 'At most three lettered interaction segments are supported' })
+  }
+})
+
 export const V2ProgramProjectionSchema = z
   .object({
     id: V2EntityIdSchema,
     title: z.string().min(1).max(120),
     heat: z.number().int().nonnegative(),
+    rawHeat: z.number().int().nonnegative().optional(),
+    heatAdjustment: z.number().int().optional(),
+    heatRevision: V2RevisionSchema.optional(),
+    kind: V2ProgramKindSchema.default('PERFORMANCE'),
+    formatLabel: z.string().max(40).default(''),
+    durationLabel: z.string().max(40).default(''),
+    performers: programText(240).default(''),
+    giftsEnabled: z.boolean().default(true),
+    awardGroup: z.enum(['PROGRAM','CAMPUS']).nullable().default(null),
+    displayCode: z.string().regex(/^(?:\d{2}|[A-C]|颁奖|讲话)$/).default('01'),
     giftCatalog: z
       .array(
         z
           .object({
             id: V2EntityIdSchema,
             name: z.string().trim().min(1).max(80),
-            powerCost: z.union([z.literal(5), z.literal(10), z.literal(20), z.literal(50)]),
+            powerCost: V2GiftPowerCostSchema,
+            sentCount: z.number().int().nonnegative().optional(),
           })
           .strict(),
       )
@@ -722,6 +921,16 @@ export const V2ProgramScheduleItemSchema = z
     title: z.string().min(1).max(120),
     order: z.number().int().positive(),
     heat: z.number().int().nonnegative(),
+    rawHeat: z.number().int().nonnegative().optional(),
+    heatAdjustment: z.number().int().optional(),
+    heatRevision: V2RevisionSchema.optional(),
+    kind: V2ProgramKindSchema.default('PERFORMANCE'),
+    formatLabel: z.string().max(40).default(''),
+    durationLabel: z.string().max(40).default(''),
+    performers: programText(240).default(''),
+    giftsEnabled: z.boolean().default(true),
+    awardGroup: z.enum(['PROGRAM','CAMPUS']).nullable().default(null),
+    displayCode: z.string().regex(/^(?:\d{2}|[A-C]|颁奖|讲话)$/).default('01'),
     state: z.enum(['CURRENT', 'NEXT', 'CLOSED', 'UPCOMING']),
   })
   .strict()
@@ -864,6 +1073,9 @@ export const V2ScreenSnapshotSchema = z
   .object({
     ...snapshotBase,
     publicSeq: V2StreamSequenceSchema,
+    stage: V2StageSchema.optional(),
+    awards: z.array(V2AwardSummarySchema).max(32).optional(),
+    programs: V2ProgramScheduleSchema.default([]),
     publicStars: z.array(V2PublicStarSchema).max(300),
     aggregateRevision: V2RevisionSchema,
     aggregate: V2PublicAggregateSchema,
@@ -871,6 +1083,8 @@ export const V2ScreenSnapshotSchema = z
     interaction: V2ScreenInteractionStateSchema,
     publishedBarrages: z.array(V2PublicBarrageSchema).max(8),
     raffle: V2RafflePublicStateSchema,
+    liveInteraction: V2LiveInteractionPublicStateSchema,
+    closingRecap: V2ClosingRecapSchema,
     finalRecap: V2CapsuleProjectionListSchema,
   })
   .strict()
@@ -890,9 +1104,14 @@ export const V2ParticipantSnapshotSchema = z
     aggregateRevision: V2RevisionSchema,
     aggregate: V2PublicAggregateSchema,
     currentProgram: V2ProgramProjectionSchema.nullable(),
+    stage: V2StageSchema.optional(),
+    awards: z.array(V2AwardSummarySchema).max(32).optional(),
     programs: V2ProgramScheduleSchema,
     interaction: V2ScreenInteractionStateSchema,
+    liveInteraction: V2LiveInteractionParticipantStateSchema,
+    publishedBarrages: z.array(V2PublicBarrageSchema).max(8).optional(),
     finalRecap: V2CapsuleProjectionListSchema,
+    closingRecap: V2ClosingRecapSchema,
   })
   .strict()
   .superRefine((value, context) => {
@@ -982,12 +1201,15 @@ export const V2AdminSnapshotSchema = z
     publicSeq: V2StreamSequenceSchema,
     adminSeq: V2StreamSequenceSchema,
     roles: z.array(V2AdminRoleSchema).min(1).max(4),
+    programCatalog: z.object({ revision: V2RevisionSchema, label: z.string().min(1).max(80) }).strict()
+      .default({ revision: 0, label: '初始节目目录' }),
     aggregateRevision: V2RevisionSchema,
     funnel: V2AdminFunnelSchema,
     readinessWarnings: z.array(V2ReadinessWarningSchema).max(3),
     interaction: V2ScreenInteractionStateSchema,
     publishedBarrages: z.array(V2AdminBarrageSchema).max(8),
     raffle: V2RaffleAdminStateSchema,
+    liveInteraction: V2LiveInteractionPublicStateSchema,
     capsuleCandidates: z.array(V2AdminCapsuleCandidateSchema).max(300),
     lastControlReceipt: z
       .object({
@@ -1002,8 +1224,11 @@ export const V2AdminSnapshotSchema = z
       .strict()
       .nullable(),
     currentProgram: V2ProgramProjectionSchema.nullable(),
+    stage: V2StageSchema.optional(),
+    awards: z.array(V2AwardAdminSchema).max(32).optional(),
     programs: V2ProgramScheduleSchema,
     finalRecap: V2CapsuleProjectionListSchema,
+    closingRecap: V2ClosingRecapSchema,
   })
   .strict()
   .superRefine((value, context) => {
@@ -1073,6 +1298,8 @@ export const V2_PARTICIPANT_COMMANDS = [
   'START_STAR',
   'SEND_GIFT',
   'POST_BARRAGE',
+  'BUZZ_IN',
+  'CAST_AUDIENCE_VOTE',
   'COOPERATIVE_LIGHT',
 ] as const
 
@@ -1109,6 +1336,7 @@ export const V2ParticipantCommandSchema = z.discriminatedUnion('command', [
       command: z.literal('SEND_GIFT'),
       programId: V2EntityIdSchema,
       giftId: V2EntityIdSchema,
+      quantity: z.number().int().min(1).max(20).default(1),
     })
     .strict(),
   z
@@ -1116,8 +1344,15 @@ export const V2ParticipantCommandSchema = z.discriminatedUnion('command', [
       ...participantCommandBase,
       command: z.literal('POST_BARRAGE'),
       text: V2BarrageTextSchema,
+      colorStyle: V2BarrageColorSchema.default('white'),
     })
     .strict(),
+  z.object({ ...participantCommandBase, command: z.literal('BUZZ_IN') }).strict(),
+  z.object({
+    ...participantCommandBase,
+    command: z.literal('CAST_AUDIENCE_VOTE'),
+    candidateStarId: V2PublicStarIdSchema,
+  }).strict(),
   z
     .object({
       ...participantCommandBase,
@@ -1127,10 +1362,18 @@ export const V2ParticipantCommandSchema = z.discriminatedUnion('command', [
 ])
 
 export const V2_ADMIN_COMMANDS = [
+  'SET_PROGRAM_HEAT',
+  'SAVE_AWARD',
+  'SET_STAGE_MODE',
+  'SELECT_AWARD',
+  'REVEAL_AWARD',
+  'HIDE_AWARD',
+  'SET_AWARD_PAGE',
   'SET_MODE',
   'START',
   'SET_SCENE',
   'SET_PROGRAM',
+  'UPDATE_PROGRAM_CATALOG',
   'ADVANCE',
   'PAUSE',
   'RESUME',
@@ -1140,6 +1383,10 @@ export const V2_ADMIN_COMMANDS = [
   'DRAW_RAFFLE',
   'CLOSE_RAFFLE',
   'CLEAR_RAFFLE',
+  'OPEN_BUZZER',
+  'OPEN_AUDIENCE_VOTE',
+  'REVEAL_AUDIENCE_VOTE',
+  'CLOSE_LIVE_INTERACTION',
   'SELECT_CAPSULE',
   'SHOW_CAPSULE_INSERT',
   'REMOVE_CAPSULE',
@@ -1161,6 +1408,23 @@ const presentationCommandBase = {
 }
 
 export const V2AdminCommandSchema = z.discriminatedUnion('command', [
+  z.object({ ...runtimeCommandBase, command: z.literal('SET_PROGRAM_HEAT'), expectedStageRevision: V2RevisionSchema,
+    programId: V2EntityIdSchema, heat: z.number().int().min(0).max(1_000_000_000),
+    expectedHeatRevision: V2RevisionSchema, expectedRawHeat: z.number().int().nonnegative() }).strict(),
+  z.object({...runtimeCommandBase, expectedStageRevision: V2RevisionSchema,command:z.literal('SAVE_AWARD'),awardId:V2EntityIdSchema,group:z.enum(['PROGRAM','CAMPUS']),title:z.string().trim().min(1).max(80),entries:z.array(V2AwardEntryInputSchema).max(300),confirmed:z.boolean(),expectedAwardRevision:V2RevisionSchema}).strict(),
+  z.object({...runtimeCommandBase, expectedStageRevision: V2RevisionSchema,command:z.literal('SET_STAGE_MODE'),mode:z.enum(['PROGRAM','HOST'])}).strict(),
+  z.object({...runtimeCommandBase, expectedStageRevision: V2RevisionSchema,command:z.literal('SELECT_AWARD'),awardId:V2EntityIdSchema}).strict(),
+  z.object({...runtimeCommandBase, expectedStageRevision: V2RevisionSchema,command:z.literal('REVEAL_AWARD')}).strict(),
+  z.object({...runtimeCommandBase, expectedStageRevision: V2RevisionSchema,command:z.literal('HIDE_AWARD')}).strict(),
+  z.object({...runtimeCommandBase, expectedStageRevision: V2RevisionSchema,command:z.literal('SET_AWARD_PAGE'),page:z.number().int().min(0).max(74)}).strict(),
+  z.object({
+    ...runtimeCommandBase,
+    command: z.literal('UPDATE_PROGRAM_CATALOG'),
+    expectedInteractionRevision: V2RevisionSchema,
+    expectedCatalogRevision: V2RevisionSchema,
+    catalog: V2ProgramCatalogSchema,
+    confirmed: z.literal(true),
+  }).strict(),
   z
     .object({
       ...runtimeCommandBase,
@@ -1246,6 +1510,33 @@ export const V2AdminCommandSchema = z.discriminatedUnion('command', [
       confirmed: z.literal(true),
     })
     .strict(),
+  z.object({
+    ...v2WriteBase,
+    command: z.literal('OPEN_BUZZER'),
+    expectedInteractionRevision: V2RevisionSchema,
+    segmentCode: z.enum(['A', 'C']),
+    prompt: z.string().trim().min(1).max(120),
+    confirmed: z.literal(true),
+  }).strict(),
+  z.object({
+    ...v2WriteBase,
+    command: z.literal('OPEN_AUDIENCE_VOTE'),
+    expectedInteractionRevision: V2RevisionSchema,
+    prompt: z.string().trim().min(1).max(120),
+    confirmed: z.literal(true),
+  }).strict(),
+  z.object({
+    ...v2WriteBase,
+    command: z.literal('REVEAL_AUDIENCE_VOTE'),
+    expectedInteractionRevision: V2RevisionSchema,
+    confirmed: z.literal(true),
+  }).strict(),
+  z.object({
+    ...v2WriteBase,
+    command: z.literal('CLOSE_LIVE_INTERACTION'),
+    expectedInteractionRevision: V2RevisionSchema,
+    confirmed: z.literal(true),
+  }).strict(),
   z
     .object({
       ...v2WriteBase,
@@ -1354,6 +1645,8 @@ export const V2ParticipantCommandResponseSchema = z
     runtime: V2RuntimeTupleSchema,
     presentation: V2PresentationSchema,
     presentationRevision: V2RevisionSchema,
+    currentProgram: V2ProgramProjectionSchema.nullable(),
+    liveInteraction: V2LiveInteractionParticipantStateSchema,
     participant: V2ParticipantProjectionSchema,
   })
   .strict()

@@ -48,6 +48,11 @@ describe('V2-04 three-scene runtime and participant actions', () => {
   })
 
   function activateV2Runtime() {
+    // Schema 15 has a separate operational v2 directory. This fixture
+    // constructs its runtime directly instead of using initializeV2Runtime.
+    database.exec(`INSERT INTO v2_program_catalog (id, sort_order, title, heat, enabled, created_at, updated_at)
+      SELECT id, sort_order, title, heat, enabled, created_at, updated_at FROM program_catalog;
+      UPDATE v2_program_catalog_state SET current_program_id = (SELECT current_program_id FROM program_runtime_state WHERE id = 1);`)
     const timestamp = NOW.toISOString()
     database.prepare(
       `UPDATE protocol_runtime SET active_protocol_version = '2',
@@ -78,6 +83,12 @@ describe('V2-04 three-scene runtime and participant actions', () => {
        ) VALUES (1, 2, 0, 0, 0, 1, ?)`,
     ).run(timestamp)
     database.prepare(
+      `INSERT INTO v2_live_interaction_state (
+         id, reset_epoch, segment_code, phase, round_number, prompt,
+         revision, opened_at, updated_at
+       ) VALUES (1, 2, NULL, 'IDLE', 0, '', 0, NULL, ?)`,
+    ).run(timestamp)
+    database.prepare(
       `INSERT INTO v2_raffle_state (
          id, reset_epoch, display_active, raffle_revision, updated_at
        ) VALUES (1, 2, 0, 0, ?)`,
@@ -90,8 +101,9 @@ describe('V2-04 three-scene runtime and participant actions', () => {
          FROM synthetic_identities`,
     ).run()
     database.prepare(
-      `UPDATE program_runtime_state SET current_program_id = NULL, updated_at = ? WHERE id = 1`,
+      `UPDATE v2_program_catalog_state SET current_program_id = NULL, updated_at = ? WHERE id = 1`,
     ).run(timestamp)
+    database.prepare('INSERT INTO v2_ceremony_state(id, reset_epoch) VALUES (1, 2)').run()
     database.prepare('UPDATE app_state SET reset_epoch = 2 WHERE id = 1').run()
   }
 
@@ -206,7 +218,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 14, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 21, issues: [] })
   })
 
   it('requires an explicit readiness override and audits the anonymous funnel', () => {
@@ -295,10 +307,10 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 14, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 21, issues: [] })
   })
 
-  it('starts one public star once and grants the scene reward atomically', () => {
+  it('starts one public star once without retired starlight rewards', () => {
     admit(0)
     setLiveAndStart()
     const before = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
@@ -306,7 +318,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       command: 'START_STAR',
       expectedParticipantRevision: before.participant.participantRevision,
     })
-    expect(result.participant).toMatchObject({ started: true, starlight: 60 })
+    expect(result.participant).toMatchObject({ started: true, starlight: 0 })
     expect(readV2ParticipantSnapshot(database, manifest(0).id, NOW).publicStars[0]).toMatchObject({ started: true, starRevision: 2 })
     expect(database.prepare(
       `SELECT count(*) FROM v2_reward_ledger WHERE event_key = 'STAR_STARTED'`,
@@ -329,7 +341,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     })).toThrowError(V2ParticipantCommandError)
   })
 
-  it('deducts every gift but awards only the first gift and barrage', () => {
+  it('deducts every gift while first-event audit rows add no starlight', () => {
     admit(0)
     setLiveAndStart()
     runtime({
@@ -365,7 +377,12 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     })
     snapshot = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
     expect(snapshot.participant.powerBalance).toBe(100 - gift.powerCost * 2)
-    expect(snapshot.participant.starlight).toBe(40)
+    expect(snapshot.participant.starlight).toBe(0)
+    expect(snapshot.participant.giftHistory).toEqual([
+      expect.objectContaining({ programId, giftId: gift.id, quantity: 2, totalPower: gift.powerCost * 2 }),
+    ])
+    expect(snapshot.participant.barrageHistory).toHaveLength(2)
+    expect(snapshot.currentProgram?.giftCatalog.find(({ id }) => id === gift.id)?.sentCount).toBe(2)
     expect(database.prepare('SELECT count(*) FROM v2_gift_transactions').pluck().get()).toBe(2)
     expect(database.prepare('SELECT count(*) FROM v2_barrages').pluck().get()).toBe(2)
     expect(database.prepare(
@@ -373,6 +390,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     ).pluck().get()).toBe(4)
     expect(database.prepare('SELECT count(*) FROM v2_barrage_publications').pluck().get()).toBe(2)
     expect(database.prepare('SELECT count(*) FROM v2_public_sources').pluck().get()).toBe(1)
+    expect(database.prepare("SELECT count(*) FROM v2_interaction_unlocks WHERE kind = 'PROGRAM_ALLOWANCE'").pluck().get()).toBe(0)
     const publicEvents = database.prepare(
       `SELECT payload_json AS payloadJson FROM v2_domain_events
        WHERE stream_id = 'public' AND event_name IN ('gift.sent','barrage.published')
@@ -391,13 +409,39 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     expect(JSON.stringify(screen)).not.toContain('sourceId')
     expect(JSON.stringify(screen)).not.toContain(manifest(0).id)
     expect(admin.publishedBarrages).toHaveLength(2)
+    expect(admin.publishedBarrages[0].publicStarId).toBe(manifest(0).publicStarId)
+    for (const event of publicEvents.map(item => JSON.parse(item.payloadJson)).filter(item => item.barrage)) {
+      expect(event.barrage.publicStarId).toBe(manifest(0).publicStarId)
+    }
     expect(admin.publishedBarrages[0]).toMatchObject({ sourceId: expect.stringMatching(/^src_/) })
     expect(JSON.stringify(admin.publishedBarrages)).not.toContain(manifest(0).id)
     expect(verifyV2Foundation(database, {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 14, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 21, issues: [] })
+  })
+
+  it('unlocks a gradient once, replays safely and rejects invalid or unaffordable styles without charging', () => {
+    admit(0)
+    setLiveAndStart()
+    runtime({ command: 'ADVANCE', expectedRunRevision: 2, expectedPresentationRevision: 0, confirmed: true, overrideReadinessWarnings: true })
+    let snapshot = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
+    const request = {command: 'POST_BARRAGE', expectedParticipantRevision: snapshot.participant.participantRevision, idempotencyKey: 'gradient-once', text: '星云应援', colorStyle: 'nebula'}
+    participantCommand(0, request)
+    participantCommand(0, request)
+    snapshot = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
+    expect(snapshot.participant.powerBalance).toBe(90)
+    expect(snapshot.participant.unlockedBarrageStyles).toEqual(['nebula'])
+    expect(readV2ScreenSnapshot(database, NOW).publishedBarrages[0]).toMatchObject({text:'星云应援',colorStyle:'nebula'})
+    participantCommand(0, {...request, idempotencyKey:'gradient-again', expectedParticipantRevision:snapshot.participant.participantRevision})
+    snapshot = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
+    expect(snapshot.participant.powerBalance).toBe(90)
+    expect(() => participantCommand(0, {...request, idempotencyKey:'gradient-invalid', expectedParticipantRevision:snapshot.participant.participantRevision, colorStyle:'url(https://evil.test)'})).toThrow()
+    database.prepare('UPDATE v2_participant_states SET power_balance = 0 WHERE identity_id = ?').run(manifest(0).id)
+    expect(() => participantCommand(0, {...request, idempotencyKey:'gradient-unaffordable', expectedParticipantRevision:snapshot.participant.participantRevision, colorStyle:'aurora'})).toThrow()
+    expect(database.prepare("SELECT count(*) FROM v2_interaction_unlocks WHERE kind = 'STYLE'").pluck().get()).toBe(1)
+    expect(readV2ParticipantSnapshot(database, manifest(0).id, NOW).participant.powerBalance).toBe(0)
   })
 
   it('pauses, removes, source-blocks and clears anonymous barrages with audit facts', () => {
@@ -600,7 +644,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       command: 'COOPERATIVE_LIGHT',
       expectedParticipantRevision: snapshot.participant.participantRevision,
     })
-    expect(light.participant).toMatchObject({ cooperativeLightAt: expect.any(String), starlight: 40 })
+    expect(light.participant).toMatchObject({ cooperativeLightAt: expect.any(String), starlight: 0 })
     const completed = runtime({
       command: 'COMPLETE', expectedRunRevision: 6,
       expectedPresentationRevision: 0, confirmed: true,
@@ -632,6 +676,9 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       command: 'SET_SCENE', expectedRunRevision: 1,
       expectedPresentationRevision: 0, targetScene: 'PROGRAM_SUPPORT', confirmed: true,
     })
+    const programs = database.prepare('SELECT id FROM v2_program_catalog ORDER BY sort_order LIMIT 2').pluck().all() as string[]
+    database.prepare("UPDATE v2_program_catalog SET kind = 'INTERLUDE' WHERE id IN (?, ?)").run(programs[0], programs[1])
+    database.prepare('UPDATE v2_program_catalog_state SET current_program_id = ? WHERE id = 1').run(programs[1])
     const opened = runtime({
       command: 'OPEN_RAFFLE', expectedRunRevision: 2,
       expectedPresentationRevision: 0, confirmed: true,
@@ -652,5 +699,141 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     })
     expect(paused.presentation).toEqual({ type: 'NONE' })
     expect(readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW).raffle.winners).toHaveLength(2)
+  })
+
+  it('locks the first response for A and runs B audience draw, one-person-one-vote and reveal', () => {
+    admit(0)
+    admit(1)
+    runtime({ command: 'START', expectedRunRevision: 0, confirmed: true })
+    runtime({ command: 'SET_SCENE', expectedRunRevision: 1, expectedPresentationRevision: 0, targetScene: 'PROGRAM_SUPPORT', confirmed: true })
+    const ids = database.prepare('SELECT id FROM v2_program_catalog ORDER BY sort_order LIMIT 3').pluck().all() as string[]
+    database.prepare("UPDATE v2_program_catalog SET kind = 'INTERLUDE' WHERE id IN (?, ?, ?)").run(ids[0], ids[1], ids[2])
+
+    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 2, expectedInteractionRevision: 0, programId: ids[0], confirmed: true })
+    runtime({ command: 'OPEN_BUZZER', expectedInteractionRevision: 1, segmentCode: 'A', prompt: '歌名 decoder · 立即抢答', confirmed: true })
+    const countdown = readV2ScreenSnapshot(database, NOW).liveInteraction
+    expect(countdown.opensAt).toBe(new Date(NOW.getTime() + commandCounter * 1000 + 3000).toISOString())
+    expectParticipantError(() => participantCommand(0, { command: 'BUZZ_IN', expectedParticipantRevision: 2 }), 'SCENE_ACTION_INVALID')
+    expect(database.prepare('SELECT count(*) FROM v2_buzzer_entries').pluck().get()).toBe(0)
+    commandCounter += 2
+    const first = participantCommand(0, { command: 'BUZZ_IN', expectedParticipantRevision: 2 })
+    expect(first.liveInteraction).toMatchObject({ phase: 'BUZZER_LOCKED', segmentCode: 'A', buzzCount: 1, leader: { publicStarId: first.participant.personalStarCode } })
+    expectParticipantError(() => participantCommand(1, { command: 'BUZZ_IN', expectedParticipantRevision: 2 }), 'SCENE_ACTION_INVALID')
+
+    runtime({ command: 'CLOSE_LIVE_INTERACTION', expectedInteractionRevision: 3, confirmed: true })
+    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 2, expectedInteractionRevision: 4, programId: ids[1], confirmed: true })
+    runtime({ command: 'OPEN_RAFFLE', expectedRunRevision: 2, expectedPresentationRevision: 0, confirmed: true })
+    runtime({ command: 'DRAW_RAFFLE', expectedRunRevision: 2, expectedPresentationRevision: 1, confirmed: true })
+    runtime({ command: 'DRAW_RAFFLE', expectedRunRevision: 2, expectedPresentationRevision: 2, confirmed: true })
+    runtime({ command: 'CLOSE_RAFFLE', expectedRunRevision: 2, expectedPresentationRevision: 3, confirmed: true })
+    const candidates = readV2ScreenSnapshot(database, NOW).raffle.winners
+    expect(candidates).toHaveLength(2)
+
+    runtime({ command: 'OPEN_AUDIENCE_VOTE', expectedInteractionRevision: 5, prompt: '谁是卧底 · 现场投票', confirmed: true })
+    participantCommand(0, { command: 'CAST_AUDIENCE_VOTE', expectedParticipantRevision: 3, candidateStarId: candidates[0]!.publicStarId })
+    participantCommand(1, { command: 'CAST_AUDIENCE_VOTE', expectedParticipantRevision: 2, candidateStarId: candidates[1]!.publicStarId })
+    const hidden = readV2ScreenSnapshot(database, NOW).liveInteraction
+    expect(hidden).toMatchObject({ phase: 'VOTE_OPEN', totalVotes: 2, resultsVisible: false })
+    expect(hidden.voteCandidates.every(({ voteCount }) => voteCount === null)).toBe(true)
+    runtime({ command: 'REVEAL_AUDIENCE_VOTE', expectedInteractionRevision: 8, confirmed: true })
+    const revealed = readV2ScreenSnapshot(database, NOW).liveInteraction
+    expect(revealed).toMatchObject({ phase: 'VOTE_REVEALED', totalVotes: 2, resultsVisible: true })
+    expect(revealed.voteCandidates.reduce((sum, item) => sum + (item.voteCount ?? 0), 0)).toBe(2)
+  })
+
+  it('caps full starship appearances at two batches per programme without dropping gifts', () => {
+    admit(0)
+    admit(1)
+    runtime({ command: 'START', expectedRunRevision: 0, confirmed: true })
+    runtime({ command: 'SET_SCENE', expectedRunRevision: 1, expectedPresentationRevision: 0, targetScene: 'PROGRAM_SUPPORT', confirmed: true })
+    const ids = database.prepare("SELECT id FROM v2_program_catalog WHERE kind = 'PERFORMANCE' ORDER BY sort_order LIMIT 2").pluck().all() as string[]
+    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 2, expectedInteractionRevision: 0, programId: ids[0], confirmed: true })
+    for (const quantity of [2, 2, 1]) {
+      const current = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
+      participantCommand(0, { command: 'SEND_GIFT', expectedParticipantRevision: current.participant.participantRevision, programId: ids[0], giftId: 'gift-starship', quantity })
+    }
+    const events = () => (database.prepare("SELECT payload_json FROM v2_domain_events WHERE stream_id = 'public' AND event_name = 'gift.sent' ORDER BY stream_seq").pluck().all() as string[]).map(row => JSON.parse(row).gift)
+    expect(events().map(gift => gift.showStarship)).toEqual([true, true, false])
+    expect(events().map(gift => gift.quantity)).toEqual([2, 2, 1])
+    const first = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
+    expect(first.participant.powerBalance).toBe(0)
+    expect(first.participant.starlight).toBe(0)
+    expect(first.currentProgram?.giftCatalog.find(gift => gift.id === 'gift-starship')?.sentCount).toBe(5)
+    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 2, expectedInteractionRevision: first.interaction.interactionRevision, programId: ids[1], confirmed: true })
+    participantCommand(1, { command: 'SEND_GIFT', expectedParticipantRevision: 2, programId: ids[1], giftId: 'gift-starship', quantity: 1 })
+    expect(events().map(gift => gift.showStarship)).toEqual([true, true, false, true])
+  })
+
+  it('sends a gift batch atomically, publishes personal star color and builds the closing ledger', () => {
+    const admitted = admit(0)
+    runtime({ command: 'START', expectedRunRevision: 0, confirmed: true })
+    runtime({ command: 'SET_SCENE', expectedRunRevision: 1, expectedPresentationRevision: 0, targetScene: 'PROGRAM_SUPPORT', confirmed: true })
+    const programId = database.prepare('SELECT id FROM v2_program_catalog ORDER BY sort_order LIMIT 1').pluck().get() as string
+    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 2, expectedInteractionRevision: 0, programId, confirmed: true })
+    const before = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
+    const gift = before.currentProgram!.giftCatalog[0]!
+    const sent = participantCommand(0, { command: 'SEND_GIFT', expectedParticipantRevision: 2, programId, giftId: gift.id, quantity: 5 })
+    expect(sent.participant.powerBalance).toBe(before.participant.powerBalance - gift.powerCost * 5)
+    expect(database.prepare('SELECT COUNT(*) FROM v2_gift_transactions WHERE program_id = ? AND gift_id = ?').pluck().get(programId, gift.id)).toBe(5)
+    expect(readV2ScreenSnapshot(database, NOW).currentProgram).toMatchObject({ id: programId, heat: gift.powerCost * 5 })
+
+    const posted = participantCommand(0, { command: 'POST_BARRAGE', expectedParticipantRevision: 3, text: '今晚一起发光', colorStyle: 'personal' })
+    expect(posted.participant.displayColor).toBe(admitted.participant.displayColor)
+    runtime({ command: 'SET_SCENE', expectedRunRevision: 2, expectedPresentationRevision: 0, targetScene: 'COOPERATIVE_LIGHT', confirmed: true })
+    runtime({ command: 'PREVIEW_FINALE', expectedRunRevision: 3, expectedPresentationRevision: 0, confirmed: true })
+    const recap = readV2ScreenSnapshot(database, NOW).closingRecap
+    expect(recap).toMatchObject({ barrageCount: 1, totalGiftQuantity: 5, totalGiftPower: gift.powerCost * 5 })
+    expect(recap.giftTotals.find(({ giftId }) => giftId === gift.id)).toMatchObject({ quantity: 5, totalPower: gift.powerCost * 5 })
+    expect(recap.barrages[0]).toMatchObject({ text: '今晚一起发光', colorStyle: 'personal', customColor: admitted.participant.displayColor })
+  })
+
+  it('retains every eligible closing barrage beyond the live window and honors moderation after completion', () => {
+    admit(0)
+    admit(1)
+    setLiveAndStart()
+    runtime({ command: 'ADVANCE', expectedRunRevision: 2, expectedPresentationRevision: 0,
+      confirmed: true, overrideReadinessWarnings: true })
+    const texts = Array.from({ length: 12 }, (_, index) => `合成谢幕回响第${index + 1}束光`)
+    for (const [index, text] of texts.entries()) {
+      // Advance the controlled fixture clock beyond rate limits, without bypassing publication.
+      commandCounter += 10
+      const identity = index % 2
+      const participant = readV2ParticipantSnapshot(database, manifest(identity).id, NOW).participant
+      participantCommand(identity, { command: 'POST_BARRAGE', expectedParticipantRevision: participant.participantRevision, text })
+    }
+    expect(readV2ScreenSnapshot(database, NOW).publishedBarrages.map(({ text }) => text)).toEqual(texts.slice(-8))
+    runtime({ command: 'ADVANCE', expectedRunRevision: 3, expectedPresentationRevision: 0,
+      confirmed: true, overrideReadinessWarnings: true })
+    runtime({ command: 'COMPLETE', expectedRunRevision: 4, expectedPresentationRevision: 0,
+      confirmed: true, overrideReadinessWarnings: true })
+    const recaps = () => [readV2ScreenSnapshot(database, NOW).closingRecap,
+      readV2ParticipantSnapshot(database, manifest(1).id, NOW).closingRecap,
+      readV2AdminSnapshot(database, ['REVIEWER'], NOW).closingRecap]
+    const assertVisible = (expected: string[]) => {
+      for (const recap of recaps()) {
+        expect(recap.barrageCount).toBe(12)
+        expect(recap.barrages.map(({ text }) => text)).toEqual(expected)
+        expect(recap.barrages.every(({ status }) => status === 'PUBLISHED')).toBe(true)
+      }
+    }
+    assertVisible(texts)
+    const first = recaps()[0]!.barrages[0]!
+    const sourceId = database.prepare('SELECT source_id FROM v2_barrage_publications WHERE barrage_id = ?')
+      .pluck().get(first.barrageId) as string
+    const interactionRevision = () => readV2AdminSnapshot(database, ['REVIEWER'], NOW).interaction.interactionRevision
+    reviewer({ command: 'REMOVE_BARRAGE', expectedInteractionRevision: interactionRevision(),
+      barrageId: first.barrageId, reason: '合成谢幕撤下验证', confirmed: true })
+    assertVisible(texts.slice(1))
+    reviewer({ command: 'BLOCK_BARRAGE_SOURCE', expectedInteractionRevision: interactionRevision(),
+      sourceId, reason: '合成谢幕来源屏蔽验证', confirmed: true })
+    assertVisible(texts.filter((_, index) => index % 2 === 1))
+    reviewer({ command: 'CLEAR_BARRAGES', expectedInteractionRevision: interactionRevision(),
+      reason: '合成谢幕清屏验证', confirmed: true })
+    assertVisible([])
+    expect(database.prepare('SELECT COUNT(*) FROM v2_barrages WHERE reset_epoch = 2').pluck().get()).toBe(12)
+    const databasePath = database.name
+    database.close()
+    database = openDatabase(databasePath)
+    assertVisible([])
   })
 })

@@ -68,7 +68,7 @@ describe('V2-08 mobile state and motion gates', () => {
     })
     expect(mobileSceneCopy(snapshot({
       runtime: { mode: 'LIVE', status: 'READY', currentScene: null, runRevision: 0 },
-    })).title).toBe('已抵达，等待全场启程')
+    })).title).toBe('已抵达星河')
     expect(mobileSceneCopy(snapshot({
       runtime: {
         mode: 'LIVE', status: 'COMPLETED', currentScene: 'COOPERATIVE_LIGHT', runRevision: 7,
@@ -486,7 +486,8 @@ describe('V2-08 mobile state and motion gates', () => {
     expect(template).toContain('{{ colorConnectionMessage }}')
     expect(template).not.toContain('selected-star')
     expect(template).not.toContain('cinematic__flight')
-    expect(stage).toContain('nebula-master.webp')
+    // The approved procedural galaxy retired the old bitmap. Keep checking
+    // the shared journey, privacy and completion contracts below.
     expect(stage).toContain('data-background-system="orbital-signal-reset"')
     expect(stage).toContain('publicStars: []')
     expect(stage).toContain('renderer?.waitForPhase(phase)')

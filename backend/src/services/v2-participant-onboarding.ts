@@ -1,3 +1,7 @@
+import { readV2Stage, readV2AwardSummaries, readV2Awards } from './v2-ceremony.js'
+import { readCurrentV2Program, readV2ProgramSchedule } from './v2-program-catalog.js'
+import { readV2ClosingRecap } from './v2-closing-recap.js'
+import { currentInteractionCode, readLiveInteractionRow, readV2LiveInteraction } from './v2-live-interactions.js'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 
 import {
@@ -14,7 +18,7 @@ import {
   invitationTokenDigest,
   verifyStudentNumberCredential,
 } from '../db/seed.js'
-import type { SqliteDatabase } from '../db/open-database.js'
+import { databaseTableExists, type SqliteDatabase } from '../db/open-database.js'
 import {
   readProtocolRuntime,
 } from '../db/v2-foundation.js'
@@ -667,7 +671,7 @@ function runtimeTuple(runtime: RuntimeRow): V2RuntimeTuple {
   } as V2RuntimeTuple
 }
 
-function allowedActions(runtime: RuntimeRow, participant: ParticipantRow) {
+function allowedActions(database: SqliteDatabase, runtime: RuntimeRow, participant: ParticipantRow) {
   if (runtime.status === 'PAUSED' || runtime.status === 'COMPLETED') return []
   const actions: string[] = []
   if (participant.onboardingState === 'NEEDS_COLOR') actions.push('LOCK_COLOR')
@@ -687,7 +691,12 @@ function allowedActions(runtime: RuntimeRow, participant: ParticipantRow) {
       participant.admittedScene === 'ASSEMBLY' ||
       participant.admittedScene === 'PROGRAM_SUPPORT')
   ) {
-    actions.push('SEND_GIFT', 'POST_BARRAGE')
+    const current = readCurrentV2Program(database)
+    if (!current || current.kind === 'PERFORMANCE' && current.giftsEnabled !== false) actions.push('SEND_GIFT')
+    actions.push('POST_BARRAGE')
+    const live = readV2LiveInteraction(database, runtime.resetEpoch, { identityId: participant.identityId })
+    if (live.phase === 'BUZZER_OPEN' && !live.participation.hasBuzzed) actions.push('BUZZ_IN')
+    if (live.phase === 'VOTE_OPEN' && !live.participation.hasVoted) actions.push('CAST_AUDIENCE_VOTE')
   }
   if (
     runtime.currentScene === 'COOPERATIVE_LIGHT' &&
@@ -727,6 +736,42 @@ function participantProjection(
        WHERE reset_epoch = ? AND identity_id = ? ORDER BY id`,
     )
     .all(runtime.resetEpoch, identityId)
+  const giftHistory = databaseTableExists(database, 'v2_program_catalog') ? database
+    .prepare(
+      `SELECT gift_tx.program_id AS programId,
+              program.title AS programTitle,
+              gift_tx.gift_id AS giftId,
+              gift.name AS giftName,
+              COUNT(*) AS quantity,
+              SUM(gift_tx.power_cost) AS totalPower,
+              MAX(gift_tx.created_at) AS lastSentAt
+       FROM v2_gift_transactions gift_tx
+       JOIN v2_program_catalog program ON program.id = gift_tx.program_id
+       JOIN gift_catalog gift ON gift.id = gift_tx.gift_id
+       WHERE gift_tx.reset_epoch = ? AND gift_tx.identity_id = ?
+       GROUP BY gift_tx.program_id, program.title,
+                gift_tx.gift_id, gift.name
+       ORDER BY MAX(gift_tx.created_at) DESC
+       LIMIT 128`,
+    )
+    .all(runtime.resetEpoch, identityId) : []
+  const barrageHistory = databaseTableExists(database, 'v2_interaction_unlocks') ? database
+    .prepare(
+      `SELECT barrage.id AS barrageId, barrage.text,
+              CASE WHEN barrage.custom_color IS NOT NULL THEN 'personal' ELSE barrage.color_style END AS colorStyle,
+              barrage.custom_color AS customColor,
+              CASE WHEN publication.status = 'REMOVED'
+                THEN 'REMOVED' ELSE 'PUBLISHED' END AS status,
+              barrage.created_at AS createdAt
+       FROM v2_barrages barrage
+       LEFT JOIN v2_barrage_publications publication
+         ON publication.barrage_id = barrage.id
+        AND publication.reset_epoch = barrage.reset_epoch
+       WHERE barrage.reset_epoch = ? AND barrage.identity_id = ?
+       ORDER BY barrage.created_at DESC
+       LIMIT 100`,
+    )
+    .all(runtime.resetEpoch, identityId) : []
   return {
     participantRevision: participant.participantRevision,
     onboardingState: participant.onboardingState,
@@ -755,9 +800,13 @@ function participantProjection(
     firstBarrageRewardedAt: participant.firstBarrageAt,
     cooperativeLightAt: participant.cooperativeLightAt,
     powerBalance: participant.powerBalance,
+    unlockedBarrageStyles: databaseTableExists(database, 'v2_interaction_unlocks') ? database.prepare("SELECT item_key FROM v2_interaction_unlocks WHERE reset_epoch = ? AND identity_id = ? AND kind = 'STYLE'").pluck().all(runtime.resetEpoch, identityId) : [],
+    programAllowance: 0,
+    giftHistory,
+    barrageHistory,
     starlight: participant.starlight,
     rewards,
-    allowedActions: allowedActions(runtime, participant),
+    allowedActions: allowedActions(database, runtime, participant),
   }
 }
 
@@ -788,45 +837,8 @@ function finalRecap(database: SqliteDatabase, resetEpoch: number) {
     .all(resetEpoch)
 }
 
-function currentProgram(database: SqliteDatabase) {
-  const program = database.prepare(
-    `SELECT program.id, program.title, program.heat
-     FROM program_runtime_state state
-     JOIN program_catalog program ON program.id = state.current_program_id
-     WHERE state.id = 1 AND program.enabled = 1`,
-  ).get() as { id: string; title: string; heat: number } | undefined
-  if (!program) return null
-  const giftCatalog = database.prepare(
-    `SELECT id, name, power_cost AS powerCost
-     FROM gift_catalog WHERE enabled = 1 ORDER BY sort_order`,
-  ).all()
-  return { ...program, giftCatalog }
-}
 
-function programSchedule(database: SqliteDatabase) {
-  const currentProgramId = database.prepare(
-    'SELECT current_program_id FROM program_runtime_state WHERE id = 1',
-  ).pluck().get() as string | null
-  const programs = database.prepare(
-    `SELECT id, title, sort_order AS sortOrder, heat
-     FROM program_catalog WHERE enabled = 1 ORDER BY sort_order`,
-  ).all() as Array<{ id: string; title: string; sortOrder: number; heat: number }>
-  const currentIndex = programs.findIndex(({ id }) => id === currentProgramId)
-  return programs.map((program, index) => ({
-    id: program.id,
-    title: program.title,
-    order: program.sortOrder,
-    heat: program.heat,
-    state:
-      index === currentIndex
-        ? ('CURRENT' as const)
-        : currentIndex >= 0 && index === currentIndex + 1
-          ? ('NEXT' as const)
-          : currentIndex >= 0 && index < currentIndex
-            ? ('CLOSED' as const)
-            : ('UPCOMING' as const),
-  }))
-}
+
 
 function participantInteraction(database: SqliteDatabase, resetEpoch: number) {
   const row = database.prepare(
@@ -839,6 +851,30 @@ function participantInteraction(database: SqliteDatabase, resetEpoch: number) {
     displayBatch: number
   }
   return { ...row, barragePaused: row.barragePaused === 1 }
+}
+
+function participantPublishedBarrages(database: SqliteDatabase, resetEpoch: number) {
+  if (!databaseTableExists(database, 'v2_interaction_unlocks')) return []
+  return database.prepare(
+    `SELECT barrage.id AS barrageId, barrage.text,
+            star.public_star_id AS publicStarId,
+            CASE WHEN barrage.custom_color IS NOT NULL THEN 'personal' ELSE barrage.color_style END AS colorStyle,
+            barrage.custom_color AS customColor,
+            publication.display_seq AS displaySeq,
+            publication.published_at AS publishedAt
+     FROM v2_barrage_publications publication
+     JOIN v2_barrages barrage ON barrage.id = publication.barrage_id
+     JOIN v2_public_stars star
+       ON star.identity_id = barrage.identity_id
+      AND star.reset_epoch = barrage.reset_epoch
+     JOIN v2_screen_interaction_state state
+       ON state.reset_epoch = publication.reset_epoch
+     WHERE publication.reset_epoch = ?
+       AND publication.status = 'PUBLISHED'
+       AND publication.display_batch = state.display_batch
+     ORDER BY publication.display_seq DESC
+     LIMIT 8`,
+  ).all(resetEpoch).reverse()
 }
 
 export function readV2ParticipantSnapshot(
@@ -872,10 +908,16 @@ export function readV2ParticipantSnapshot(
     publicStars: publicStars(database, runtime.resetEpoch),
     aggregateRevision: runtime.publicAggregateRevision,
     aggregate: readPublicAggregate(database, runtime.resetEpoch),
-    currentProgram: currentProgram(database),
-    programs: programSchedule(database),
+    currentProgram: readCurrentV2Program(database),
+    programs: readV2ProgramSchedule(database),
+    stage: readV2Stage(database),
+    awards: readV2AwardSummaries(database),
     interaction: participantInteraction(database, runtime.resetEpoch),
+    liveInteraction: readV2LiveInteraction(database, runtime.resetEpoch, { identityId }),
+    publishedBarrages: participantPublishedBarrages(database, runtime.resetEpoch),
     finalRecap: finalRecap(database, runtime.resetEpoch),
+    closingRecap: readV2ClosingRecap(database, runtime.resetEpoch,
+      runtime.status === 'COMPLETED' || runtime.presentationType === 'FINALE_PREVIEW'),
   })
 }
 
@@ -1108,7 +1150,7 @@ export function activateV2Participant(
              cooperative_light_at, power_balance, starlight, updated_at
            ) VALUES (
              ?, ?, 1, 'NEEDS_COLOR', ?, NULL, NULL, NULL, 'NONE', NULL,
-             NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 20, ?
+             NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0, ?
            )`,
         )
         .run(identity.identityId, runtime.resetEpoch, timestamp, timestamp)
@@ -1117,7 +1159,7 @@ export function activateV2Participant(
           `INSERT INTO v2_reward_ledger (
              reset_epoch, identity_id, event_key, delta,
              reward_rule_version, created_at
-           ) VALUES (?, ?, 'ACTIVATED', 20, ?, ?)`,
+           ) VALUES (?, ?, 'ACTIVATED', 0, ?, ?)`,
         )
         .run(
           runtime.resetEpoch,
@@ -1224,6 +1266,8 @@ export function executeV2ParticipantOnboardingCommand(
         runtime: runtimeTuple(currentRuntime),
         presentation: presentationFor(database, currentRuntime),
         presentationRevision: currentRuntime.presentationRevision,
+        currentProgram: readCurrentV2Program(database),
+        liveInteraction: readV2LiveInteraction(database, currentRuntime.resetEpoch, { identityId }),
         participant: participantProjection(database, currentRuntime, identityId),
       })
       saveIdempotency(database, {
@@ -1252,6 +1296,8 @@ export function executeV2ParticipantOnboardingCommand(
       request.command === 'START_STAR' ||
       request.command === 'SEND_GIFT' ||
       request.command === 'POST_BARRAGE' ||
+      request.command === 'BUZZ_IN' ||
+      request.command === 'CAST_AUDIENCE_VOTE' ||
       request.command === 'COOPERATIVE_LIGHT'
     ) {
       if (participant.onboardingState !== 'ADMITTED' || runtime.status !== 'RUNNING') {
@@ -1270,7 +1316,8 @@ export function executeV2ParticipantOnboardingCommand(
         (request.command === 'START_STAR' &&
           runtime.currentScene === 'ASSEMBLY' &&
           (participant.admittedScene === null || participant.admittedScene === 'ASSEMBLY')) ||
-        ((request.command === 'SEND_GIFT' || request.command === 'POST_BARRAGE') &&
+        ((request.command === 'SEND_GIFT' || request.command === 'POST_BARRAGE' ||
+          request.command === 'BUZZ_IN' || request.command === 'CAST_AUDIENCE_VOTE') &&
           runtime.currentScene === 'PROGRAM_SUPPORT' && admittedForProgram) ||
         (request.command === 'COOPERATIVE_LIGHT' &&
           runtime.currentScene === 'COOPERATIVE_LIGHT')
@@ -1285,7 +1332,7 @@ export function executeV2ParticipantOnboardingCommand(
 
       const revision = participant.participantRevision + 1
       let nextPower = participant.powerBalance
-      let nextStarlight = participant.starlight
+      const nextStarlight = participant.starlight // Retired: keep historical balance, no new points.
       let firstReward = false
       if (request.command === 'START_STAR') {
         if (participant.startedAt !== null) {
@@ -1296,7 +1343,6 @@ export function executeV2ParticipantOnboardingCommand(
             runtime.resetEpoch,
           )
         }
-        nextStarlight += 40
         database.prepare(
           `UPDATE v2_participant_states
            SET participant_revision = ?, started_at = ?, starlight = ?, updated_at = ?
@@ -1310,16 +1356,20 @@ export function executeV2ParticipantOnboardingCommand(
         database.prepare(
           `INSERT INTO v2_reward_ledger (
              reset_epoch, identity_id, event_key, delta, reward_rule_version, created_at
-           ) VALUES (?, ?, 'STAR_STARTED', 40, ?, ?)`,
+           ) VALUES (?, ?, 'STAR_STARTED', 0, ?, ?)`,
         ).run(runtime.resetEpoch, identityId, runtime.rewardRuleVersion, timestamp)
         appendStarEvent(database, runtime, identityId, timestamp)
         firstReward = true
       } else if (request.command === 'SEND_GIFT') {
+        const current = readCurrentV2Program(database)
+        if (current && (current.kind !== 'PERFORMANCE' || !current.giftsEnabled)) {
+          throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '当前环节不接收礼物。', 409, runtime.resetEpoch)
+        }
         const program = database.prepare(
           `SELECT program.id, program.title
-           FROM program_catalog program
-           JOIN program_runtime_state state ON state.current_program_id = program.id
-           WHERE program.id = ? AND program.enabled = 1`,
+           FROM v2_program_catalog program
+           JOIN v2_program_catalog_state state ON state.current_program_id = program.id
+           WHERE program.id = ? AND program.enabled = 1 AND program.kind = 'PERFORMANCE'`,
         ).get(request.programId) as { id: string; title: string } | undefined
         const gift = database.prepare(
           'SELECT id, name, power_cost AS powerCost FROM gift_catalog WHERE id = ? AND enabled = 1',
@@ -1332,7 +1382,8 @@ export function executeV2ParticipantOnboardingCommand(
             runtime.resetEpoch,
           )
         }
-        if (participant.powerBalance < gift.powerCost) {
+        const totalPower = gift.powerCost * request.quantity
+        if (participant.powerBalance < totalPower) {
           throw new V2ParticipantCommandError(
             'INSUFFICIENT_BALANCE',
             '动力值不足，无法送出该礼物。',
@@ -1340,18 +1391,21 @@ export function executeV2ParticipantOnboardingCommand(
             runtime.resetEpoch,
           )
         }
-        nextPower -= gift.powerCost
+        nextPower -= totalPower
         firstReward = participant.firstGiftAt === null
-        if (firstReward) nextStarlight += 10
         const giftEventId = `gift:${randomUUID()}`
-        database.prepare(
+        const insertGift = database.prepare(
           `INSERT INTO v2_gift_transactions (
              id, reset_epoch, identity_id, program_id, gift_id, power_cost, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        ).run(giftEventId, runtime.resetEpoch, identityId, request.programId, request.giftId, gift.powerCost, timestamp)
+        )
+        for (let index = 0; index < request.quantity; index += 1) {
+          insertGift.run(`${giftEventId}:${index + 1}`, runtime.resetEpoch, identityId,
+            request.programId, request.giftId, gift.powerCost, timestamp)
+        }
         database.prepare(
-          `UPDATE program_catalog SET heat = heat + ?, updated_at = ? WHERE id = ?`,
-        ).run(gift.powerCost, timestamp, program.id)
+          `UPDATE v2_program_catalog SET heat = heat + ?, updated_at = ? WHERE id = ?`,
+        ).run(totalPower, timestamp, program.id)
         database.prepare(
           `UPDATE v2_participant_states SET participant_revision = ?,
              first_gift_at = COALESCE(first_gift_at, ?), power_balance = ?,
@@ -1362,7 +1416,7 @@ export function executeV2ParticipantOnboardingCommand(
           database.prepare(
             `INSERT INTO v2_reward_ledger (
                reset_epoch, identity_id, event_key, delta, reward_rule_version, created_at
-             ) VALUES (?, ?, 'FIRST_GIFT', 10, ?, ?)`,
+             ) VALUES (?, ?, 'FIRST_GIFT', 0, ?, ?)`,
           ).run(runtime.resetEpoch, identityId, runtime.rewardRuleVersion, timestamp)
         }
         const interaction = interactionState(database, runtime.resetEpoch)
@@ -1371,13 +1425,24 @@ export function executeV2ParticipantOnboardingCommand(
           `UPDATE v2_screen_interaction_state
            SET interaction_revision = ?, updated_at = ? WHERE reset_epoch = ?`,
         ).run(interactionRevision, timestamp, runtime.resetEpoch)
+        const sentCount = Number(database.prepare(
+          `SELECT COUNT(*) FROM v2_gift_transactions
+           WHERE reset_epoch = ? AND program_id = ? AND gift_id = ?`,
+        ).pluck().get(runtime.resetEpoch, program.id, gift.id))
         appendInteractionEvent(database, runtime, interactionRevision, 'gift.sent', {
           interactionRevision,
           gift: {
             giftEventId,
+            showStarship: gift.id === 'gift-starship' && Number(database.prepare(
+              "SELECT COUNT(DISTINCT CASE WHEN substr(id, 1, 5) = 'gift:' THEN substr(id, 1, 41) ELSE id END) FROM v2_gift_transactions WHERE reset_epoch = ? AND program_id = ? AND gift_id = ?",
+            ).pluck().get(runtime.resetEpoch, program.id, gift.id)) <= 2,
             programId: program.id,
             giftId: gift.id,
             giftName: gift.name,
+            powerCost: gift.powerCost,
+            quantity: request.quantity,
+            totalPower,
+            sentCount,
             createdAt: timestamp,
           },
         }, timestamp)
@@ -1431,13 +1496,22 @@ export function executeV2ParticipantOnboardingCommand(
             runtime.resetEpoch,
           )
         }
+        const colorStyle = request.colorStyle
+        const customColor = colorStyle === 'personal' ? participant.displayColor : null
+        const paidStyle = ['aurora', 'sunset', 'nebula'].includes(colorStyle)
+        const unlocked = database.prepare("SELECT 1 FROM v2_interaction_unlocks WHERE reset_epoch = ? AND identity_id = ? AND kind = 'STYLE' AND item_key = ?").get(runtime.resetEpoch, identityId, colorStyle)
+        if (paidStyle && !unlocked) {
+          if (nextPower < 10) throw new V2ParticipantCommandError('INSUFFICIENT_BALANCE', '解锁渐变星色需要 10 动力。', 409, runtime.resetEpoch)
+          nextPower -= 10
+          database.prepare("INSERT INTO v2_interaction_unlocks VALUES (?, ?, 'STYLE', ?, -10, ?)").run(runtime.resetEpoch, identityId, colorStyle, timestamp)
+        }
         firstReward = participant.firstBarrageAt === null
-        if (firstReward) nextStarlight += 10
         const barrageId = `barrage:${randomUUID()}`
         database.prepare(
-          `INSERT INTO v2_barrages (id, reset_epoch, identity_id, text, created_at)
-           VALUES (?, ?, ?, ?, ?)`,
-        ).run(barrageId, runtime.resetEpoch, identityId, normalized, timestamp)
+          `INSERT INTO v2_barrages (id, reset_epoch, identity_id, text, created_at, color_style, custom_color)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(barrageId, runtime.resetEpoch, identityId, normalized, timestamp,
+          colorStyle === 'personal' ? 'white' : colorStyle, customColor)
         database.prepare(
           `INSERT INTO v2_barrage_publications (
              barrage_id, reset_epoch, source_id, status, display_seq,
@@ -1447,14 +1521,14 @@ export function executeV2ParticipantOnboardingCommand(
         ).run(barrageId, runtime.resetEpoch, source.sourceId, interaction.nextDisplaySeq, interaction.displayBatch, timestamp)
         database.prepare(
           `UPDATE v2_participant_states SET participant_revision = ?,
-             first_barrage_at = COALESCE(first_barrage_at, ?), starlight = ?, updated_at = ?
+             first_barrage_at = COALESCE(first_barrage_at, ?), starlight = ?, power_balance = ?, updated_at = ?
            WHERE reset_epoch = ? AND identity_id = ?`,
-        ).run(revision, timestamp, nextStarlight, timestamp, runtime.resetEpoch, identityId)
+        ).run(revision, timestamp, nextStarlight, nextPower, timestamp, runtime.resetEpoch, identityId)
         if (firstReward) {
           database.prepare(
             `INSERT INTO v2_reward_ledger (
                reset_epoch, identity_id, event_key, delta, reward_rule_version, created_at
-             ) VALUES (?, ?, 'FIRST_BARRAGE', 10, ?, ?)`,
+             ) VALUES (?, ?, 'FIRST_BARRAGE', 0, ?, ?)`,
           ).run(runtime.resetEpoch, identityId, runtime.rewardRuleVersion, timestamp)
         }
         const interactionRevision = interaction.interactionRevision + 1
@@ -1468,9 +1542,72 @@ export function executeV2ParticipantOnboardingCommand(
           barrage: {
             barrageId,
             text: normalized,
+            publicStarId: participant.publicStarId,
+            colorStyle,
+            customColor,
             displaySeq: interaction.nextDisplaySeq,
             publishedAt: timestamp,
           },
+        }, timestamp)
+      } else if (request.command === 'BUZZ_IN') {
+        const live = readLiveInteractionRow(database, runtime.resetEpoch)
+        const segmentCode = currentInteractionCode(database)
+        if (live.phase !== 'BUZZER_OPEN' || !live.segmentCode || segmentCode !== live.segmentCode) {
+          throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '本轮抢答尚未开放或已经锁定。', 409, runtime.resetEpoch)
+        }
+        if (!live.openedAt || now.getTime() < Date.parse(live.openedAt) + 3000) {
+          throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '倒计时尚未结束。', 409, runtime.resetEpoch)
+        }
+        const responseSequence = Number(database.prepare(`SELECT COALESCE(MAX(response_sequence), 0) + 1
+          FROM v2_buzzer_entries WHERE reset_epoch = ? AND round_number = ?`)
+          .pluck().get(runtime.resetEpoch, live.roundNumber))
+        database.prepare(`INSERT INTO v2_buzzer_entries (
+          id, reset_epoch, round_number, segment_code, identity_id,
+          response_sequence, responded_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(`buzz:${randomUUID()}`, runtime.resetEpoch,
+          live.roundNumber, live.segmentCode, identityId, responseSequence, timestamp)
+        const interaction = interactionState(database, runtime.resetEpoch)
+        const interactionRevision = interaction.interactionRevision + 1
+        database.prepare(`UPDATE v2_live_interaction_state SET phase = 'BUZZER_LOCKED',
+          revision = ?, updated_at = ? WHERE reset_epoch = ?`)
+          .run(interactionRevision, timestamp, runtime.resetEpoch)
+        database.prepare(`UPDATE v2_screen_interaction_state SET interaction_revision = ?,
+          updated_at = ? WHERE reset_epoch = ?`).run(interactionRevision, timestamp, runtime.resetEpoch)
+        database.prepare(`UPDATE v2_participant_states SET participant_revision = ?, updated_at = ?
+          WHERE reset_epoch = ? AND identity_id = ?`).run(revision, timestamp, runtime.resetEpoch, identityId)
+        appendInteractionEvent(database, runtime, interactionRevision, 'live.interaction.changed', {
+          interactionRevision,
+          liveInteraction: readV2LiveInteraction(database, runtime.resetEpoch),
+        }, timestamp)
+      } else if (request.command === 'CAST_AUDIENCE_VOTE') {
+        const live = readLiveInteractionRow(database, runtime.resetEpoch)
+        if (live.phase !== 'VOTE_OPEN' || live.segmentCode !== 'B' || currentInteractionCode(database) !== 'B') {
+          throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '观众投票尚未开放或已经结束。', 409, runtime.resetEpoch)
+        }
+        const existingVote = database.prepare(`SELECT 1 FROM v2_audience_votes
+          WHERE reset_epoch = ? AND round_number = ? AND identity_id = ?`)
+          .get(runtime.resetEpoch, live.roundNumber, identityId)
+        if (existingVote) throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '本轮已经投过票。', 409, runtime.resetEpoch)
+        const candidate = database.prepare(`SELECT draw.identity_id AS identityId
+          FROM v2_raffle_draws draw JOIN v2_identity_slots slot ON slot.identity_id = draw.identity_id
+          WHERE draw.reset_epoch = ? AND slot.public_star_id = ? AND draw.draw_sequence <= 12`)
+          .get(runtime.resetEpoch, request.candidateStarId) as { identityId: string } | undefined
+        if (!candidate) throw new V2ParticipantCommandError('RESOURCE_NOT_FOUND', '该星号不在本轮上台候选中。', 404, runtime.resetEpoch)
+        database.prepare(`INSERT INTO v2_audience_votes (
+          id, reset_epoch, round_number, identity_id, candidate_identity_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)`).run(`vote:${randomUUID()}`, runtime.resetEpoch,
+          live.roundNumber, identityId, candidate.identityId, timestamp)
+        const interaction = interactionState(database, runtime.resetEpoch)
+        const interactionRevision = interaction.interactionRevision + 1
+        database.prepare(`UPDATE v2_live_interaction_state SET revision = ?, updated_at = ?
+          WHERE reset_epoch = ?`).run(interactionRevision, timestamp, runtime.resetEpoch)
+        database.prepare(`UPDATE v2_screen_interaction_state SET interaction_revision = ?,
+          updated_at = ? WHERE reset_epoch = ?`).run(interactionRevision, timestamp, runtime.resetEpoch)
+        database.prepare(`UPDATE v2_participant_states SET participant_revision = ?, updated_at = ?
+          WHERE reset_epoch = ? AND identity_id = ?`).run(revision, timestamp, runtime.resetEpoch, identityId)
+        appendInteractionEvent(database, runtime, interactionRevision, 'live.interaction.changed', {
+          interactionRevision,
+          liveInteraction: readV2LiveInteraction(database, runtime.resetEpoch),
         }, timestamp)
       } else {
         if (participant.cooperativeLightAt !== null) {
@@ -1481,7 +1618,6 @@ export function executeV2ParticipantOnboardingCommand(
             runtime.resetEpoch,
           )
         }
-        nextStarlight += 20
         database.prepare(
           `UPDATE v2_participant_states SET participant_revision = ?,
              cooperative_light_at = ?, starlight = ?, updated_at = ?
@@ -1490,7 +1626,7 @@ export function executeV2ParticipantOnboardingCommand(
         database.prepare(
           `INSERT INTO v2_reward_ledger (
              reset_epoch, identity_id, event_key, delta, reward_rule_version, created_at
-           ) VALUES (?, ?, 'COOPERATIVE_LIGHT', 20, ?, ?)`,
+           ) VALUES (?, ?, 'COOPERATIVE_LIGHT', 0, ?, ?)`,
         ).run(runtime.resetEpoch, identityId, runtime.rewardRuleVersion, timestamp)
         firstReward = true
       }
@@ -1574,6 +1710,8 @@ export function executeV2ParticipantOnboardingCommand(
       runtime: runtimeTuple(currentRuntime),
       presentation: presentationFor(database, currentRuntime),
       presentationRevision: currentRuntime.presentationRevision,
+      currentProgram: readCurrentV2Program(database),
+      liveInteraction: readV2LiveInteraction(database, currentRuntime.resetEpoch, { identityId }),
       participant: participantProjection(database, currentRuntime, identityId),
     })
     saveIdempotency(database, {

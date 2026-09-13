@@ -15,6 +15,7 @@
     "@sysu-welcome/contracts": "workspace:*",
     "better-sqlite3": "^13.0.3",
     "fastify": "^5.11.3",
+    "pinyin-pro": "3.29.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {

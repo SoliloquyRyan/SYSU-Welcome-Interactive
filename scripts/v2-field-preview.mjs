@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import { isIP } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
-import readline from 'node:readline/promises'
+import { captureFieldSource, collectFieldChecklist, fieldChecklistReport } from './field-checklist.mjs'
 
 import QRCode from 'qrcode'
 
@@ -28,7 +28,7 @@ const FIELD_CHECKLIST = [
   ['F10', '首次启动恒星发放 40 星光；晚到入场直接进入当前场景，不补旧奖励'],
   ['F11', 'PROGRAM_SUPPORT 三端权威一致；0/40/80/120/160/220 人均由 420 颗不计人数的中性底星、未解析盘面光和真实星构成低倾角恒星盘，环境以非同步低振幅呼吸、真实星不随人数重排且逐颗保留星色；每颗实时新星只触发一次画外流星并沿逆时针切线进入稳定轨道。300 人仅作技术压力检查；高速段以约 60Hz 目标、首场前预热的有界 WebGL2 完成约 8.4 秒错峰螺旋汇聚、高温核心、一次非对称超新星与连续白场透明接管；稀疏场景只用无身份尘埃维持尺度；无首帧编译顿挫、显式发光 S 形旋臂、同速直线吸附、规整圆环、烟花粒子球、彩虹冲击波、霓虹描边、纯白矩形硬盖、阶段停顿、末帧清空或重复频闪；网页稳态完全透明且无节目板'],
   ['F12', '抽奖仅在 RUNNING + PROGRAM_SUPPORT 可开启；其他状态稳定拒绝'],
-  ['F13', '连续抽取无重复；后台见合成姓名+公开星号，大屏只见公开星号'],
+  ['F13', '连续抽取无重复；大屏按抽取顺序逐位揭晓并停留，未揭晓结果不进入历史；后台见合成姓名+公开星号，大屏只见公开星号'],
   ['F14', '抽奖结果在刷新/重连后恢复；暂停/换场/完成自动收屏但保留记录'],
   ['F15', '仅排练模式 Demo 管理员可清空抽奖；LIVE 或不合格条件均拒绝'],
   ['F16', '软键盘打开时弹幕输入与主提交可达，无整页横向溢出'],
@@ -36,10 +36,11 @@ const FIELD_CHECKLIST = [
   ['F18', '礼物业务生效但不上大屏；新弹幕仅实时飘屏、离场销毁，刷新/重连不补播'],
   ['F19', 'Wi-Fi 短暂断开禁写并提示；恢复后先取权威状态且不自动补交'],
   ['F20', '刷新/返回不重播首次电影，不恢复未提交草稿'],
-  ['F21', '协同点亮与一次确认终章三端一致'],
+  ['F21', '协同完成数/准入数、进度及集体亮度随权威聚合更新；首次反馈有界，reduced-motion/恢复直接静态且不重放；终章将就绪警告合并到一次确认，三端一致'],
   ['F22', 'COMPLETED 后手机只读，错误操作不会重开写入'],
   ['F23', '顶部退出每次确认；确认后需重新扫码且旧草稿不残留'],
   ['F24', '手机连续操作无掉帧、过热、白屏或崩溃'],
+  ['F25', '后台静态界面及窄屏无横向溢出，主要控制/警告/焦点/禁用态可辨；三端共享视觉语义'],
   ['O01', 'OBS：Browser Source 透明 alpha 与节目视频真实合成正确'],
   ['O02', 'OBS：0/40/80/120/160/220 人盘面密度在远距均成立，420 底星与未解析盘面光持续流动但不被误读为人数；构图读作低倾角盘面而不是显式 S 形旋臂，呼吸克制且不同步驱动真实星；逐颗真实星色与每位新同学一次画外流星轨道捕获可辨。切场前已预热且首帧无顿挫，约 8.4 秒从当前星流连续进入错峰螺旋汇聚、高温核心、一次非对称超新星与白场透明接管，稀疏场景不伪造参与者；无同速直线吸附、规整圆环、烟花粒子球、彩虹冲击波、霓虹描边、纯白矩形硬盖、阶段停顿、末帧清空、硬切或重复频闪；节目稳态无网页节目板/常驻元素，新弹幕短时飘过且抽奖可读'],
   ['O03', 'OBS：浏览器源无网页音频，节目音视频只由 OBS 控制'],
@@ -47,60 +48,37 @@ const FIELD_CHECKLIST = [
   ['O05', 'OBS：连续切场、隐藏/显示源、全屏预览无黑底闪烁或残帧'],
 ]
 
-async function runFieldChecklist(invitationQr, invitationQrImage, baseURL) {
-  const results = []
-  console.log('\n=== D-037/D-051/D-055 现场验收逐项检查（终端模式）===')
-  console.log('回答 P=通过 / F=失败 / B=受阻 / S=跳过，直接回车默认 P。')
+async function runFieldChecklist(invitationQr, baseURL) {
+  const startedAt = new Date().toISOString()
+  const sourceBefore = await captureFieldSource()
+  console.log('\n=== D-057 现场验收逐项检查（终端模式）===')
+  console.log('回答 P=通过 / F=失败 / B=受阻 / S=跳过。空白、无效输入、EOF 或中断均保留 PENDING。')
+  console.log('用 V2_FIELD_OPERATOR、V2_FIELD_DEVICE、V2_FIELD_EVIDENCE 填写执行人、设备/浏览器及脱敏证据位置；缺项保留待签核。')
   console.log('此清单只辅助现场记录，最终签核仍以 docs/D037_FIELD_ACCEPTANCE.md 为准。\n')
-  if (process.stdin.isTTY) {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-    try {
-      for (const [id, text] of FIELD_CHECKLIST) {
-        const answer = (await rl.question(`[${id}] ${text} [P/F/B/S]? `)).trim().toUpperCase()
-        results.push({ id, text, result: answer === '' ? 'P' : answer })
-      }
-    } finally {
-      rl.close()
-    }
-  } else {
-    const chunks = []
-    for await (const chunk of process.stdin) chunks.push(chunk)
-    const lines = Buffer.concat(chunks).toString('utf8').split(/\r?\n/)
-    for (const [index, [id, text]] of FIELD_CHECKLIST.entries()) {
-      const answer = (lines[index] ?? '').trim().toUpperCase()
-      results.push({ id, text, result: answer === '' ? 'P' : answer })
-    }
-  }
-  const counts = { P: 0, F: 0, B: 0, S: 0 }
-  for (const item of results) counts[item.result] = (counts[item.result] ?? 0) + 1
-  console.log(`\n检查完成：P=${counts.P} F=${counts.F} B=${counts.B} S=${counts.S}`)
-  const failed = results.filter((item) => item.result === 'F')
-  if (failed.length > 0) {
-    console.log('未通过项：')
-    for (const item of failed) console.log(`  [${item.id}] ${item.text}`)
-  }
+  console.log(`三端入口：${baseURL}`)
+  console.log(invitationQr)
+  const results = await collectFieldChecklist(FIELD_CHECKLIST, process.stdin, process.stdout)
+  const report = fieldChecklistReport({
+    results,
+    startedAt,
+    endedAt: new Date().toISOString(),
+    sourceBefore,
+    sourceAfter: await captureFieldSource(),
+    metadata: {
+      operator: process.env.V2_FIELD_OPERATOR?.trim(),
+      device: process.env.V2_FIELD_DEVICE?.trim(),
+      evidence: process.env.V2_FIELD_EVIDENCE?.trim(),
+    },
+  })
+  console.log(`\n检查记录：${Object.entries(report.counts).map(([key, count]) => `${key}=${count}`).join(' ')}`)
   const outputDirectory = path.resolve('output', 'field-check')
   await fs.mkdir(outputDirectory, { recursive: true })
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
   const reportPath = path.join(outputDirectory, `field-checklist-${timestamp}.md`)
-  const lines = [
-    '# D-037/D-051/D-055 现场检查单记录（终端模式）',
-    '',
-    `> 时间：${new Date().toISOString()}；入口：${baseURL}`,
-    '> 说明：本文件是被 Git 忽略的现场记录；最终签核以 docs/D037_FIELD_ACCEPTANCE.md 为准。',
-    '',
-    `| 编号 | 检查项 | 结果 |`,
-    '|---|---|---|',
-    ...results.map((item) => `| ${item.id} | ${item.text} | ${item.result} |`),
-    '',
-    `合计：P=${counts.P} F=${counts.F} B=${counts.B} S=${counts.S}`,
-    '',
-  ]
-  await fs.writeFile(reportPath, lines.join('\n'), 'utf8')
+  await fs.writeFile(reportPath, report.markdown, 'utf8')
   console.log(`检查记录已写入：${reportPath}`)
-  console.log('请把未通过项与备注手工回填到 docs/D037_FIELD_ACCEPTANCE.md。')
-  console.log(invitationQr)
-  console.log(`二维码图片：${invitationQrImage.slice(0, 40)}…（仅终端模式预览）`)
+  console.log('请把结果和证据回填到 docs/D037_FIELD_ACCEPTANCE.md；此记录不等于人工签核。')
+  process.exitCode = report.exitCode
 }
 
 function privateLanAddress(address) {
@@ -189,8 +167,8 @@ async function main() {
   if (checklistMode && !smokeMode) {
     console.log('协议 v2 局域网现场预览已启动（仅临时合成数据，终端检查单模式）。')
     console.log(`后台与三端入口：${stack.baseURL}`)
-    await runFieldChecklist(invitationQr, invitationQrImage, stack.baseURL)
-    await close()
+    try { await runFieldChecklist(invitationQr, stack.baseURL) }
+    finally { await close() }
     return
   }
 

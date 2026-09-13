@@ -1,8 +1,10 @@
 # 贡献指南
 
+> 当前代码目标为 D-097 / schema 21，线上以 D-095 / schema 19 发布记录为准。D-061 在 2026-09-06 的 schema 15 说明只代表当时实施点；已有持久库必须按其精确版本选择 [`运行手册`](docs/RUNBOOK.md) §7.6～§7.8 的停服、备份和专用升级入口，不能直接启动新代码或运行通用迁移。
+
 感谢参与 SYSU Welcome Interactive。请先通过 Issue 明确需求、负责人、优先级、所属模块和验收标准，再开始实现。
 
-协议 v2 的当前权威是 [`docs/DECISIONS.md`](./docs/DECISIONS.md) 与 [`docs/PROTOCOL_V2.md`](./docs/PROTOCOL_V2.md)；项目现状、文档地图与“下一步做什么”见 [`docs/README.md`](./docs/README.md)。D-037 已取消寄语/时光胶囊并启用节目中场个人抽奖；D-046～D-050 继续约束大屏逆时针真实星流、逐人流星、摄影式 `displayColor`、30Hz/60Hz、预热有界缓冲及手机/大屏 Orbital Signal 背景。D-051 已用约 8.4 秒的错峰螺旋汇聚、高温核心、一次非对称超新星和连续白场透明接管整体替换黑洞路线，`PROGRAM_SUPPORT` 稳态仍完全透明且只显示实时新弹幕。D-053 又把三端共享组件、状态、字体和小圆角收口到 Orbital Signal 语义层；D-055 将 220 人设为正式视觉满场参考，以盘面主导银河、420 颗无身份底星、有界环境密度补偿、低振幅非同步呼吸及流星轨道捕获替换显式旋臂构图。D-056 要求正式数据永不进 Git，生产只用仓库外私有目录、单个 loopback 后端、HTTPS/Secure Cookie 和一致性备份；协作者统一用隔离固定合成排练。D-036 是变更前的已签核历史基线，不能代签当前版本。已有 schema 12 的 `V2_ACTIVE` 合成库必须在停服、独立备份和明确确认后执行 [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) §7.2 的 12→14 升级；新工作以最新决策为准，先写 DECISIONS 再改代码。
+协议 v2 的当前权威是 [`docs/DECISIONS.md`](./docs/DECISIONS.md) 与 [`docs/PROTOCOL_V2.md`](./docs/PROTOCOL_V2.md)；项目现状、文档地图与“下一步做什么”见 [`docs/README.md`](./docs/README.md)。D-037 已取消寄语/时光胶囊并启用节目中场个人抽奖；D-046～D-055 约束大屏银河、超新星接管、跨端背景和 220 人视觉基准；D-056 要求正式数据永不进 Git，生产只用仓库外私有目录、单个 loopback 后端、HTTPS/Secure Cookie 和一致性备份。D-067～D-071 已继续更新节目媒体叠加、聊天星号、手机布局、礼物档案和双端星舰。D-036 是变更前的已签核历史基线，不能代签当前版本。任何旧 `V2_ACTIVE` 库都必须在停服、独立备份和明确确认后按精确 schema 选择 [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) 的专用升级入口；新工作以最新决策为准，先写 DECISIONS 再改代码。
 
 ## 开发环境
 

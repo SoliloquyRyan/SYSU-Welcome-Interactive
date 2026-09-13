@@ -26,7 +26,12 @@ export function mobileSceneCopy(snapshot) {
     return { title: '现场暂时停驻', subtitle: '你的进度已保留，恢复后可继续' }
   }
   if (runtime.status === 'READY') {
-    return { title: '已抵达，等待全场启程', subtitle: '你的星正在真实星系中闪耀' }
+    return { title: '已抵达星河', subtitle: '等待全场启程，你的光已在这里。' }
+  }
+  if (runtime.currentScene === 'PROGRAM_SUPPORT' && ['AWARD', 'SPEECH'].includes(snapshot.currentProgram?.kind)) return { title: snapshot.currentProgram.title, subtitle: '' }
+  if (runtime.currentScene === 'PROGRAM_SUPPORT' && snapshot.stage?.mode === 'HOST') return { title: '迎新之夜', subtitle: '' }
+  if (runtime.currentScene === 'PROGRAM_SUPPORT' && snapshot.currentProgram && snapshot.currentProgram.kind !== 'PERFORMANCE') {
+    return { title: '现场互动', subtitle: '听从主持人的邀请，一起参与此刻' }
   }
   return SCENE_COPY[runtime.currentScene] ?? SCENE_COPY.ASSEMBLY
 }

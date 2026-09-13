@@ -1,0 +1,5 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;padding:20px;background:#050b16;color:#eef6ff;font-family:system-ui}button{min-height:44px}#app{max-width:390px;margin:auto}</style><div id="app"></div><script type="module">
+import {createApp,ref} from 'vue/dist/vue.esm-bundler.js'; import Chat from '../src/pages/student/MobileBarrage.vue';
+createApp({components:{Chat},setup(){const items=ref([]);let n=0;function add(){items.value=[...items.value,{barrageId:`chat-${++n}`,text:`第 ${n} 条现场欢呼，星海与你同在`,colorStyle:n%2?'blue':'nebula'}].slice(-100)}return{items,add,batch(){for(let i=0;i<20;i++)add()},clear(){items.value=[]},remove(){items.value=items.value.slice(1)}}},template:`<h2>手机聊天列表检查</h2><button @click="batch">添加20条</button><button @click="add">新消息</button><button @click="clear">清屏</button><button @click="remove">撤回最早消息</button><Chat :items="items"/>`}).mount('#app');
+</script></html>
+

@@ -1,0 +1,9 @@
+/* D-060: local, renamed Noto Sans SC UI subset. OFL notice is served at
+   /licenses/welcome-sans-sc-OFL.txt. Only the v2 phone surface uses this family. */
+@font-face {
+  font-family: "Welcome Sans SC";
+  src: url("../assets/fonts/welcome-sans-sc-ui.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}

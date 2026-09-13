@@ -1,3 +1,4 @@
+import { flowAngle, flowCamera, flowPoint, projectFlowPoint, personalStarFormation } from '../../rendering/stellar-flow.js'
 export const PERSONAL_JOURNEY_PHASES = Object.freeze({
   DISCOVERY: 'discovery',
   SELECTION: 'selection',
@@ -13,9 +14,7 @@ export const PERSONAL_JOURNEY_DURATIONS = Object.freeze({
   handoff: 4_200,
 })
 
-// One slow revolution of the galaxy plane. Individual dust bands have their
-// own shorter periods so the settled field reads as continuously alive without
-// turning the whole phone into a fast spinner.
+// A bounded camera drift cycle. The star river keeps its main direction.
 export const PERSONAL_JOURNEY_AMBIENT_CYCLE_MS = 240_000
 
 export const PERSONAL_JOURNEY_PARTICLE_COUNTS = Object.freeze({
@@ -55,8 +54,8 @@ export function projectPersonalOrbit({
   theta = -0.82,
   rotationDegrees = -7,
   scale = 1,
-  centerX = 0.48,
-  centerY = 0.41,
+  centerX = 0.33,
+  centerY = 0.44,
 } = {}) {
   const safeWidth = Math.max(1, Number(width) || 1)
   const safeHeight = Math.max(1, Number(height) || 1)
@@ -64,8 +63,8 @@ export function projectPersonalOrbit({
   const safeTheta = Number.isFinite(theta) ? theta : -0.82
   const safeScale = Number.isFinite(scale) ? scale : 1
   const rotation = (Number(rotationDegrees) || 0) * Math.PI / 180
-  const planeX = Math.cos(safeTheta) * safeRadius * safeWidth * 0.54 * safeScale
-  const planeY = Math.sin(safeTheta) * safeRadius * safeHeight * 0.18 * safeScale
+  const planeX = Math.cos(safeTheta) * safeRadius * safeWidth * 0.30 * safeScale
+  const planeY = Math.sin(safeTheta) * safeRadius * safeHeight * 0.10 * safeScale
 
   return {
     x: safeWidth * centerX + planeX * Math.cos(rotation) - planeY * Math.sin(rotation),
@@ -119,7 +118,7 @@ export function resolvePersonalJourneyFrame({
     : phase === PERSONAL_JOURNEY_PHASES.ORBIT
       ? Math.max(PERSONAL_JOURNEY_DURATIONS.handoff, elapsedMs)
       : 0
-  const fieldDriftDegrees = handoffElapsedMs / PERSONAL_JOURNEY_AMBIENT_CYCLE_MS * 360
+  const fieldDriftDegrees = Math.sin(handoffElapsedMs / PERSONAL_JOURNEY_AMBIENT_CYCLE_MS * Math.PI * 2) * 2.5
   const fieldRotation = mixJourneyValue(-7, -13, pull) + fieldDriftDegrees
   const fieldScale = mixJourneyValue(0.16, 1, pull)
   const galaxyReveal = phase === PERSONAL_JOURNEY_PHASES.ORBIT
@@ -129,18 +128,11 @@ export function resolvePersonalJourneyFrame({
   const backgroundScale = mixJourneyValue(introScale, 1, pull)
   const orbitRadius = Number.isFinite(ownStar?.orbitRadius) ? ownStar.orbitRadius : 0.64
   const orbitBaseAngle = Number.isFinite(ownStar?.orbitAngle) ? ownStar.orbitAngle : -0.82
-  const orbitPeriodMs = Number.isFinite(ownStar?.orbitPeriodMs) && ownStar.orbitPeriodMs > 0
-    ? ownStar.orbitPeriodMs
-    : 108_000
-  const ownTheta = orbitBaseAngle + handoffElapsedMs / orbitPeriodMs * Math.PI * 2
-  const orbitPoint = projectPersonalOrbit({
-    width,
-    height,
-    radius: orbitRadius,
-    theta: ownTheta,
-    rotationDegrees: fieldRotation,
-    scale: 1,
-  })
+  const ownTheta = orbitBaseAngle + flowAngle(orbitRadius, handoffElapsedMs / 1000)
+  const ownFormation = personalStarFormation(ownStar)
+  const worldPoint = flowPoint(ownFormation,handoffElapsedMs/1000)
+  const projected = projectFlowPoint(worldPoint,flowCamera(handoffElapsedMs/1000,0,{personal:true,width,height}),width,height)
+  const orbitPoint = { ...projected, depth: Math.sin(ownTheta) }
   const orbitProgress = smoothJourneyProgress(handoffElapsedMs / 2_750)
   const ownDepthScale = 0.94 + (orbitPoint.depth + 1) * 0.03
 
@@ -173,8 +165,8 @@ export function resolvePersonalJourneyFrame({
   } else if (phase === PERSONAL_JOURNEY_PHASES.HANDOFF || phase === PERSONAL_JOURNEY_PHASES.ORBIT) {
     heroX = mixJourneyValue(Number(width) * 0.5, orbitPoint.x, orbitProgress)
     heroY = mixJourneyValue(Number(height) * 0.25, orbitPoint.y, orbitProgress)
-    heroScale = mixJourneyValue(1, 0.088 * ownDepthScale, orbitProgress)
-    heroOpacity = mixJourneyValue(1, orbitPoint.depth < 0 ? 0.68 : 0.82, orbitProgress)
+    heroScale = mixJourneyValue(1, 0.17 * ownDepthScale, orbitProgress)
+    heroOpacity = mixJourneyValue(1, orbitPoint.depth < 0 ? 0.88 : 0.96, orbitProgress)
     heroColorMix = 1
   }
 

@@ -1,0 +1,23 @@
+[Unit]
+Description=SYSU welcome party isolated internal test
+After=network.target
+
+[Service]
+Type=simple
+User=sysu-welcome-internal
+Group=sysu-welcome-internal
+WorkingDirectory=/opt/sysu-welcome-internal/current
+EnvironmentFile=/etc/sysu-welcome-internal/runtime.env
+ExecStartPre=/opt/node-v22.23.2/bin/node backend/dist/cli/v2-verify.js
+ExecStart=/opt/node-v22.23.2/bin/node backend/dist/server.js
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/sysu-welcome-internal
+
+[Install]
+WantedBy=multi-user.target

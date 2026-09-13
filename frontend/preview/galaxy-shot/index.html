@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="data:,">
+  <title>银河连续镜头 · D-062</title>
+  <style>
+    @font-face{font-family:"Welcome Sans SC";src:url('../../src/assets/fonts/welcome-sans-sc-ui.woff2') format('woff2');font-weight:100 900;font-display:swap}
+    :root{color-scheme:dark;font-family:"Welcome Sans SC","Segoe UI","Microsoft YaHei",sans-serif;color:#eef4ff;background:#05080e;font-synthesis:none}
+    *{box-sizing:border-box}body{margin:0}button,select,input{font:inherit}button,select{min-height:44px;border:1px solid #344157;border-radius:4px;background:#111b29;color:#e5edfc;padding:8px 15px;cursor:pointer}
+    button:hover,select:hover{background:#1a2a40}button:disabled{opacity:.45;cursor:default}button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid #9bc8ff;outline-offset:4px}a{color:#b5d1fb;text-underline-offset:4px}
+    header{max-width:1456px;margin:auto;padding:25px 32px 21px;display:flex;align-items:end;justify-content:space-between;gap:24px}header p{margin:0 0 8px;font-size:11px;letter-spacing:3px;color:#9fadc3}h1{font-size:24px;letter-spacing:.08em;font-weight:500;margin:0}header span{color:#9fadc3;font-size:13px}
+    main{max-width:1456px;margin:auto;padding:0 32px 32px}.frame{position:relative;aspect-ratio:16/9;width:100%;overflow:hidden;background:#01030a;border:1px solid #1b2638}
+    .underlay{position:absolute;inset:0;display:grid;align-content:center;justify-items:center;background:radial-gradient(ellipse at 50% 32%,#29476260,transparent 48%),radial-gradient(ellipse at 80% 90%,#73513a40,transparent 45%),linear-gradient(125deg,#08131e,#111825 45%,#18151b)}
+    .underlay::before{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 25%,#8ea9c908 26%,transparent 43%,#b7996808 60%,transparent 62%)}
+    .underlay p{font-size:clamp(8px,.9vw,14px);letter-spacing:.5em;color:#abc0d7;margin:0 0 1.8em}.underlay h2{font-size:clamp(18px,3.5vw,54px);font-weight:400;letter-spacing:.24em;margin:0 0 .6em}.underlay span{font-size:clamp(9px,1vw,16px);letter-spacing:.18em;color:#a8b4c9}
+    canvas{position:absolute;inset:0;width:100%;height:100%}.film-title{position:absolute;left:6.5%;bottom:12%;pointer-events:none}.film-title p{font-size:clamp(7px,.7vw,12px);letter-spacing:.38em;color:#b0c1d8;margin:0 0 20px}.film-title h2{font-size:clamp(24px,3.4vw,58px);font-weight:400;letter-spacing:.20em;margin:0 0 16px}.film-title span{font-size:clamp(9px,1vw,16px);color:#a5b7cf;letter-spacing:.15em}
+    .controls{border:1px solid #1b2638;border-top:0;padding:17px 20px 18px;background:#09101b}.timebar{display:flex;align-items:center;gap:15px}input[type=range]{flex:1;min-width:60px;accent-color:#9fbff0;height:25px;cursor:pointer}.time{font-variant-numeric:tabular-nums;font-size:12px;color:#b0bfd4;white-space:nowrap;min-width:102px}.actions{display:flex;align-items:center;gap:9px;margin-top:12px;flex-wrap:wrap}.actions label{font-size:12px;color:#b1bfd2;margin-left:10px}.actions select{font-size:12px}.actions .primary{background:#d9e6fa;color:#111d30;border-color:#d9e6fa}.actions .spacer{flex:1}.status{min-height:20px;font-size:12px;color:#a1b4cd;margin:13px 0 0}
+    .notes{display:grid;grid-template-columns:1fr 1fr 1fr;gap:35px;margin:25px 0 24px}.notes p{font-size:13px;line-height:1.9;color:#9eadc3;margin:8px 0 0}.notes strong{font-weight:500;font-size:14px;color:#d5e1f2}.number{font-size:10px;color:#88a5cc;letter-spacing:.15em;display:block;margin-bottom:9px}footer{border-top:1px solid #1b2638;padding-top:17px;display:flex;justify-content:space-between;gap:20px;color:#8091aa;font-size:12px;line-height:1.8}
+    body.cinema{overflow:hidden}body.cinema header,body.cinema .controls,body.cinema .notes,body.cinema footer{display:none}body.cinema main{max-width:none;padding:0}body.cinema .frame{border:0;aspect-ratio:auto;width:100vw;height:100vh}
+    .frame:fullscreen{border:0;width:100vw;height:100vh;aspect-ratio:auto}.frame.no-underlay .underlay{visibility:hidden}.frame.no-underlay{background:repeating-conic-gradient(#131922 0% 25%,#192330 0% 50%) 0 0/24px 24px}
+    @media(max-width:700px){header{padding:20px 16px;align-items:start}header span{display:none}h1{font-size:20px}main{padding:0 12px 24px}.controls{padding:12px}.actions{gap:7px}.actions button{font-size:12px;padding:8px 10px}.actions label{margin-left:0}.notes{grid-template-columns:1fr;gap:18px;margin:20px 4px}.notes p{margin-top:5px}footer{margin:0 4px;flex-direction:column;gap:8px}}
+  </style>
+</head>
+<body>
+  <header><div><p>SYSU · MOTION STUDY 01</p><h1>从星海，走进这一夜</h1></div><span>银河连续镜头样片 · 19 秒 · 静音</span></header>
+  <main>
+    <div class="frame" id="frame">
+      <div class="underlay" aria-hidden="true"><p>WELCOME NIGHT · PROGRAM 01</p><h2>此刻，舞台属于你</h2><span>节目底图示意 · 正式画面由 OBS 提供</span></div>
+      <canvas id="galaxy" aria-label="银河纵深与超新星连续镜头"></canvas>
+      <div class="film-title" aria-hidden="true"><p>SYSU · WELCOME NIGHT</p><h2>星海集结</h2><span>每一颗抵达的星，正在汇入同一片星河</span></div>
+    </div>
+    <section class="controls" aria-label="样片播放控制">
+      <div class="timebar"><input id="timeline" type="range" min="0" max="19" step="0.01" value="0" aria-label="样片时间轴"><output class="time" id="time">00.00 / 19.00 s</output></div>
+      <div class="actions"><button class="primary" id="play">播放样片</button><button id="replay">从头重播</button><button id="cue">查看汇聚转场</button><button id="fullscreen">全屏观看</button><span class="spacer"></span><label for="count">合成星位</label><select id="count"><option value="0">0 · 空场</option><option value="40">40 · 稀疏</option><option value="220" selected>220 · 视觉参考</option><option value="300">300 · 技术上限</option></select><button id="underlay" aria-pressed="true">节目底图：开</button></div>
+      <p class="status" id="status" role="status">加载本地样片…</p>
+    </section>
+    <section class="notes" aria-label="观看重点"><div><span class="number">01 / 00:00—00:09</span><strong>沿着星河，缓慢靠近</strong><p>同一片银河持续逆时针流动。镜头沿弧线推进，近处与远处产生不同的位移，尘埃与星光保留各自的层次。</p></div><div><span class="number">02 / 00:09—00:15</span><strong>群星汇聚，镜头继续前行</strong><p>不同星位沿各自的曲线汇入核心。推进、汇聚与压缩彼此重叠，镜头中途持续运动。</p></div><div><span class="number">03 / 00:15—00:19</span><strong>一次爆发，自然交给舞台</strong><p>超新星的光向外扩展，随后逐渐透出节目画面。可关闭底图，检查浏览器图层的透明收尾。</p></div></section>
+    <footer><span>独立美术预演 · 采用合成公开星位 · 尚未接入正式大屏</span><span>建议先完整播放，再拖动时间轴比较层次。全屏按 Esc 返回。</span></footer>
+  </main>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

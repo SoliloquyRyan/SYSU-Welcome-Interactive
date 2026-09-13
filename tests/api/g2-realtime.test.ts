@@ -270,7 +270,7 @@ describe('G2 committed WebSocket facts and high-water recovery', () => {
       payload: {
         programId: 'program-001',
         giftId: 'gift-glimmer',
-        powerCost: 5,
+        powerCost: 1,
       },
     })
     expect(event.eventSeq).toBeGreaterThan(screen.eventSeq)
@@ -285,9 +285,15 @@ describe('G2 committed WebSocket facts and high-water recovery', () => {
 
     for (const [sequence, giftId] of [
       [2, 'gift-starship'],
-      [3, 'gift-orbit'],
-      [4, 'gift-orbit'],
-      [5, 'gift-glimmer'],
+      [3, 'gift-starship'],
+      [4, 'gift-starship'],
+      [5, 'gift-starship'],
+      [6, 'gift-orbit'],
+      [7, 'gift-beacon'],
+      [8, 'gift-glimmer'],
+      [9, 'gift-glimmer'],
+      [10, 'gift-glimmer'],
+      [11, 'gift-glimmer'],
     ] as const) {
       expect(
         (
@@ -324,7 +330,7 @@ describe('G2 committed WebSocket facts and high-water recovery', () => {
       harness,
       prepared.participantCookies[0],
       commandVersion(prepared.admin),
-      6,
+      12,
     )
     expect(rejected.statusCode).toBe(409)
     expect(await noFact).toBe(true)
@@ -639,7 +645,7 @@ describe('G2 committed WebSocket facts and high-water recovery', () => {
         ),
       ),
     )
-    expect(afterA.participant.powerBalance).toBe(95)
+    expect(afterA.participant.powerBalance).toBe(99)
     expect(afterB.participant.powerBalance).toBe(100)
     socketA.close()
     socketB.close()

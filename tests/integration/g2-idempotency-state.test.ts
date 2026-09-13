@@ -400,7 +400,7 @@ describe('G2 runtime state machine and idempotent transactions', () => {
     expect(
       ParticipantSnapshotSchema.parse(concurrent[0].json()).participant
         .powerBalance,
-    ).toBe(50)
+    ).toBe(80)
 
     await harness.restart()
     const afterRestart = await sendGift(
@@ -419,11 +419,19 @@ describe('G2 runtime state machine and idempotent transactions', () => {
     expect(
       ParticipantSnapshotSchema.parse(participantA.json()).participant
         .powerBalance,
-    ).toBe(0)
+    ).toBe(60)
     expect(
       ParticipantSnapshotSchema.parse(participantB.json()).participant
         .powerBalance,
-    ).toBe(50)
+    ).toBe(80)
+
+    for (const sequence of [1, 2, 3]) {
+      const drain = await sendGift(
+        prepared.participantCookies[0],
+        idempotencyKey('drain-starship', sequence),
+      )
+      expect(drain.statusCode).toBe(200)
+    }
 
     const insufficient = await sendGift(
       prepared.participantCookies[0],

@@ -128,11 +128,12 @@ describe('V2-07 deterministic public galaxy placement', () => {
       barPoints.reduce((total, point) => total + Math.abs(point.y), 0) / barPoints.length,
     ).toBeLessThan(0.04)
 
-    // Most stars remain sub-pixel while a small, deterministic bright tail
-    // carries the readable highlights.
-    expect(radii.filter((radius) => radius < 0.6).length).toBeGreaterThan(135)
-    expect(radii.filter((radius) => radius > 1.2).length).toBeGreaterThan(13)
-    expect(radii.filter((radius) => radius > 1.2).length).toBeLessThan(38)
+    // D-073: actual participants need a visible core on a projector, while
+    // the size ceiling and varied distribution prevent oversized uniform dots.
+    expect(Math.min(...radii)).toBeGreaterThan(1)
+    expect(Math.max(...radii)).toBeLessThan(3)
+    expect(radii.filter((radius) => radius > 2).length).toBeGreaterThan(30)
+    expect(radii.filter((radius) => radius > 2).length).toBeLessThan(150)
   })
 
   it('keeps a bounded neutral base galaxy moving before any participant arrives', () => {
@@ -277,10 +278,14 @@ describe('V2-07 deterministic public galaxy placement', () => {
     expect(warm.core).not.toBe(cool.core)
     expect(warm.halo).not.toBe(cool.halo)
     expect(warm.trail).not.toBe(cool.trail)
-    expect(warm.core).toBe('rgb(253 215 205)')
-    expect(cool.core).toBe('rgb(229 239 252)')
-    expect(warm.halo).toBe('rgba(231, 175, 165, 0.14)')
-    expect(cool.halo).toBe('rgba(192, 214, 241, 0.14)')
+    const channels = (color: string) => color.match(/[\d.]+/gu)!.map(Number)
+    const [wr, , wb] = channels(warm.core)
+    const [cr, , cb] = channels(cool.core)
+    // A distinct warm/cool core must survive the near-white optical glint.
+    expect(wr - wb).toBeGreaterThan(80)
+    expect(cb - cr).toBeGreaterThan(45)
+    expect(channels(warm.halo)[0] - channels(warm.halo)[2]).toBeGreaterThan(100)
+    expect(channels(cool.halo)[2] - channels(cool.halo)[0]).toBeGreaterThan(50)
     expect(starSpectralPalette('invalid').core).toBe('#eef4ff')
   })
 

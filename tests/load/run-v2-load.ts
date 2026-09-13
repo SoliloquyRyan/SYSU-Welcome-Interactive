@@ -11,6 +11,7 @@ import {
   V2ApiErrorResponseSchema,
   V2ParticipantCommandResponseSchema,
   V2ParticipantSnapshotSchema,
+  V2ProgramCatalogSchema,
   V2ScreenSnapshotSchema,
   type V2AdminSnapshot,
   type V2ParticipantSnapshot,
@@ -40,6 +41,7 @@ import {
 const PARTICIPANT_COUNT = 300
 const PRIMARY_CONCURRENCY = 24
 const SOCKET_CONCURRENCY = 32
+const PROGRAM_CATALOG_ITEMS = 21
 const REPORT_SCHEMA_VERSION = 2
 const REPORT_ROOT = fileURLToPath(new URL('../reports/', import.meta.url))
 const REPORT_PATH = path.join(REPORT_ROOT, 'v2-load.json')
@@ -335,7 +337,7 @@ function readDatabaseInvariants(
       publishedBarrages: scalar(database, "SELECT count(*) FROM v2_barrage_publications WHERE status='PUBLISHED'"),
       totalPower: scalar(database, 'SELECT COALESCE(sum(power_balance),0) FROM v2_participant_states'),
       totalStarlight: scalar(database, 'SELECT COALESCE(sum(starlight),0) FROM v2_participant_states'),
-      programHeat: scalar(database, 'SELECT COALESCE(sum(heat),0) FROM program_catalog'),
+      programHeat: scalar(database, 'SELECT COALESCE(sum(heat),0) FROM v2_program_catalog'),
       duplicatePublicStarIds: scalar(database, 'SELECT count(*) FROM (SELECT public_star_id FROM v2_public_stars GROUP BY public_star_id HAVING count(*)>1)'),
       duplicateFormationSlots: scalar(database, 'SELECT count(*) FROM (SELECT formation_slot FROM v2_public_stars GROUP BY formation_slot HAVING count(*)>1)'),
       duplicateRewardKeys: scalar(database, 'SELECT count(*) FROM (SELECT reset_epoch,identity_id,event_key FROM v2_reward_ledger GROUP BY reset_epoch,identity_id,event_key HAVING count(*)>1)'),
@@ -529,6 +531,40 @@ async function run(): Promise<void> {
     let adminCookie = adminLogin.cookie
     assertCondition(adminCookie, 'Admin login did not issue a session')
     let admin = V2AdminSnapshotSchema.parse(adminLogin.body)
+
+    // Exercise the actual public show directory, including its larger snapshots.
+    // The participant identities remain the fixed temporary synthetic roster.
+    const source = JSON.parse(fs.readFileSync(
+      new URL('../../docs/event-program-2026.json', import.meta.url), 'utf8',
+    )) as { items: Array<{ sourceSequence: number; titleAsProvided: string;
+      interludeLabelAsProvided?: string; kind: string; implementationStatus?: string;
+      formatAsProvided: string; durationAsProvided: string }> }
+    const catalog = V2ProgramCatalogSchema.parse({
+      label: '2026 迎新晚会节目单',
+      items: source.items.map((item) => ({
+        id: `event2026-${String(item.sourceSequence).padStart(2, '0')}`,
+        order: item.sourceSequence,
+        title: item.interludeLabelAsProvided ? `${item.titleAsProvided}：${item.interludeLabelAsProvided}` : item.titleAsProvided,
+        kind: item.implementationStatus?.startsWith('deferred') ? 'DEFERRED'
+          : item.kind === 'performance' ? 'PERFORMANCE' : 'INTERLUDE',
+        formatLabel: item.formatAsProvided, durationLabel: item.durationAsProvided,
+      })),
+    })
+    assertCondition(catalog.items.length === PROGRAM_CATALOG_ITEMS, 'The public show directory must contain 21 items')
+    V2AdminCommandResponseSchema.parse((await client.request(
+      'apply-show-catalog', 'POST', '/api/v2/admin/commands',
+      { cookie: adminCookie, body: {
+        protocolVersion: '2', resetEpoch: initialEpoch,
+        idempotencyKey: idempotencyKey('apply-show-catalog', 0), command: 'UPDATE_PROGRAM_CATALOG',
+        expectedRunRevision: admin.runtime.runRevision,
+        expectedInteractionRevision: admin.interaction.interactionRevision,
+        expectedCatalogRevision: admin.programCatalog.revision, catalog, confirmed: true,
+      } },
+    )).body)
+    admin = V2AdminSnapshotSchema.parse((await client.request(
+      'admin-with-show-catalog', 'GET', '/api/v2/admin/snapshot', { cookie: adminCookie },
+    )).body)
+    assertCondition(admin.programs.length === PROGRAM_CATALOG_ITEMS, 'The operational show directory was not applied')
 
     const activated = await mapLimit(
       stack.credentials.participants,
@@ -1127,6 +1163,7 @@ async function run(): Promise<void> {
         cpuCount: os.cpus().length,
         transport: 'real-loopback-http-websocket',
         participantCount: PARTICIPANT_COUNT,
+        programCatalogItems: PROGRAM_CATALOG_ITEMS,
         primaryConcurrency: PRIMARY_CONCURRENCY,
       },
       latencySemantics:

@@ -25,7 +25,7 @@ export interface VerifyProtectedNfcMapOptions {
   expectedOrigin?: string
 }
 
-function parseCsv(value: string): string[][] {
+export function parseProtectedNfcCsv(value: string): string[][] {
   const source = value.replace(/^\uFEFF/, '')
   const rows: string[][] = []
   let row: string[] = []
@@ -140,7 +140,7 @@ export function verifyProtectedNfcMap(
   if (!stat.isFile() || stat.size === 0 || stat.size > 4 * 1024 * 1024) {
     throw new Error('Protected NFC map is missing, empty or unexpectedly large')
   }
-  const rows = parseCsv(fs.readFileSync(options.nfcMapPath, 'utf8'))
+  const rows = parseProtectedNfcCsv(fs.readFileSync(options.nfcMapPath, 'utf8'))
   if (
     rows.length < 2 ||
     rows[0]?.length !== EXPECTED_HEADERS.length ||

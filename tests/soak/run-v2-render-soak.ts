@@ -36,7 +36,7 @@ const FORMAL_VISUAL_REFERENCE_COUNT = 220
 const VISUAL_ACCEPTANCE_COUNTS = [40, 80, 120, 160, FORMAL_VISUAL_REFERENCE_COUNT] as const
 const PRIMARY_CONCURRENCY = 24
 const ARRIVAL_SETTLE_MS = 1_800
-const PROGRAM_TRANSITION_EXPECTED_MS = 8_400
+const PROGRAM_TRANSITION_EXPECTED_MS = 12_000
 const FORMAL_RENDER_DURATION_MS = 30 * 60 * 1_000
 const SMOKE_RENDER_DURATION_MS = 46_000
 const REPORT_SCHEMA_VERSION = 1
@@ -543,7 +543,7 @@ async function openSurface(
   const page = await context.newPage()
   const monitor = createPageMonitor(page, new URL(stack.baseURL).origin)
   await installInstrumentation(page)
-  await page.goto('/screen')
+  await page.goto(reducedMotion === 'reduce' ? '/screen?motion=system&media=overlay' : '/screen?media=overlay')
   await page.getByRole('heading', { name: '星海集结' }).waitFor()
   return { context, monitor, page }
 }
@@ -1121,10 +1121,16 @@ async function run(): Promise<void> {
       await normal!.page.locator('.v2-barrage-stream__item', {
         hasText: `v2-soak-${String(interactionCursor).padStart(3, '0')}`,
       }).waitFor({ state: 'visible', timeout: 2_000 })
-      assertCondition(
-        await reduced!.page.locator('.v2-barrage-stream__item').count() === 0,
-        'Reduced motion rendered a moving barrage node',
-      )
+      const staticBarrage = reduced!.page.locator('.v2-barrage-stream__item', {
+        hasText: `v2-soak-${String(interactionCursor).padStart(3, '0')}`,
+      })
+      await staticBarrage.waitFor({ state: 'visible', timeout: 2_000 })
+      assertCondition(await staticBarrage.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return style.animationName === 'none' && style.transform === 'none' && style.opacity === '1'
+      }), 'Reduced motion must show readable, stationary barrage text')
+      assertCondition(await reduced!.page.locator('.v2-barrage-stream__item').count() <= 3,
+        'Static barrage capacity exceeded')
       interactionCursor += 1
       interactionsSent += 2
     })

@@ -1,4 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { applicationPath } from '../services/application-path'
 import { createConnectGate } from '../services/connect-gate'
 import {
   PROTOCOL_POLICY,
@@ -26,7 +27,7 @@ export function realtimeStateAfterNetworkChange(nextState, protocolBlocked) {
 
 function websocketUrl(stream, resetEpoch, afterEventSeq) {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const url = new URL(`${protocol}//${window.location.host}/ws`)
+  const url = new URL(`${protocol}//${window.location.host}${applicationPath('/ws')}`)
   url.searchParams.set('stream', stream)
   url.searchParams.set('resetEpoch', String(resetEpoch ?? 1))
   url.searchParams.set('afterEventSeq', String(afterEventSeq ?? 0))

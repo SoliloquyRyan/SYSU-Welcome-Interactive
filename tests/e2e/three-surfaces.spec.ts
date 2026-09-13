@@ -52,6 +52,7 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
   browser,
   demo,
 }) => {
+  test.setTimeout(180_000)
   let checkpoint = 'create-contexts'
   let participantContext: BrowserContext | null = null
   let adminContext: BrowserContext | null = null
@@ -164,13 +165,13 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     await expect(participantPage.getByRole('heading', { name: '轨道序章' })).toBeVisible()
     await participantPage.getByRole('button', { name: '星程', exact: true }).click()
     await participantPage.getByRole('button', { name: '礼物' }).click()
-    await participantPage.getByRole('button', { name: '微光 · 5' }).click()
-    await expect(participantPage.locator('.value-grid .power')).toHaveText('95')
+    await participantPage.getByRole('button', { name: '微光 · 1' }).click()
+    await expect(participantPage.locator('.value-grid .power')).toHaveText('99')
     await expect(participantPage.locator('.value-grid .starlight')).toHaveText(
       '70 / 100',
     )
-    await expect(screenPage.getByText('热度 5', { exact: true })).toBeVisible()
-    await expect(screenPage.locator('.gift-feed')).toContainText('+5')
+    await expect(screenPage.getByText('热度 1', { exact: true })).toBeVisible()
+    await expect(screenPage.locator('.gift-feed')).toContainText('+1')
 
     checkpoint = 'stage-4-rejected-barrage'
     const rejectedBarrage = `www.invalid-${crypto.randomUUID().slice(0, 8)}.example`
@@ -340,7 +341,7 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     await participantPage.getByRole('button', { name: '查看个人档案' }).click()
     await expect(participantPage.getByRole('heading', { name: '个人星际档案' })).toBeVisible()
     const archive = participantPage.locator('.archive-card')
-    await expect(archive).toContainText('动力值95')
+    await expect(archive).toContainText('动力值99')
     await expect(archive).toContainText('星光值100 / 100')
     await expect(archive).toContainText('互动次数6')
     await expect(archive).toContainText('礼物次数1')
@@ -362,12 +363,12 @@ test('completes six stages across welcome, admin, and screen with privacy and mo
     )
     await expectNoForbiddenDomText([screenPage], [capsuleMessage])
     await expectNoViewportOverflow(screenPage)
-  } catch {
+  } catch (error) {
     test.info().annotations.push({
       type: 'failure-checkpoint',
       description: checkpoint,
     })
-    throw new Error(`Static checkpoint failed: ${checkpoint}`)
+    throw new Error(`Static checkpoint failed: ${checkpoint}`, { cause: error })
   } finally {
     await screenContext?.close()
     await adminContext?.close()

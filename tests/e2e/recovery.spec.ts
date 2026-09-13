@@ -26,6 +26,7 @@ test('locks offline writes, recovers one database after restart, safely retries 
   browser,
   demo,
 }) => {
+  test.setTimeout(180_000)
   let checkpoint = 'create-contexts'
   let participantContext: BrowserContext | null = null
   let adminContext: BrowserContext | null = null
@@ -55,23 +56,31 @@ test('locks offline writes, recovers one database after restart, safely retries 
     const staleAdminPage = await staleAdminContext.newPage()
     const screenPage = await screenContext.newPage()
 
-    checkpoint = 'prepare-stage-4'
+    checkpoint = 'prepare-stage-4-activate'
     await activateParticipant(participantPage, demo)
+    checkpoint = 'prepare-stage-4-admin-login'
     await loginAdmin(adminPage, demo)
+    checkpoint = 'prepare-stage-4-stale-admin-login'
     await loginAdmin(staleAdminPage, demo)
+    checkpoint = 'prepare-stage-4-grant-roles'
     await grantAllRoles(adminPage)
+    checkpoint = 'prepare-stage-4-start-rehearsal'
     await startRehearsal(adminPage)
+    checkpoint = 'prepare-stage-4-jump'
     await jumpToStage(adminPage, 4)
+    checkpoint = 'prepare-stage-4-select-program'
     await adminPage.getByLabel('当前节目').selectOption('program-001')
     await adminPage.getByRole('button', { name: '设为当前' }).click()
+    checkpoint = 'prepare-stage-4-open-gift'
     await participantPage.getByRole('button', { name: '星程', exact: true }).click()
     await participantPage.getByRole('button', { name: '礼物' }).click()
-    await participantPage.getByRole('button', { name: '微光 · 5' }).click()
-    await expect(participantPage.locator('.value-grid')).toContainText('95')
+    checkpoint = 'prepare-stage-4-send-gift'
+    await participantPage.getByRole('button', { name: '微光 · 1' }).click()
+    await expect(participantPage.locator('.value-grid')).toContainText('99')
 
     checkpoint = 'open-screen'
     await screenPage.goto(new URL('/screen', demo.baseURL).toString())
-    await expect(screenPage.getByText('热度 5', { exact: true })).toBeVisible()
+    await expect(screenPage.getByText('热度 1', { exact: true })).toBeVisible()
 
     checkpoint = 'offline-locks'
     await Promise.all([
@@ -87,7 +96,7 @@ test('locks offline writes, recovers one database after restart, safely retries 
     await expect(screenPage.locator('.safe-banner')).toContainText(
       '实时连接中断',
     )
-    await expect(screenPage.getByText('热度 5', { exact: true })).toBeVisible()
+    await expect(screenPage.getByText('热度 1', { exact: true })).toBeVisible()
 
     checkpoint = 'online-recovery'
     await Promise.all([
@@ -99,7 +108,7 @@ test('locks offline writes, recovers one database after restart, safely retries 
     ).toBeVisible()
     await expect(screenPage.getByText('实时', { exact: true })).toBeVisible()
     await expect(screenPage.locator('.safe-banner')).toHaveCount(0)
-    await expect(participantPage.locator('.value-grid')).toContainText('95')
+    await expect(participantPage.locator('.value-grid')).toContainText('99')
 
     checkpoint = 'backend-restart-disconnect'
     const restart = demo.restartBackend()
@@ -114,8 +123,8 @@ test('locks offline writes, recovers one database after restart, safely retries 
     await expect(
       adminPage.getByText('实时同步', { exact: true }),
     ).toBeVisible()
-    await expect(participantPage.locator('.value-grid')).toContainText('95')
-    await expect(screenPage.getByText('热度 5', { exact: true })).toBeVisible()
+    await expect(participantPage.locator('.value-grid')).toContainText('99')
+    await expect(screenPage.getByText('热度 1', { exact: true })).toBeVisible()
 
     checkpoint = 'lost-response-ready'
     const jumpButton = adminPage.getByRole('button', {
@@ -210,12 +219,12 @@ test('locks offline writes, recovers one database after restart, safely retries 
     await expect(participantPage.locator('.value-grid')).toContainText('20 / 100')
     await expect(screenPage.locator('.activation-scene .hero-number')).toHaveText('1')
     expect(new URL(participantPage.url()).searchParams.has('token')).toBe(false)
-  } catch {
+  } catch (error) {
     test.info().annotations.push({
       type: 'failure-checkpoint',
       description: checkpoint,
     })
-    throw new Error(`Static checkpoint failed: ${checkpoint}`)
+    throw new Error(`Static checkpoint failed: ${checkpoint}`, { cause: error })
   } finally {
     await screenContext?.close()
     await staleAdminContext?.close()

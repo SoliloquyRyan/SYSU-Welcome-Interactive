@@ -3,7 +3,7 @@ import path from 'node:path'
 import { loadConfig } from '../config.js'
 import { openDatabase } from '../db/open-database.js'
 import {
-  upgradeSyntheticV2DatabaseFrom12To14,
+  upgradeSyntheticV2DatabaseFrom12To15,
   V2_DESTRUCTIVE_CONFIRMATION,
 } from '../db/v2-foundation.js'
 import { closeDatabase, reportCliFailure } from './shared.js'
@@ -15,13 +15,13 @@ function argumentValue(name: string): string | null {
 
 const backupArgument = argumentValue('--backup')
 if (!backupArgument) {
-  console.error('V2 schema 12→14 升级失败：必须提供 --backup <未存在的 SQLite 备份路径>')
+  console.error('V2 schema 12→15 升级失败：必须提供 --backup <未存在的 SQLite 备份路径>')
   process.exitCode = 1
 } else {
   const config = loadConfig()
   const database = openDatabase(config.databasePath)
   try {
-    const result = await upgradeSyntheticV2DatabaseFrom12To14(database, {
+    const result = await upgradeSyntheticV2DatabaseFrom12To15(database, {
       migrationsPath: config.migrationsPath,
       manifestPath: config.seedManifestPath,
       participantCount: config.seedParticipantCount,
@@ -33,7 +33,7 @@ if (!backupArgument) {
     )
   } catch (error) {
     reportCliFailure(
-      `V2 schema 12→14 升级（确认值必须为 ${V2_DESTRUCTIVE_CONFIRMATION}）`,
+      `V2 schema 12→15 升级（确认值必须为 ${V2_DESTRUCTIVE_CONFIRMATION}）`,
       error,
     )
   } finally {

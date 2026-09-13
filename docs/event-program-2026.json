@@ -1,0 +1,352 @@
+{
+  "schemaVersion": 2,
+  "status": "approved_source_transcription",
+  "source": {
+    "filename": "节目单(7).docx",
+    "sha256": "e45b5343fd4f39de959e5232c06f2b37c207237c453ee34dad3104d751a4c0eb",
+    "providedOn": "2026-09-11"
+  },
+  "openingRemarksSeconds": 180,
+  "items": [
+    {
+      "sourceSequence": 1,
+      "titleAsProvided": "lovesik girls",
+      "formatAsProvided": "舞蹈",
+      "durationAsProvided": "2.5min",
+      "durationSeconds": {
+        "min": 150,
+        "max": 150,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "吴津颖、宋欣然"
+    },
+    {
+      "sourceSequence": 2,
+      "titleAsProvided": "《Haunted》",
+      "formatAsProvided": "吉他弹唱",
+      "durationAsProvided": "4.5min",
+      "durationSeconds": {
+        "min": 270,
+        "max": 270,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "陈冠翰"
+    },
+    {
+      "sourceSequence": 3,
+      "titleAsProvided": "夜航星",
+      "formatAsProvided": "唱歌",
+      "durationAsProvided": "5min",
+      "durationSeconds": {
+        "min": 300,
+        "max": 300,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "王奇琪"
+    },
+    {
+      "sourceSequence": 4,
+      "titleAsProvided": "Worth it",
+      "formatAsProvided": "舞蹈",
+      "durationAsProvided": "42s",
+      "durationSeconds": {
+        "min": 42,
+        "max": 42,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "王维睿"
+    },
+    {
+      "sourceSequence": 5,
+      "titleAsProvided": "十年今日",
+      "formatAsProvided": "唱歌",
+      "durationAsProvided": "5min",
+      "durationSeconds": {
+        "min": 300,
+        "max": 300,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "杨智杰、詹金坛"
+    },
+    {
+      "sourceSequence": 6,
+      "titleAsProvided": "群丁",
+      "formatAsProvided": "唱歌",
+      "durationAsProvided": "5min",
+      "durationSeconds": {
+        "min": 300,
+        "max": 300,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "金恩数"
+    },
+    {
+      "sourceSequence": 7,
+      "titleAsProvided": "互动环节一",
+      "interactionCode": "A",
+      "interactionTitle": "歌名 decoder",
+      "formatAsProvided": "游戏",
+      "systemFormat": "抢答",
+      "durationAsProvided": "10min",
+      "durationSeconds": {
+        "min": 600,
+        "max": 600,
+        "approximate": false
+      },
+      "kind": "interaction",
+      "capabilities": [
+        "buzzer"
+      ],
+      "performers": ""
+    },
+    {
+      "sourceSequence": 8,
+      "titleAsProvided": "Summer",
+      "formatAsProvided": "钢琴独奏",
+      "durationAsProvided": "2.5min",
+      "durationSeconds": {
+        "min": 150,
+        "max": 150,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "李梦莎"
+    },
+    {
+      "sourceSequence": 9,
+      "titleAsProvided": "淘汰",
+      "formatAsProvided": "演唱",
+      "durationAsProvided": "4：45",
+      "durationSeconds": {
+        "min": 285,
+        "max": 285,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "卢继翔"
+    },
+    {
+      "sourceSequence": 10,
+      "titleAsProvided": "Wonderful U",
+      "formatAsProvided": "声乐合唱",
+      "durationAsProvided": "4min",
+      "durationSeconds": {
+        "min": 240,
+        "max": 240,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "张纯熙、王薇茹"
+    },
+    {
+      "sourceSequence": 11,
+      "titleAsProvided": "简单爱",
+      "formatAsProvided": "唱歌",
+      "durationAsProvided": "4min",
+      "durationSeconds": {
+        "min": 240,
+        "max": 240,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "丁俊鑫、周倚禾"
+    },
+    {
+      "sourceSequence": 12,
+      "titleAsProvided": "富士山下",
+      "formatAsProvided": "唱歌",
+      "durationAsProvided": "5min",
+      "durationSeconds": {
+        "min": 300,
+        "max": 300,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "周倚禾、洪习戈"
+    },
+    {
+      "sourceSequence": 13,
+      "titleAsProvided": "Supernatural+ditto",
+      "formatAsProvided": "舞蹈",
+      "durationAsProvided": "3min",
+      "durationSeconds": {
+        "min": 180,
+        "max": 180,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "欧阳靖宇"
+    },
+    {
+      "sourceSequence": 14,
+      "titleAsProvided": "互动环节二",
+      "interactionCode": "B",
+      "interactionTitle": "谁是卧底",
+      "formatAsProvided": "游戏",
+      "systemFormat": "抽取观众上台 + 投票",
+      "durationAsProvided": "15-20min",
+      "durationSeconds": {
+        "min": 900,
+        "max": 1200,
+        "approximate": false
+      },
+      "kind": "interaction",
+      "capabilities": [
+        "audience_draw",
+        "vote"
+      ],
+      "performers": ""
+    },
+    {
+      "sourceSequence": 15,
+      "titleAsProvided": "Satisfied",
+      "formatAsProvided": "唱歌",
+      "durationAsProvided": "5.5min",
+      "durationSeconds": {
+        "min": 330,
+        "max": 330,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "麦紫馨、刘思语"
+    },
+    {
+      "sourceSequence": 16,
+      "titleAsProvided": "消散对白",
+      "formatAsProvided": "唱歌",
+      "durationAsProvided": "3：31",
+      "durationSeconds": {
+        "min": 211,
+        "max": 211,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "王浩宇"
+    },
+    {
+      "sourceSequence": 17,
+      "titleAsProvided": "我们万岁",
+      "formatAsProvided": "唱歌",
+      "durationAsProvided": "5min",
+      "durationSeconds": {
+        "min": 300,
+        "max": 300,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "林远腾"
+    },
+    {
+      "sourceSequence": 18,
+      "titleAsProvided": "WDA",
+      "formatAsProvided": "舞蹈",
+      "durationAsProvided": "3min",
+      "durationSeconds": {
+        "min": 180,
+        "max": 180,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "黄惠岂"
+    },
+    {
+      "sourceSequence": 19,
+      "titleAsProvided": "故人叹",
+      "formatAsProvided": "唱歌",
+      "durationAsProvided": "5min",
+      "durationSeconds": {
+        "min": 300,
+        "max": 300,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "周芯琪"
+    },
+    {
+      "sourceSequence": 20,
+      "titleAsProvided": "红玫瑰",
+      "formatAsProvided": "唱歌",
+      "durationAsProvided": "4：45",
+      "durationSeconds": {
+        "min": 285,
+        "max": 285,
+        "approximate": false
+      },
+      "kind": "performance",
+      "performers": "石驭元"
+    },
+    {
+      "sourceSequence": 21,
+      "titleAsProvided": "互动环节三",
+      "interactionCode": "C",
+      "interactionTitle": "谁是最\"人\"",
+      "formatAsProvided": "竞拍",
+      "systemFormat": "抢答",
+      "durationAsProvided": "约8min",
+      "durationSeconds": {
+        "min": 480,
+        "max": 480,
+        "approximate": true
+      },
+      "kind": "interaction",
+      "capabilities": [
+        "buzzer"
+      ],
+      "performers": ""
+    },
+    {
+      "sourceSequence": 22,
+      "titleAsProvided": "光年之外",
+      "formatAsProvided": "乐队表演",
+      "durationAsProvided": "约6min",
+      "durationSeconds": {
+        "min": 360,
+        "max": 360,
+        "approximate": true
+      },
+      "kind": "performance",
+      "performers": "汪静怡 + 乐队"
+    }
+  ],
+  "closingRemarksSeconds": 120,
+  "nominalTotalSeconds": {
+    "min": 7003,
+    "max": 7303
+  },
+  "notes": [
+    "The running order contains 19 numbered performances and three lettered interaction segments.",
+    "Interaction segments are not included in the programme count and do not accept gifts.",
+    "Durations are reference data and never issue automatic runtime commands."
+  ],
+  "ceremonyTail": [
+    {
+      "id": "ceremony-program-awards",
+      "titleAsProvided": "节目颁奖",
+      "ceremonyType": "AWARD",
+      "awardGroup": "PROGRAM",
+      "systemFormat": "颁奖",
+      "durationAsProvided": ""
+    },
+    {
+      "id": "ceremony-speech",
+      "titleAsProvided": "负责人讲话",
+      "ceremonyType": "SPEECH",
+      "systemFormat": "讲话",
+      "durationAsProvided": ""
+    },
+    {
+      "id": "ceremony-campus-awards",
+      "titleAsProvided": "校园图鉴颁奖",
+      "ceremonyType": "AWARD",
+      "awardGroup": "CAMPUS",
+      "systemFormat": "颁奖",
+      "durationAsProvided": ""
+    }
+  ]
+}

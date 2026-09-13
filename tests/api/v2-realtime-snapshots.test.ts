@@ -47,6 +47,11 @@ describe('V2-05 snapshots and split-stream realtime', () => {
     seedDemoDatabase(database, { manifestPath: config.seedManifestPath, participantCount: 300, now: () => NOW })
     participantId = readSeedManifest(config.seedManifestPath).participants[0]!.id
     participantSecret = 'a'.repeat(43)
+    // Schema 15 has a separate operational v2 directory. This fixture
+    // constructs its runtime directly instead of using initializeV2Runtime.
+    database.exec(`INSERT INTO v2_program_catalog (id, sort_order, title, heat, enabled, created_at, updated_at)
+      SELECT id, sort_order, title, heat, enabled, created_at, updated_at FROM program_catalog;
+      UPDATE v2_program_catalog_state SET current_program_id = (SELECT current_program_id FROM program_runtime_state WHERE id = 1);`)
     const timestamp = NOW.toISOString()
     database.prepare(
       `UPDATE protocol_runtime SET active_protocol_version='2', activation_state='V2_ACTIVE',
@@ -74,6 +79,13 @@ describe('V2-05 snapshots and split-stream realtime', () => {
          id, reset_epoch, interaction_revision, barrage_paused,
          display_batch, next_display_seq, updated_at
        ) VALUES (1, 2, 0, 0, 0, 1, ?)`,
+    ).run(timestamp)
+    database.prepare('INSERT INTO v2_ceremony_state(id, reset_epoch) SELECT 1,reset_epoch FROM v2_runtime_state').run()
+    database.prepare(
+      `INSERT INTO v2_live_interaction_state (
+         id, reset_epoch, segment_code, phase, round_number, prompt,
+         revision, opened_at, updated_at
+       ) VALUES (1, 2, NULL, 'IDLE', 0, '', 0, NULL, ?)`,
     ).run(timestamp)
     database.prepare(
       `INSERT INTO v2_stream_cursors VALUES (2,'public',0),(2,'admin',0),(2,?,1)`,

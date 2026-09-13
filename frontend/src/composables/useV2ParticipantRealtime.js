@@ -1,8 +1,9 @@
 import { onBeforeUnmount, ref } from 'vue'
+import { applicationPath } from '../services/application-path'
 
 function socketUrl() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/ws/v2`
+  return `${protocol}//${window.location.host}${applicationPath('/ws/v2')}`
 }
 
 const PARTICIPANT_STREAM_ID = /^participant:[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
@@ -137,7 +138,13 @@ function publicEventRevision(name, payload) {
   if (
     name === 'program.changed'
     && hasExactKeys(payload, ['currentProgram', 'interactionRevision'])
-    && isRecord(payload.currentProgram)
+    && (payload.currentProgram === null || isRecord(payload.currentProgram))
+    && isNonNegativeInteger(payload.interactionRevision)
+  ) return payload.interactionRevision
+  if (
+    name === 'live.interaction.changed'
+    && hasExactKeys(payload, ['interactionRevision', 'liveInteraction'])
+    && isRecord(payload.liveInteraction)
     && isNonNegativeInteger(payload.interactionRevision)
   ) return payload.interactionRevision
   return null
@@ -357,6 +364,7 @@ export function useV2ParticipantRealtime({ snapshot, refresh, onPublicEvent }) {
       schedule()
       return false
     }
+    let deliveredPublicSeq = baseline.publicSeq
     const next = new WebSocket(socketUrl())
     socket = next
     let helloAcknowledged = false
@@ -477,7 +485,16 @@ export function useV2ParticipantRealtime({ snapshot, refresh, onPublicEvent }) {
           await failClosed('实时事件帧无效，正在重取权威快照。')
           return
         }
-        if (!await applyFrame(frame, failClosed)) return
+        // HTTP snapshots can arrive ahead of their in-flight WebSocket visuals.
+        // Deliver these once on this connection, using the connection baseline
+        // to suppress old events after reload/reconnect. State remains authoritative.
+        const pendingVisual = frame.streamId === 'public'
+          && frame.streamSeq > deliveredPublicSeq
+          && frame.streamSeq <= snapshot.value.publicSeq
+          && ['barrage.published', 'barrage.removed', 'barrage.cleared', 'gift.sent'].includes(frame.name)
+        if (pendingVisual) await onPublicEvent(frame)
+        else if (!await applyFrame(frame, failClosed)) return
+        if (frame.streamId === 'public') deliveredPublicSeq = Math.max(deliveredPublicSeq, frame.streamSeq)
         markOnlineIfCaughtUp()
       }).catch((error) => failClosed(error?.message ?? '实时状态处理失败。'))
     })

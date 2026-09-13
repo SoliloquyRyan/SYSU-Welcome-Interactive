@@ -63,6 +63,7 @@ const GiftSchema = z
     sortOrder: z.number().int().positive(),
     name: z.string().min(1).max(40),
     powerCost: z.union([
+      z.literal(1),
       z.literal(5),
       z.literal(10),
       z.literal(20),
@@ -181,6 +182,19 @@ export const GIFTS = [
   { id: 'gift-orbit', sortOrder: 3, name: '星轨', powerCost: 20 },
   { id: 'gift-starship', sortOrder: 4, name: '星舰', powerCost: 50 },
 ] as const
+
+export const V2_GIFTS = [
+  { id: 'gift-glimmer', sortOrder: 1, name: '微光', powerCost: 1 },
+  { id: 'gift-beacon', sortOrder: 2, name: '信标', powerCost: 5 },
+  { id: 'gift-orbit', sortOrder: 3, name: '星轨', powerCost: 10 },
+  { id: 'gift-starship', sortOrder: 4, name: '星舰', powerCost: 20 },
+] as const
+
+function giftCatalogForDatabase(database: SqliteDatabase) {
+  if (!databaseTableExists(database, '_schema_migrations')) return GIFTS
+  const version = Number(database.prepare('SELECT COALESCE(MAX(version), 0) FROM _schema_migrations').pluck().get())
+  return version >= 17 ? V2_GIFTS : GIFTS
+}
 
 export function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex')
@@ -310,13 +324,23 @@ export function fingerprintProtectedDirectoryDatabase(
     .all()
   const programs = database
     .prepare(
-      `SELECT id, sort_order AS sortOrder, title, heat, enabled
+      // The roster fingerprint was created with zero program heat. Preserve
+      // that canonical form: subsequent gifts are runtime facts, not changes
+      // to the protected identity directory (including historical schema 14).
+      `SELECT id, sort_order AS sortOrder, title, 0 AS heat, enabled
        FROM program_catalog ORDER BY sort_order`,
     )
     .all()
   const gifts = database
     .prepare(
-      `SELECT id, sort_order AS sortOrder, name, power_cost AS powerCost,
+      `SELECT id, sort_order AS sortOrder, name,
+              CASE id
+                WHEN 'gift-glimmer' THEN 5
+                WHEN 'gift-beacon' THEN 10
+                WHEN 'gift-orbit' THEN 20
+                WHEN 'gift-starship' THEN 50
+                ELSE power_cost
+              END AS powerCost,
               enabled
        FROM gift_catalog ORDER BY sort_order`,
     )
@@ -668,6 +692,7 @@ export function seedDemoDatabase(
   }
 
   const { manifest, created } = loadOrCreateManifest(database, options)
+  const activeGifts = giftCatalogForDatabase(database)
   const fingerprint = fingerprintManifest(manifest)
   const appliedAt = (options.now ?? (() => new Date()))().toISOString()
   database.exec('BEGIN IMMEDIATE')
@@ -806,7 +831,7 @@ export function seedDemoDatabase(
          id, sort_order, name, power_cost, enabled, created_at, updated_at
        ) VALUES (?, ?, ?, ?, 1, ?, ?)`,
     )
-    for (const gift of manifest.gifts) {
+    for (const gift of activeGifts) {
       insertGift.run(
         gift.id,
         gift.sortOrder,
@@ -889,6 +914,7 @@ export function restoreDemoSeedCatalogInTransaction(
   const manifest = readSeedManifest(options.manifestPath)
   validateManifestInvariants(manifest, options.participantCount)
   const fingerprint = fingerprintManifest(manifest)
+  const activeGifts = giftCatalogForDatabase(database)
   const meta = database
     .prepare(
       `SELECT seed_version AS seedVersion,
@@ -994,7 +1020,7 @@ export function restoreDemoSeedCatalogInTransaction(
          updated_at = ?
      WHERE id = ?`,
   )
-  for (const gift of manifest.gifts) {
+  for (const gift of activeGifts) {
     if (
       updateGift.run(
         gift.sortOrder,
@@ -1060,6 +1086,8 @@ export function verifyDemoSeed(
       fingerprint: null,
     }
   }
+
+  const expectedGifts = giftCatalogForDatabase(database)
 
   try {
     const meta = database
@@ -1215,7 +1243,7 @@ export function verifyDemoSeed(
           name,
           powerCost,
         })),
-      ) !== JSON.stringify(manifest.gifts) ||
+      ) !== JSON.stringify(expectedGifts) ||
       storedGifts.some(({ enabled }) => enabled !== 1)
     ) {
       issues.push('Gift catalog does not match')
@@ -1427,7 +1455,8 @@ export function verifyProtectedRoster(
     }
     if (counts.programs !== PROGRAMS.length)
       issues.push('Protected program catalog count does not match')
-    if (counts.gifts !== GIFTS.length)
+    const expectedGifts = giftCatalogForDatabase(database)
+    if (counts.gifts !== expectedGifts.length)
       issues.push('Protected gift catalog count does not match')
     if (counts.admins !== 1) issues.push('Protected admin account count does not match')
 
@@ -1447,7 +1476,7 @@ export function verifyProtectedRoster(
           name,
           powerCost,
         })),
-      ) !== JSON.stringify(GIFTS) ||
+      ) !== JSON.stringify(expectedGifts) ||
       storedGifts.some(({ enabled }) => enabled !== 1)
     ) {
       issues.push('Protected gift catalog does not match')

@@ -52,6 +52,11 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
   })
 
   function activateV2Runtime(): void {
+    // Schema 15 has a separate operational v2 directory. This fixture
+    // constructs its runtime directly instead of using initializeV2Runtime.
+    database.exec(`INSERT INTO v2_program_catalog (id, sort_order, title, heat, enabled, created_at, updated_at)
+      SELECT id, sort_order, title, heat, enabled, created_at, updated_at FROM program_catalog;
+      UPDATE v2_program_catalog_state SET current_program_id = (SELECT current_program_id FROM program_runtime_state WHERE id = 1);`)
     const timestamp = NOW.toISOString()
     database
       .prepare(
@@ -97,6 +102,13 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
          id, reset_epoch, interaction_revision, barrage_paused,
          display_batch, next_display_seq, updated_at
        ) VALUES (1, 2, 0, 0, 0, 1, ?)`,
+    ).run(timestamp)
+    database.prepare('INSERT INTO v2_ceremony_state(id, reset_epoch) SELECT 1,reset_epoch FROM v2_runtime_state').run()
+    database.prepare(
+      `INSERT INTO v2_live_interaction_state (
+         id, reset_epoch, segment_code, phase, round_number, prompt,
+         revision, opened_at, updated_at
+       ) VALUES (1, 2, NULL, 'IDLE', 0, '', 0, NULL, ?)`,
     ).run(timestamp)
     database.prepare(
       `INSERT INTO v2_raffle_state (
@@ -166,7 +178,7 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
       displayName: participant(0).displayName,
       personalStarCode: participant(0).publicStarId,
       powerBalance: 100,
-      starlight: 20,
+      starlight: 0,
       ownPublicStarId: null,
       allowedActions: ['LOCK_COLOR'],
     })
@@ -228,7 +240,7 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
       activatedCount: 1,
       publicStarCount: 1,
       admittedCount: 1,
-      totalStarlight: 20,
+      totalStarlight: 0,
     })
     const sameValueRetry = command(identityId, {
       idempotencyKey: 'lock-color-same-value-retry',
@@ -257,7 +269,7 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
       command: 'UPSERT_CAPSULE', text: '旧入口不得再写入。', candidateScopeAccepted: true,
     })).toThrowError(expect.objectContaining({ code: 'ONBOARDING_STATE_INVALID' }))
     const snapshot = readV2ParticipantSnapshot(database, identityId, LATER)
-    expect(snapshot.participant).toMatchObject({ onboardingState: 'ADMITTED', starlight: 20 })
+    expect(snapshot.participant).toMatchObject({ onboardingState: 'ADMITTED', starlight: 0 })
     expect(database.prepare('SELECT count(*) FROM v2_capsules').pluck().get()).toBe(0)
     expect(
       database
@@ -283,7 +295,7 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
     expect(admitted.participant).toMatchObject({
       onboardingState: 'ADMITTED',
       capsuleDecision: 'SKIPPED',
-      starlight: 20,
+      starlight: 0,
       admittedAt: expect.any(String),
     })
     expect(admitted.participant.skippedAt).not.toBeNull()
@@ -318,7 +330,7 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
       admittedScene: 'PROGRAM_SUPPORT',
       admittedRunRevision: 2,
       started: false,
-      starlight: 20,
+      starlight: 0,
       allowedActions: ['SEND_GIFT', 'POST_BARRAGE'],
     })
     expect(
@@ -384,7 +396,7 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
     expect(recovered.snapshot.participant).toMatchObject({
       participantRevision: 1,
       onboardingState: 'NEEDS_COLOR',
-      starlight: 20,
+      starlight: 0,
       allowedActions: [],
     })
     expect(
@@ -451,7 +463,7 @@ describe('V2-03 participant onboarding, admission and reward ledger', () => {
       displayName: selected.displayName,
       personalStarCode: selected.publicStarId,
       powerBalance: 100,
-      starlight: 20,
+      starlight: 0,
     })
     expect(recovered.snapshot.participant).not.toHaveProperty('studentNumber')
     expect(JSON.stringify(recovered.snapshot.participant)).not.toContain(selected.studentNumber)

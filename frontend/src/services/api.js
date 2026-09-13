@@ -1,3 +1,4 @@
+import { applicationPath } from './application-path'
 import {
   PROTOCOL_POLICY,
   ProtocolCompatibilityError,
@@ -65,7 +66,7 @@ export async function apiRequest(path, options = {}) {
     requestController.abort()
   }, 15_000)
   try {
-    const response = await fetch(path, {
+    const response = await fetch(applicationPath(path), {
       method: options.method ?? 'GET',
       credentials: 'include',
       headers,

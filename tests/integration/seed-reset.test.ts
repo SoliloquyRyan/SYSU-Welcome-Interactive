@@ -194,7 +194,7 @@ describe('deterministic 300-participant seed and reset', () => {
       .prepare('SELECT power_cost FROM gift_catalog ORDER BY power_cost')
       .pluck()
       .all()
-    expect(giftCosts).toEqual([5, 10, 20, 50])
+    expect(giftCosts).toEqual([1, 5, 10, 20])
   })
 
   it('stores credential digests instead of manifest plaintext in SQLite', () => {
@@ -489,7 +489,7 @@ describe('deterministic 300-participant seed and reset', () => {
     database
       .prepare(
         `UPDATE gift_catalog
-         SET sort_order = 99, name = '被篡改的礼物', power_cost = 50, enabled = 0
+         SET sort_order = 99, name = '被篡改的礼物', power_cost = 20, enabled = 0
          WHERE id = 'gift-glimmer'`,
       )
       .run()

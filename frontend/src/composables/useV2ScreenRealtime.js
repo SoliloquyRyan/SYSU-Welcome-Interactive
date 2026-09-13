@@ -1,8 +1,9 @@
 import { onBeforeUnmount, ref } from 'vue'
+import { applicationPath } from '../services/application-path'
 
 function socketUrl() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/ws/v2`
+  return `${protocol}//${window.location.host}${applicationPath('/ws/v2')}`
 }
 
 export function useV2ScreenRealtime({ snapshot, refresh, onLiveEvent }) {

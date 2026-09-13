@@ -1,5 +1,7 @@
 import { createStellarCollapseRenderer } from './stellar-collapse-renderer'
 import { ORBITAL_SIGNAL_PALETTE } from '../../styles/orbital-signal'
+import { cooperativeLightProgress } from './v2-screen-state'
+import { drawGalacticPlate, drawStellarAtmosphere, onStellarPlateReady } from '../../rendering/galactic-medium'
 
 function hash(value) {
   let result = 2166136261
@@ -218,15 +220,14 @@ export function starSpectralPalette(color) {
   ]
   const blend = (neutral, amount) => source.map((channel, index) => mix(channel, neutral[index], amount))
   return {
-    // Real stellar images expose toward white in the compact PSF core.  The
-    // participant colour remains legible in the much thinner halo instead of
-    // filling a saturated, bead-like disk.
-    core: rgbString(blend([252, 253, 251], 0.72)),
-    halo: rgbaString(blend([211, 222, 229], 0.55), 0.14),
-    haloFade: rgbaString(blend([211, 222, 229], 0.55), 0),
-    aureole: rgbaString(blend([184, 202, 214], 0.42), 0.065),
-    trail: rgbString(blend([232, 238, 240], 0.7)),
-    glint: rgbString(blend([255, 255, 252], 0.93)),
+    // Keep the selected hue in the resolvable core and halo. Only the tiny
+    // glint exposes near-white, so distant participants remain distinguishable.
+    core: rgbString(blend([252, 253, 251], 0.30)),
+    halo: rgbaString(blend([211, 222, 229], 0.16), 0.24),
+    haloFade: rgbaString(blend([211, 222, 229], 0.16), 0),
+    aureole: rgbaString(blend([184, 202, 214], 0.20), 0.08),
+    trail: rgbString(blend([232, 238, 240], 0.40)),
+    glint: rgbString(blend([255, 255, 252], 0.78)),
   }
 }
 
@@ -313,7 +314,7 @@ export function starPlacement(star, width, height) {
   return {
     x: width * GALAXY_CENTER_X + local.x,
     y: height * GALAXY_CENTER_Y + local.y,
-    radius: 0.42 + Math.pow(luminance, 4.6) * 1.78,
+    radius: 1.35 + Math.pow(luminance, 1.6) * 1.25,
     phase: unit(hash(`${slot}:assembly-phase`), 0) * TAU,
   }
 }
@@ -369,12 +370,12 @@ export function decorativeStarPlacement(index, width, height, timestamp = 0) {
   }
 }
 
-export function arrivalMeteorPlacement(star, width, height, progress, arrivalTimestamp = 0) {
+export function arrivalMeteorPlacement(star, width, height, progress, arrivalTimestamp = 0, placement = flowingStarPlacement) {
   const value = clamp(progress)
   const landingTimestamp = arrivalTimestamp + STAR_ARRIVAL_MS
-  const target = flowingStarPlacement(star, width, height, landingTimestamp)
-  const previous = flowingStarPlacement(star, width, height, Math.max(0, landingTimestamp - 120))
-  const orbitTail = flowingStarPlacement(star, width, height, Math.max(0, landingTimestamp - 220))
+  const target = placement(star, width, height, landingTimestamp)
+  const previous = placement(star, width, height, Math.max(0, landingTimestamp - 120))
+  const orbitTail = placement(star, width, height, Math.max(0, landingTimestamp - 220))
   const velocityX = target.x - previous.x
   const velocityY = target.y - previous.y
   const velocityLength = Math.max(0.001, Math.hypot(velocityX, velocityY))
@@ -556,10 +557,10 @@ export function stellarCollapseStarPlacement(
 export function createGalaxyRenderer(canvas, options = {}) {
   const context = canvas.getContext('2d', { alpha: true })
   if (!context) throw new Error('2D canvas context is unavailable')
-  canvas.dataset.galaxyStructure = 'milky-way-low-inclination-disk'
+  canvas.dataset.galaxyStructure = 'inclined-flowing-spiral'
   canvas.dataset.decorativeStars = String(DECORATIVE_STAR_COUNT)
   canvas.dataset.visualReferenceStars = String(FORMAL_VISUAL_REFERENCE_COUNT)
-  canvas.dataset.densitySystem = 'unresolved-disk-light'
+  canvas.dataset.densitySystem = 'layered-spiral'
   canvas.dataset.arrivalStyle = 'offscreen-meteor-orbital-capture'
   canvas.dataset.activeArrivalMeteors = '0'
   canvas.dataset.renderTargetFps = String(AMBIENT_RENDER_TARGET_FPS)
@@ -568,6 +569,7 @@ export function createGalaxyRenderer(canvas, options = {}) {
   let stars = []
   let mode = 'ASSEMBLY'
   let reduced = Boolean(options.reduced)
+  let programBackdrop = Boolean(options.programBackdrop)
   let running = false
   let frame = 0
   let nextPaintAt = 0
@@ -576,6 +578,8 @@ export function createGalaxyRenderer(canvas, options = {}) {
   let dpr = 1
   let edgeMix = 0
   let cooperativeMix = 0
+  let cooperative = cooperativeLightProgress()
+  let cooperativePulseAt = null
   let transition = null
   let orbitGuidePath = null
   let galaxyDustTexture = null
@@ -583,6 +587,13 @@ export function createGalaxyRenderer(canvas, options = {}) {
   let cinematicBackdropImage = null
   let cinematicBackdropTexture = null
   let stellarCollapseRenderer = null
+  let cinematicScene = null
+  const cinematicStartedAt = performance.now()
+  const cinematicSeconds = timestamp => Math.max(0, timestamp - cinematicStartedAt) / 1000
+  const cinematicPlacement = options.projectCinematicStar
+    ? (star, w, h, timestamp) => options.projectCinematicStar(star, cinematicSeconds(timestamp), w, h)
+      ?? flowingStarPlacement(star, w, h, timestamp)
+    : flowingStarPlacement
   let destroyed = false
   const arrivals = new Map()
   const spectralPalettes = new Map()
@@ -601,9 +612,9 @@ export function createGalaxyRenderer(canvas, options = {}) {
     if (
       reduced
       || document.hidden
-      || (!transition && arrivals.size === 0 && mode === 'PROGRAM_SUPPORT')
+      || (!transition && arrivals.size === 0 && mode === 'PROGRAM_SUPPORT' && !programBackdrop)
     ) return 0
-    return transition || arrivals.size > 0
+    return transition || arrivals.size > 0 || cooperativePulseAt !== null
       ? ACTIVE_RENDER_TARGET_FPS
       : AMBIENT_RENDER_TARGET_FPS
   }
@@ -613,7 +624,7 @@ export function createGalaxyRenderer(canvas, options = {}) {
     canvas.dataset.renderTargetFps = String(targetFps)
     canvas.dataset.galaxyBreath = reduced
       ? 'reduced-static'
-      : mode === 'PROGRAM_SUPPORT' && !transition
+      : mode === 'PROGRAM_SUPPORT' && !transition && !programBackdrop
         ? 'idle'
         : 'ambient-multiphase'
     canvas.dataset.renderCadence = targetFps === ACTIVE_RENDER_TARGET_FPS
@@ -1059,33 +1070,20 @@ export function createGalaxyRenderer(canvas, options = {}) {
     }
   }
 
-  function drawTransitionBackdrop(transitionState) {
+  function drawTransitionBackdrop(transitionState, timestamp) {
     const sceneAlpha = transitionState.openingProgram ? 1 : programStarAlpha(edgeMix)
     if (sceneAlpha <= 0.001) return
+    const seconds = reduced ? 0 : cinematicSeconds(timestamp)
+    drawStellarAtmosphere(context, width, height, seconds, sceneAlpha)
     context.save()
-    context.globalCompositeOperation = 'source-over'
-    context.globalAlpha = sceneAlpha
-    context.imageSmoothingEnabled = true
-    context.fillStyle = SCREEN_SIGNAL_PALETTE.midnight
-    context.fillRect(0, 0, width, height)
-
-    if (transitionState.openingProgram && transitionState.convergence > 0.001) {
+    if (transitionState.openingProgram) {
       const geometry = collapseGeometry(transitionState)
-      const scale = 1 + transitionState.convergence * 0.026
-        + transitionState.compression * 0.018
+      const shrink = Math.exp(-transitionState.convergence * 1.25 - transitionState.compression * 2.8)
       context.translate(geometry.centerX, geometry.centerY)
-      context.rotate(-transitionState.convergence * 0.012)
-      context.scale(scale, scale)
+      context.scale(shrink, shrink)
       context.translate(-geometry.centerX, -geometry.centerY)
     }
-
-    if (cinematicBackdropTexture) {
-      context.drawImage(cinematicBackdropTexture, 0, 0, width, height)
-    } else if (cinematicBackdropImage) {
-      drawImageCover(context, cinematicBackdropImage, width, height)
-    } else if (transitionBackdropTexture) {
-      context.drawImage(transitionBackdropTexture, 0, 0, width, height)
-    }
+    drawGalacticPlate(context, width, height, { seconds, reveal: sceneAlpha })
     context.restore()
   }
 
@@ -1452,14 +1450,19 @@ export function createGalaxyRenderer(canvas, options = {}) {
     context.fillRect(0, 0, width, height)
     context.restore()
   }
+  function fallbackFieldPlacement(star,timestamp,base) {
+    if (!options.projectCinematicStar) return base
+    return { ...base, ...options.projectCinematicStar(star,reduced ? 0 : cinematicSeconds(timestamp),width,height) }
+  }
+
   function drawDecorativeStars(timestamp, transitionState, densityState) {
-    if (!transitionState.openingProgram && edgeMix >= 0.998) return
+    if (!transitionState.openingProgram && edgeMix >= 0.998 && !programBackdrop) return
     const motionTimestamp = reduced ? 0 : timestamp
-    const visibility = transitionState.visibility * mix(1, 1.08, cooperativeMix)
+    const visibility = transitionState.visibility * mix(1, 1.08, cooperativeMix * cooperative.ratio)
     if (visibility <= 0.001) return
 
     for (let index = 0; index < DECORATIVE_STAR_COUNT; index += 1) {
-      const descriptor = decorativeStarPlacement(index, width, height, motionTimestamp)
+      const descriptor = fallbackFieldPlacement({ formationSlot: `decorative:${index}` },timestamp,decorativeStarPlacement(index, width, height, motionTimestamp))
       const star = { formationSlot: `decorative:${index}` }
       const point = transitionState.openingProgram
         ? stellarCollapseStarPlacement(
@@ -1479,7 +1482,7 @@ export function createGalaxyRenderer(canvas, options = {}) {
       // legibly alive on a venue display without turning the base layer into
       // fake participant meteors.
       if (!reduced && !transitionState.openingProgram && index % 7 === 0) {
-        const previous = decorativeStarPlacement(index, width, height, Math.max(0, motionTimestamp - 230))
+        const previous = fallbackFieldPlacement(star,timestamp-230,decorativeStarPlacement(index,width,height,Math.max(0,motionTimestamp-230)))
         context.beginPath()
         context.moveTo(previous.x, previous.y)
         context.lineTo(point.x, point.y)
@@ -1524,6 +1527,7 @@ export function createGalaxyRenderer(canvas, options = {}) {
       height,
       progress,
       arrival.startedAt,
+      cinematicPlacement,
     )
     const palette = starRenderPalette(star)
     const dx = meteor.head.x - meteor.tail.x
@@ -1602,9 +1606,10 @@ export function createGalaxyRenderer(canvas, options = {}) {
 
   function drawStar(star, timestamp, transitionState, densityState) {
     const motionTimestamp = reduced ? 0 : timestamp
+    const source = fallbackFieldPlacement(star,timestamp,blendedStarPlacement(star,width,height,edgeMix,motionTimestamp))
     const point = transitionState.openingProgram
-      ? stellarCollapseStarPlacement(star, width, height, transitionState.progress, motionTimestamp)
-      : blendedStarPlacement(star, width, height, edgeMix, motionTimestamp)
+      ? stellarCollapseStarPlacement(star, width, height, transitionState.progress, motionTimestamp,source)
+      : source
     let arrivalAlpha = 1
     const arrival = arrivals.get(star.publicStarId)
 
@@ -1636,7 +1641,7 @@ export function createGalaxyRenderer(canvas, options = {}) {
       * scintillation
       * chargedRadius
       * participantGain
-      * mix(1, star.started ? 1.22 : 1.06, cooperativeMix)
+      * mix(1, 1.22, cooperativeMix * cooperative.ratio)
     const palette = starRenderPalette(star)
 
     if (strength <= 0.001) return
@@ -1706,9 +1711,9 @@ export function createGalaxyRenderer(canvas, options = {}) {
       context.stroke()
     }
 
-    // Only the brighter tail receives a very thin aureole.  Most stars stay as
-    // sub-pixel detector-like points instead of equally sized glowing balls.
-    if (opticalFlux > 0.88) {
+    // Admitted participants must remain legible on projectors, including the
+    // Canvas fallback. Decorative dust keeps its separate, quieter material.
+    if (radius > 0.9) {
       const haloRadius = 2.8 + radius * 2.5
       const halo = context.createRadialGradient(x, y, 0, x, y, haloRadius)
       halo.addColorStop(0, palette.aureole)
@@ -1746,15 +1751,12 @@ export function createGalaxyRenderer(canvas, options = {}) {
       context.fillRect(x - hotPixel / 2, y - hotPixel / 2, hotPixel, hotPixel)
     }
 
-    // The star body already brightens for every started participant. Reserve
-    // the second, larger radial gradient for a deterministic bright subset in
-    // the cooperative scene. The supernova has its own volumetric emission, so
-    // it does not duplicate this per-star atmospheric layer.
+    // This is collective light from the public aggregate, never an assertion
+    // about which individual star participated. ASSEMBLY started is unrelated.
     const receivesAtmosphericHalo = hash(`${star.formationSlot}:atmospheric-halo`) % 3 === 0
     if (
-      star.started
-      && receivesAtmosphericHalo
-      && cooperativeMix > 0.01
+      receivesAtmosphericHalo
+      && cooperativeMix * cooperative.ratio > 0.001
     ) {
       const cooperativeRadius = radius * mix(2.2, 3.1, cooperativeMix)
       const cooperativeHalo = context.createRadialGradient(x, y, 0, x, y, cooperativeRadius)
@@ -1762,7 +1764,7 @@ export function createGalaxyRenderer(canvas, options = {}) {
       cooperativeHalo.addColorStop(1, palette.haloFade)
       context.beginPath()
       context.fillStyle = cooperativeHalo
-      context.globalAlpha = strength * mix(0.08, 0.14, cooperativeMix)
+      context.globalAlpha = strength * 0.14 * cooperativeMix * cooperative.ratio
       context.arc(x, y, cooperativeRadius, 0, TAU)
       context.fill()
     }
@@ -1800,9 +1802,60 @@ export function createGalaxyRenderer(canvas, options = {}) {
     context.clearRect(0, 0, width, height)
     const transitionState = updateSceneMix(timestamp)
     const densityState = assemblyDensityEnvelope(stars.length, timestamp, reduced)
-    drawTransitionBackdrop(transitionState)
-    drawOrbitGuides(timestamp, densityState)
+    // D-072 keeps one visible canvas across assembly and program. OBS overlay
+    // still stops drawing at the transparent endpoint and uses no hidden GPU.
+    const programGalaxy = mode === 'PROGRAM_SUPPORT' && programBackdrop && !transitionState.openingProgram
+    if (!transitionState.openingProgram && mode === 'PROGRAM_SUPPORT' && edgeMix >= 1 && !programBackdrop) return
+    if (!reduced && options.cinematicSceneFactory) {
+      if (!cinematicScene) {
+        cinematicScene = options.cinematicSceneFactory(canvas, { stars, onFailure(reason) {
+          canvas.dataset.supernovaFallbackReason = reason
+          canvas.dataset.supernovaWarmup = 'fallback'
+          canvas.dataset.galaxyRenderer = 'canvas2d-fallback'
+        } })
+      }
+      if (!cinematicScene.failed) {
+        context.save()
+        context.setTransform(1, 0, 0, 1, 0, 0)
+        cinematicScene.draw(cinematicSeconds(timestamp), {
+          progress: transitionState.openingProgram ? transitionState.progress : 0,
+          live: true, arrivals, timestamp, programBackdrop,
+        })
+        if (!transitionState.openingProgram && edgeMix > 0 && !programGalaxy) {
+          context.globalCompositeOperation = 'destination-in'
+          context.globalAlpha = 1 - edgeMix
+          context.fillStyle = '#000'
+          context.fillRect(0, 0, canvas.width, canvas.height)
+        }
+        context.restore()
+        if (!cinematicScene.failed) {
+          canvas.dataset.galaxyRenderer = 'cinematic-depth-field'
+          canvas.dataset.supernovaEngine = 'webgl2-cinematic-depth-field'
+          canvas.dataset.supernovaWarmup = 'ready'
+          drawCooperativeLight(timestamp)
+          context.save()
+          context.globalCompositeOperation = 'screen'
+          for (const star of stars) drawArrivalMeteor(star, timestamp, transitionState)
+          context.restore()
+          return
+        }
+      }
+    }
+    if (programGalaxy) {
+      drawStellarAtmosphere(context, width, height, reduced ? 0 : cinematicSeconds(timestamp))
+      drawGalacticPlate(context, width, height, { seconds: reduced ? 0 : cinematicSeconds(timestamp) })
+      // The procedural background contains no baked stars. Keep actual public
+      // stars visible in program mode when WebGL is unavailable or reduced.
+      const visibleState = { ...transitionState, visibility: 1 }
+      context.save(); context.globalCompositeOperation = 'screen'
+      drawDecorativeStars(timestamp, visibleState, densityState)
+      for (const star of stars) drawStar(star, timestamp, visibleState, densityState)
+      context.restore()
+      return
+    }
+    drawTransitionBackdrop(transitionState, timestamp)
     drawCollapseField(transitionState)
+    drawCooperativeLight(timestamp)
     context.save()
     context.globalCompositeOperation = 'screen'
     drawDecorativeStars(timestamp, transitionState, densityState)
@@ -1816,6 +1869,30 @@ export function createGalaxyRenderer(canvas, options = {}) {
     drawProgramReveal(transitionState)
     context.globalAlpha = 1
     context.globalCompositeOperation = 'source-over'
+  }
+
+  function drawCooperativeLight(timestamp) {
+    let pulse = 0
+    if (cooperativePulseAt !== null) {
+      const elapsed = clamp((timestamp - cooperativePulseAt) / 1200)
+      pulse = Math.sin(elapsed * Math.PI) * 0.08
+      if (elapsed >= 1) cooperativePulseAt = null
+    }
+    canvas.dataset.cooperativeFeedback = cooperativePulseAt === null ? 'static' : 'receiving'
+    if (cooperativeMix <= 0 || cooperative.count === 0) return
+    context.save()
+    context.globalCompositeOperation = 'screen'
+    context.translate(width * GALAXY_CENTER_X, height * GALAXY_CENTER_Y)
+    context.scale(1, 0.5)
+    const radius = Math.min(width, height * 1.6) * 0.46
+    const light = context.createRadialGradient(0, 0, 0, 0, 0, radius)
+    light.addColorStop(0, '#a9cbdc')
+    light.addColorStop(0.35, '#567d94')
+    light.addColorStop(1, 'rgba(44,69,87,0)')
+    context.globalAlpha = cooperativeMix * (Math.sqrt(cooperative.ratio) * 0.2 + pulse)
+    context.fillStyle = light
+    context.fillRect(-radius, -radius, radius * 2, radius * 2)
+    context.restore()
   }
 
   function loop(timestamp) {
@@ -1841,7 +1918,7 @@ export function createGalaxyRenderer(canvas, options = {}) {
   function shouldAnimate() {
     return !reduced
       && !document.hidden
-      && (Boolean(transition) || arrivals.size > 0 || mode !== 'PROGRAM_SUPPORT')
+      && (Boolean(transition) || arrivals.size > 0 || mode !== 'PROGRAM_SUPPORT' || programBackdrop)
   }
 
   function updateLoop() {
@@ -1866,30 +1943,50 @@ export function createGalaxyRenderer(canvas, options = {}) {
 
   function onVisibility() {
     if (document.hidden) {
+      cooperativePulseAt = null
       arrivals.clear()
       syncArrivalDiagnostics()
       if (transition) snapToMode()
     }
     updateLoop()
   }
+  const stopPlateListener = onStellarPlateReady(() => { if (!destroyed && !document.hidden) paint(performance.now()) })
   const observer = new ResizeObserver(resize)
   observer.observe(canvas)
   document.addEventListener('visibilitychange', onVisibility)
   loadCinematicBackdrop(options.backdropUrl)
   resize()
-  if (!reduced) {
+  if (!reduced && (!cinematicScene || cinematicScene.failed)) {
     const renderer = ensureStellarCollapseRenderer()
     canvas.dataset.supernovaWarmup = renderer?.prepare(canvas.width, canvas.height)
       ? 'ready'
       : 'fallback'
-  } else {
+  } else if (reduced) {
     canvas.dataset.supernovaWarmup = 'reduced-motion-bypass'
   }
   updateLoop()
 
   return {
+    setProgramBackdrop(next) {
+      programBackdrop = Boolean(next)
+      paint(performance.now())
+      updateLoop()
+    },
+    setCooperativeProgress(aggregate, { animate = false } = {}) {
+      const next = cooperativeLightProgress(aggregate)
+      if (animate && next.count > cooperative.count && cooperativePulseAt === null
+        && mode === 'COOPERATIVE_LIGHT' && !reduced && !document.hidden) {
+        cooperativePulseAt = performance.now()
+        nextPaintAt = 0
+      } else if (!animate || next.count < cooperative.count) cooperativePulseAt = null
+      cooperative = next
+      canvas.dataset.cooperativeCount = String(next.count)
+      canvas.dataset.cooperativeProgress = String(next.ratio)
+      updateLoop()
+    },
     setStars(next) {
       stars = [...next].slice(0, TECHNICAL_STAR_CAPACITY)
+      cinematicScene?.setStars(stars)
       arrivals.clear()
       syncArrivalDiagnostics()
       paint(performance.now())
@@ -1907,6 +2004,7 @@ export function createGalaxyRenderer(canvas, options = {}) {
       }
       else stars[index] = star
       stars = stars.slice(0, TECHNICAL_STAR_CAPACITY)
+      cinematicScene?.setStars(stars)
       updateLoop()
     },
     setMode(next, animationOptions = {}) {
@@ -1924,6 +2022,7 @@ export function createGalaxyRenderer(canvas, options = {}) {
       const timestamp = performance.now()
       updateSceneMix(timestamp)
       mode = nextMode
+      if (nextMode !== 'COOPERATIVE_LIGHT') cooperativePulseAt = null
       if (nextMode !== 'ASSEMBLY') {
         arrivals.clear()
         syncArrivalDiagnostics()
@@ -1954,6 +2053,7 @@ export function createGalaxyRenderer(canvas, options = {}) {
     setReduced(next) {
       reduced = Boolean(next)
       if (reduced) {
+        cooperativePulseAt = null
         arrivals.clear()
         syncArrivalDiagnostics()
         snapToMode()
@@ -1963,12 +2063,16 @@ export function createGalaxyRenderer(canvas, options = {}) {
     },
     destroy() {
       destroyed = true
+      stopPlateListener()
       running = false
       transition = null
+      cooperativePulseAt = null
       arrivals.clear()
       syncArrivalDiagnostics()
       cinematicBackdropImage = null
       galaxyDustTexture = null
+      cinematicScene?.destroy()
+      cinematicScene = null
       stellarCollapseRenderer?.destroy()
       stellarCollapseRenderer = null
       cinematicBackdropTexture = null
