@@ -8,6 +8,7 @@
     "node": "^22.18.0 || >=24.11.0"
   },
   "scripts": {
+    "obs:audio": "node scripts/obs-audio.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:formal": "node scripts/dev-formal.mjs",
     "dev:rehearsal": "node scripts/dev-rehearsal.mjs",

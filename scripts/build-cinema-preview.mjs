@@ -29,8 +29,8 @@ await mkdir(output, { recursive: true })
 await writeFile(path.join(output, 'index.html'), html)
 const sources = ['frontend/preview/cinema/main.js', 'frontend/preview/cinema/preview.css',
   'frontend/src/components/ArrivalCount.vue', 'frontend/src/pages/student/PersonalJourneyStage.vue',
-  'frontend/src/components/GiftStarshipFlight.vue', 'frontend/src/rendering/galactic-medium.js',
-  'frontend/src/assets/gifts/starship-pearl-v2.png',
+  'frontend/src/components/GiftSkyEffects.vue', 'frontend/src/rendering/galactic-medium.js',
+  'frontend/src/rendering/gift-sky-queue.js', 'frontend/src/rendering/decorative-stars.js',
   'frontend/src/rendering/cinema-timing.js', 'frontend/src/pages/screen/cinematic-galaxy-scene.js',
   'frontend/src/pages/screen/galaxy-renderer.js',
   'frontend/src/pages/student/personal-journey-renderer.js',

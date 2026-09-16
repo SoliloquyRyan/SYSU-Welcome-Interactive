@@ -1,0 +1,83 @@
+{
+  "baseline": "fb45d4c49c07cc19924ce72ce677a63fe4cc4aae",
+  "files": [
+    {
+      "originalPath": "frontend/src/assets/mobile/galaxy-cinematic-d073.md",
+      "archivePath": "docs/archive/visual-assets/mobile/galaxy-cinematic-d073.md",
+      "sha256": "a2f9a2001a89e681bad51065eaccdb2e778eee14b62d9c82d3881dbc6e2f314f",
+      "bytes": 2607
+    },
+    {
+      "originalPath": "frontend/src/assets/mobile/galaxy-cinematic-d073.png",
+      "archivePath": "docs/archive/visual-assets/mobile/galaxy-cinematic-d073.png",
+      "sha256": "44e9d07cb160a838375c0460c4ae2ae6e2b49d02e5a2dde4666356685d97a714",
+      "bytes": 1441912
+    },
+    {
+      "originalPath": "frontend/src/assets/mobile/galaxy-cinematic-d073.webp",
+      "archivePath": "docs/archive/visual-assets/mobile/galaxy-cinematic-d073.webp",
+      "sha256": "c36e2f7e87f8e73d00bfe8240c0b547294b425a5ad96f534cac8b92bfedcd35c",
+      "bytes": 169312
+    },
+    {
+      "originalPath": "frontend/src/assets/mobile/nebula-master.webp",
+      "archivePath": "docs/archive/visual-assets/mobile/nebula-master.webp",
+      "sha256": "3a2bcd5db28f18ff4ccd036540019c4cafb4edf28be62903e624a13bd83b21e7",
+      "bytes": 32274
+    },
+    {
+      "originalPath": "frontend/src/assets/mobile/star-river-d075.md",
+      "archivePath": "docs/archive/visual-assets/mobile/star-river-d075.md",
+      "sha256": "ca565c03943056ea1373cf8c3b66c4db2cfebbc731a0d2c819ba69562467e316",
+      "bytes": 2795
+    },
+    {
+      "originalPath": "frontend/src/assets/mobile/star-river-d075.png",
+      "archivePath": "docs/archive/visual-assets/mobile/star-river-d075.png",
+      "sha256": "9c2558e3f4deec055a4f033ae70ca2feb59b2a41fa02a271be40f00edd072781",
+      "bytes": 2781670
+    },
+    {
+      "originalPath": "frontend/src/assets/mobile/star-river-d075.webp",
+      "archivePath": "docs/archive/visual-assets/mobile/star-river-d075.webp",
+      "sha256": "e49c5712149d3057ab7464b70487700b63ac2ad3dc5b0ce48b7c88bfff686f4f",
+      "bytes": 540992
+    },
+    {
+      "originalPath": "frontend/src/assets/mobile/star-river-soft-d075.md",
+      "archivePath": "docs/archive/visual-assets/mobile/star-river-soft-d075.md",
+      "sha256": "1ea982b5f051728ff85b7f1a6861ee5be5c1bbb52cd328a66dafbc6541665ee1",
+      "bytes": 3795
+    },
+    {
+      "originalPath": "frontend/src/assets/mobile/star-river-soft-d075.png",
+      "archivePath": "docs/archive/visual-assets/mobile/star-river-soft-d075.png",
+      "sha256": "f2455b7cef62999f0a6d6b0b0741b276d2dee37a3330b45352dc757202335fd7",
+      "bytes": 1492487
+    },
+    {
+      "originalPath": "frontend/src/assets/mobile/star-river-soft-d075.webp",
+      "archivePath": "docs/archive/visual-assets/mobile/star-river-soft-d075.webp",
+      "sha256": "657ce92e2fc917e0fec2518b6eb65d4d1e0ec4fb76b3073e97e44b13e345fbe7",
+      "bytes": 80798
+    },
+    {
+      "originalPath": "frontend/src/assets/screen/deep-space-dust-d040.png",
+      "archivePath": "docs/archive/visual-assets/screen/deep-space-dust-d040.png",
+      "sha256": "c5f904f1844245618ab69841ac5305a826d4200855c4676f1c462be0bd2a4a44",
+      "bytes": 1847286
+    },
+    {
+      "originalPath": "frontend/src/assets/gifts/starship-pearl-v2.png",
+      "archivePath": "docs/archive/visual-assets/gifts/starship-pearl-v2.png",
+      "sha256": "22e38ade929cdf6943e118d70ff61b6bad7213625cac4912177252c1297c4a87",
+      "bytes": 1312832
+    },
+    {
+      "originalPath": "frontend/src/pages/student/mobile-galaxy-renderer.js",
+      "archivePath": "docs/archive/code/mobile-galaxy-renderer.js",
+      "sha256": "0a31786255c7065137ccf120eae00183116fde2cae54b5aedcdfcf35839b0608",
+      "bytes": 6488
+    }
+  ]
+}

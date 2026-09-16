@@ -1,0 +1,32 @@
+[
+  {
+    "originalPath": "frontend/src/components/GiftStarshipFlight.vue",
+    "archiveFile": "GiftStarshipFlight.vue",
+    "sha256": "c23dc4254d34175df8eed382f004af905d50e863d3c70af82315be42e1ca1e06",
+    "bytes": 15868
+  },
+  {
+    "originalPath": "frontend/src/assets/gifts/starship-nocturne.svg",
+    "archiveFile": "starship-nocturne.svg",
+    "sha256": "513ee70842a9108d924abe26969e36b2e8815aac3331f7b44cf4e5c4bc797754",
+    "bytes": 4690
+  },
+  {
+    "originalPath": "frontend/src/rendering/gift-flight-queue.js",
+    "archiveFile": "gift-flight-queue.js",
+    "sha256": "c587622221618a2e49a6a1ed62677fa20997c6830056dcf93c0aa0c2a98bf3a7",
+    "bytes": 650
+  },
+  {
+    "originalPath": "frontend/src/rendering/cinema-timing.js",
+    "archiveFile": "cinema-timing.js",
+    "sha256": "5bd346afe6e10a60f010a1777c8e39ccb3a53a6e3193ff241cde2437177a2d0d",
+    "bytes": 255
+  },
+  {
+    "originalPath": "tests/unit/gift-flight-queue.test.ts",
+    "archiveFile": "gift-flight-queue.test.ts",
+    "sha256": "29b5603702379856256640349eb19d84ed13dd8fe216ae243d6b6b689401c9be",
+    "bytes": 1511
+  }
+]

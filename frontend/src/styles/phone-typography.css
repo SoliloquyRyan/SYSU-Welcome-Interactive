@@ -1,0 +1,14 @@
+/* Route-scoped: local Noto for all phone text, including controls and dialogs.
+   Emoji and glyphs outside Noto's coverage retain readable platform fallbacks. */
+.v2-welcome, .welcome-route-state {
+  --font-family-cjk: 'Welcome Sans SC', 'Noto Sans SC', sans-serif;
+  --font-family-ui: var(--font-family-cjk);
+  --font-family-display: var(--font-family-cjk);
+  --font-family-signal: var(--font-family-cjk);
+  --font-family-data: var(--font-family-cjk);
+  --font-family-mono: var(--font-family-cjk);
+  font-family: 'Welcome Sans SC', 'Noto Sans SC', sans-serif;
+}
+.v2-welcome *, .welcome-route-state * {
+  font-family: 'Welcome Sans SC', 'Noto Sans SC', sans-serif;
+}

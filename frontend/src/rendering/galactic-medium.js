@@ -39,7 +39,6 @@ export function galacticNoise() {
 }
 
 // Static / Canvas fallback shares the same shape, light and orientation.
-export const STELLAR_ART = Object.freeze({ skyTop:'#050506', skyBottom:'#09090b', silver:'#bbcbd0', gold:'#e1d2b1' })
 export function onStellarPlateReady() { return () => {} }
 export function stellarPlateStatus() { return 'procedural-spiral' }
 let fallbackPlate

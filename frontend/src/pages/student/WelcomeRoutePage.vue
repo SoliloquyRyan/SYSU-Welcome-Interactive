@@ -101,6 +101,8 @@ export function createWelcomeRouteController({
 </script>
 
 <script setup>
+import '../../styles/mobile-font.css'
+import '../../styles/phone-typography.css'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import WelcomePage from './WelcomePage.vue'
 import V2WelcomeExperience from './V2WelcomeExperience.vue'
@@ -140,6 +142,7 @@ onBeforeUnmount(() => controller.unmount())
     class="welcome-route-state"
     :role="surface === 'error' ? 'alert' : 'status'"
   >
+    <span aria-hidden="true" class="route-star">✦</span>
     <p>{{ surface === 'error' ? errorMessage : '正在确认手机端协议…' }}</p>
     <button
       v-if="surface === 'error'"
@@ -156,4 +159,5 @@ onBeforeUnmount(() => controller.unmount())
 .welcome-route-state{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;width:min(100%,430px);height:100dvh;margin:auto;padding:24px;color:#f2f6ff;background:#030713;text-align:center}
 .welcome-route-retry{min-width:112px;min-height:44px;border:1px solid rgba(136,196,255,.72);border-radius:999px;padding:10px 24px;color:#f7fbff;background:#123763;font:inherit;font-weight:700;cursor:pointer}
 .welcome-route-retry:focus-visible{outline:3px solid #b8dcff;outline-offset:3px}
+.route-star{font-size:44px;color:#c6b6df;line-height:1}
 </style>

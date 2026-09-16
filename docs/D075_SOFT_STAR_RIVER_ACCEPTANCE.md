@@ -15,7 +15,7 @@
 
 45 项相关单测与 E2E 类型检查已通过。新增八小时、320/390/横屏/1920/超宽屏运镜边界检查，确保视野不会露出素材边缘。两轮 Chromium 六项三端与布局回归通过，强纹理阶段报告单独保留在 `output/galaxy-d075/browser-first-pass.json` 和 `browser-projection-pass.json`；这些历史轮次不代替最终柔光素材复验。
 
-最终柔光版 Chromium 6 项三端与布局回归通过，报告 `output/galaxy-d075/browser-soft-chromium.json`，实际截图在 `soft-actual`、`soft-mobile`。覆盖 320/375/390、横屏、键盘空间、字体失败、聊天/礼物、节目与协同、入场计数、抽奖队列、片尾和 OBS 透明稳态。最终纹理边缘羽化单独检查 46% 收束帧；构建重新生成，避免漏入最后的修订。浏览器专项验证正常手机帧变化、减少动态帧一致、图片失败程序化回退、禁用 WebGL2 后 Canvas2D 可见及静态停止，记录 `visual-checks.json`。`soft-preview/source-manifest.json` 绑定正式渲染组件及 80,798 字节 WebP；离线预览 553,287 字节，未访问数据库。1672×941 原图和完整两轮编辑提示保存在 `frontend/src/assets/mobile/star-river-soft-d075.md` 附近。前端 `/welcomeparty/` 构建、文档检查和差异空白检查通过；未新增运行依赖。
+最终柔光版 Chromium 6 项三端与布局回归通过，报告 `output/galaxy-d075/browser-soft-chromium.json`，实际截图在 `soft-actual`、`soft-mobile`。覆盖 320/375/390、横屏、键盘空间、字体失败、聊天/礼物、节目与协同、入场计数、抽奖队列、片尾和 OBS 透明稳态。最终纹理边缘羽化单独检查 46% 收束帧；构建重新生成，避免漏入最后的修订。浏览器专项验证正常手机帧变化、减少动态帧一致、图片失败程序化回退、禁用 WebGL2 后 Canvas2D 可见及静态停止，记录 `visual-checks.json`。`soft-preview/source-manifest.json` 绑定正式渲染组件及 80,798 字节 WebP；离线预览 553,287 字节，未访问数据库。1672×941 原图和完整两轮编辑提示保存在 [归档素材与提示词](./archive/visual-assets/mobile/star-river-soft-d075.md) 附近。前端 `/welcomeparty/` 构建、文档检查和差异空白检查通过；未新增运行依赖。
 
 实体手机、OBS、投影亮度/黑位与长时温升仍需现场确认。自动检查与截图不代替负责人审美签核。
 

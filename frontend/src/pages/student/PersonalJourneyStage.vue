@@ -15,6 +15,7 @@ const props = defineProps({
   paused: { type: Boolean, default: false },
   color: { type: String, default: '#ffe3ad' },
   ownStar: { type: Object, default: null },
+  publicStars: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['phase-complete'])
@@ -26,9 +27,7 @@ function applyVisualState() {
   renderer?.setState({
     color: props.color,
     ownStar: props.ownStar,
-    // D-030: the phone's ambient field is local visual atmosphere. It must
-    // not change density or composition with the participant population.
-    publicStars: [],
+    publicStars: props.publicStars,
   })
 }
 
@@ -49,6 +48,7 @@ function applyPhase() {
 
 onMounted(() => {
   renderer = createPersonalJourneyRenderer(canvas.value, {
+    audienceOnly: true,
     reduced: props.reduced,
     paused: props.paused,
   })
@@ -57,7 +57,7 @@ onMounted(() => {
 
 })
 
-watch(() => [props.color, props.ownStar], applyVisualState, { deep: true })
+watch(() => [props.color, props.ownStar, props.publicStars], applyVisualState, { deep: true })
 watch(() => [props.phase, props.playing], applyPhase)
 watch(() => props.paused, (next) => renderer?.setPaused(next))
 watch(() => props.reduced, (next) => {

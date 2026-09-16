@@ -773,6 +773,10 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     const before = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
     const gift = before.currentProgram!.giftCatalog[0]!
     const sent = participantCommand(0, { command: 'SEND_GIFT', expectedParticipantRevision: 2, programId, giftId: gift.id, quantity: 5 })
+    const publicGift = JSON.parse(database.prepare("SELECT payload_json FROM v2_domain_events WHERE event_name='gift.sent' AND stream_id='public' ORDER BY stream_seq DESC LIMIT 1").pluck().get() as string).gift
+    expect(publicGift.displayColor).toBe(admitted.participant.displayColor)
+    expect(publicGift.quantity).toBe(5)
+    for (const key of ['identityId', 'participantId', 'studentNumber', 'displayName', 'publicStarId']) expect(publicGift).not.toHaveProperty(key)
     expect(sent.participant.powerBalance).toBe(before.participant.powerBalance - gift.powerCost * 5)
     expect(database.prepare('SELECT COUNT(*) FROM v2_gift_transactions WHERE program_id = ? AND gift_id = ?').pluck().get(programId, gift.id)).toBe(5)
     expect(readV2ScreenSnapshot(database, NOW).currentProgram).toMatchObject({ id: programId, heat: gift.powerCost * 5 })

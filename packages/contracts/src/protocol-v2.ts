@@ -347,6 +347,7 @@ export const V2PublicGiftEventSchema = z
   .object({
     giftEventId: V2EntityIdSchema,
     showStarship: z.boolean().optional(),
+    displayColor: V2DisplayColorSchema.optional(),
     programId: V2EntityIdSchema,
     giftId: V2EntityIdSchema,
     giftName: z.string().trim().min(1).max(80),

@@ -29,7 +29,7 @@ await mkdir(output, { recursive: true })
 await writeFile(path.join(output, 'index.html'), html)
 const sources = ['frontend/preview/credits/main.js', 'frontend/preview/credits/preview.css',
   'frontend/src/pages/screen/ClosingCredits.vue', 'frontend/src/pages/admin/program-catalog.js', 'docs/event-program-2026.json', 'frontend/src/components/ArrivalCount.vue', 'frontend/src/pages/student/PersonalJourneyStage.vue',
-  'frontend/src/components/GiftStarshipFlight.vue', 'frontend/src/rendering/galactic-medium.js',
+  'frontend/src/components/GiftSkyEffects.vue', 'frontend/src/rendering/galactic-medium.js',
   'frontend/src/rendering/cinema-timing.js', 'frontend/src/pages/screen/cinematic-galaxy-scene.js',
   'frontend/src/pages/screen/galaxy-renderer.js',
   'frontend/src/pages/student/personal-journey-renderer.js',

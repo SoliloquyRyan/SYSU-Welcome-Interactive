@@ -1,5 +1,5 @@
 <script setup>
-import { createGiftFlightQueue } from "../../rendering/gift-flight-queue"
+import { createGiftSkyQueue } from '../../rendering/gift-sky-queue'
 import {
   computed,
   nextTick,
@@ -31,12 +31,15 @@ import '../../styles/mobile-font.css'
 import GiftSignalIcon from './GiftSignalIcon.vue'
 import PersonalJourneyStage from './PersonalJourneyStage.vue'
 import ProgramStageBackground from '../../components/ProgramStageBackground.vue'
+import StellarIcon from '../../components/StellarIcon.vue'
+import { starCityTheme, starCityStyle, programBackground } from '../../rendering/star-city-theme'
+import { programVisual } from '../../rendering/program-visuals'
 import MobileProgramOpening from './MobileProgramOpening.vue'
 import { createMobileProgramOpeningGate } from '../../rendering/mobile-program-opening'
 import PersonalMemento from './PersonalMemento.vue'
 import OpeningMusic from './OpeningMusic.vue'
 import MobileBarrage from './MobileBarrage.vue'
-import GiftStarshipFlight from '../../components/GiftStarshipFlight.vue'
+import GiftSkyEffects from '../../components/GiftSkyEffects.vue'
 import { CINEMA_TIMING } from '../../rendering/cinema-timing'
 import { BARRAGE_COLORS, barragePaint } from '../../services/barrage-colors'
 import { programCredits } from '../../services/program-credits'
@@ -98,14 +101,10 @@ const studentNumber = ref('')
 const colorKelvin = ref(STAR_TEMPERATURE_DEFAULT)
 const liveBarrages = ref([])
 const giftFlights = ref([])
-const giftAnnouncement = ref('')
-const giftFlightQueue = createGiftFlightQueue({
-  duration: () => reducedMotion.value ? CINEMA_TIMING.starshipStaticMs : CINEMA_TIMING.starshipPhoneMs + 200,
-  gap: CINEMA_TIMING.starshipGapMs,
-  onChange: flight => {
-    giftFlights.value = flight ? [flight] : []
-    giftAnnouncement.value = flight ? '星舰 ×' + flight.quantity : ''
-  },
+const giftAggregate = ref(null)
+const giftFlightQueue = createGiftSkyQueue({
+  compact: true, reduced: () => reducedMotion.value,
+  onChange: ({ effects, aggregate }) => { giftFlights.value = effects; giftAggregate.value = aggregate },
 })
 const seenGiftFlights = new Set()
 function clearLiveBarrages() {
@@ -118,13 +117,12 @@ function clearGiftFlights() {
   giftFlightQueue.clear()
 }
 function launchGiftFlight(gift) {
+  if (realtime.state.value !== 'online' || activeTab.value !== 'scene' || mobileProgramOpening.value || snapshot.value?.liveInteraction?.phase !== 'IDLE') return
   if (snapshot.value?.stage?.mode && snapshot.value.stage.mode !== 'PROGRAM' || runtime.value?.status !== 'RUNNING' || runtime.value?.currentScene !== 'PROGRAM_SUPPORT' || snapshot.value?.presentation?.type !== 'NONE' || currentProgram.value?.id !== gift.programId) return
-  if (document.hidden || gift.showStarship !== true || gift.giftId !== 'gift-starship' || seenGiftFlights.has(gift.giftEventId)) return
-  colorPickerOpen.value = false
+  if (document.hidden || seenGiftFlights.has(gift.giftEventId)) return
   seenGiftFlights.add(gift.giftEventId)
   if (seenGiftFlights.size > 128) seenGiftFlights.delete(seenGiftFlights.values().next().value)
-  const flight = { id: gift.giftEventId, quantity: gift.quantity ?? 1 }
-  giftFlightQueue.enqueue(flight)
+  giftFlightQueue.enqueue(gift)
 }
 const barrageColor = ref('white')
 const barrageDraft = ref('')
@@ -192,6 +190,8 @@ const modalOpen = computed(() => giftOpen.value || logoutOpen.value || barrageCo
 const headerUnavailable = computed(() => modalOpen.value || Boolean(cinematic.value))
 const sceneCopy = computed(() => mobileSceneCopy(snapshot.value))
 const currentProgram = computed(() => snapshot.value?.currentProgram ?? null)
+const phoneVisual = computed(() => programVisual(currentProgram.value, snapshot.value?.stage))
+const phoneSkyPoints = ref([])
 const liveInteraction = computed(() => snapshot.value?.liveInteraction ?? null)
 const buzzerCountdown = useBuzzerCountdown(liveInteraction, computed(() => snapshot.value?.generatedAt))
 const selectedGiftId = ref('gift-glimmer')
@@ -244,6 +244,7 @@ const discoveryActive = computed(() =>
   cinematic.value === 'discovery-pending' || cinematic.value === 'discovering',
 )
 const welcomeStyle = computed(() => ({
+  ...starCityStyle(starCityTheme({ program: currentProgram.value, stage: snapshot.value?.stage, presentation: snapshot.value?.presentation, liveInteraction: snapshot.value?.liveInteraction })),
   '--selected-color': selectedColor.value,
   '--temperature-spectrum': `linear-gradient(90deg, ${temperatureSpectrum})`,
   '--discovery-duration': `${DISCOVERY_CINEMATIC_DURATION_MS}ms`,
@@ -632,6 +633,11 @@ async function onPublicEvent(frame) {
 }
 
 const realtime = useV2ParticipantRealtime({ snapshot, refresh: refreshSnapshot, onPublicEvent })
+// Compare each lifecycle value. A SEND_GIFT HTTP snapshot may arrive after its
+// public event; replacing that snapshot must not erase the confirmed animation.
+watch([() => runtime.value?.status, () => runtime.value?.currentScene, () => snapshot.value?.currentProgram?.id,
+  () => snapshot.value?.stage?.mode, () => snapshot.value?.liveInteraction?.phase, () => snapshot.value?.presentation.type,
+  () => realtime.state.value, () => activeTab.value, () => mobileProgramOpening.value], clearGiftFlights)
 watch(() => [runtime.value?.status, runtime.value?.currentScene, snapshot.value?.presentation.type, realtime.state.value], () => {
   if (runtime.value?.status !== 'RUNNING' || runtime.value?.currentScene !== 'PROGRAM_SUPPORT'
     || snapshot.value?.presentation.type !== 'NONE' || realtime.state.value !== 'online') finishMobileProgramOpening()
@@ -1040,6 +1046,7 @@ watch(() => runtime.value?.status, (next, previous) => {
 })
 
 watch(reducedMotion, (next) => {
+  clearGiftFlights()
   if (next) { finishCinematic(); finishMobileProgramOpening() }
 })
 
@@ -1131,6 +1138,7 @@ onBeforeUnmount(() => {
     }"
     :style="welcomeStyle"
     data-visual-palette="orbital-signal-spectrum"
+    data-ui-theme="personal-star-city"
     :data-program-opening="mobileProgramOpening ? 'playing' : 'settled'"
   >
     <OpeningMusic :scene="runtime?.currentScene" :status="runtime?.status" />
@@ -1143,17 +1151,11 @@ onBeforeUnmount(() => {
       :paused="pageHidden || runtime?.status === 'PAUSED'"
       :color="selectedColor"
       :own-star="journeyOwnStar"
+      :public-stars="snapshot?.publicStars ?? []"
     />
-    <ProgramStageBackground v-else compact :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED'" />
+    <ProgramStageBackground v-else compact :stars="snapshot?.publicStars ?? []" :effects="giftFlights" :own-star-id="participant?.ownPublicStarId" :visual="phoneVisual" :variant="programBackground(currentProgram, snapshot?.stage)" :theme="starCityTheme({ program: currentProgram, stage: snapshot?.stage, presentation: snapshot?.presentation, liveInteraction: snapshot?.liveInteraction }).id" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED'" @sky-points="phoneSkyPoints = $event" />
     <MobileProgramOpening v-if="mobileProgramOpening && programBackgroundVisible" @finish="finishMobileProgramOpening" />
-    <GiftStarshipFlight
-      v-for="flight in giftFlights"
-      :key="flight.id"
-      surface="phone"
-      :quantity="flight.quantity"
-      :reduced="reducedMotion"
-    />
-    <span class="sr-only" aria-live="assertive">{{ giftAnnouncement }}</span>
+    <GiftSkyEffects compact :points="phoneSkyPoints" :effects="giftFlights" :aggregate="giftAggregate" :reduced="reducedMotion" />
 
     <header
       class="v2-welcome__header"
@@ -1426,7 +1428,7 @@ onBeforeUnmount(() => {
                   :disabled="!actionAllowed(snapshot, 'POST_BARRAGE') || snapshot.interaction.barragePaused"
                   :placeholder="snapshot.interaction.barragePaused ? '现场暂停接收弹幕' : '发送弹幕…'"
                 />
-                <button ref="barrageSend" class="dock-primary dock-primary--compact" type="submit" :disabled="!writesReady || !actionAllowed(snapshot, 'POST_BARRAGE') || snapshot.interaction.barragePaused || Boolean(busy)">发送</button>
+                <button ref="barrageSend" class="dock-primary dock-primary--compact" type="submit" :disabled="!writesReady || !actionAllowed(snapshot, 'POST_BARRAGE') || snapshot.interaction.barragePaused || Boolean(busy)"><StellarIcon name="send" />发送</button>
               </div>
               <div class="composer-tools">
                 <div class="composer-identity"><button class="style-trigger" type="button" aria-controls="barrage-style-picker" :aria-expanded="colorPickerOpen" @click="colorPickerOpen = !colorPickerOpen">星色 <span :style="{ background: barrageSwatch(selectedBarrageStyle) }"></span></button><small>{{ personalStarCode }} · {{ barrageLength }} / 40</small></div>
@@ -1511,7 +1513,7 @@ onBeforeUnmount(() => {
         </div>
 
         <nav class="dock-tabs" aria-label="手机端主导航">
-          <button v-for="tab in V2_MOBILE_TABS" :key="tab.id" type="button" :aria-current="activeTab === tab.id ? 'page' : undefined" @click="selectTab(tab.id)">{{ tab.label }}</button>
+          <button v-for="tab in V2_MOBILE_TABS" :key="tab.id" type="button" :aria-current="activeTab === tab.id ? 'page' : undefined" @click="selectTab(tab.id)"><StellarIcon :name="tab.id" />{{ tab.label }}</button>
         </nav>
       </template>
     </aside>
@@ -3162,3 +3164,5 @@ textarea:focus-visible {
 .v2-welcome.is-completed .operation-dock{background:linear-gradient(150deg,rgba(20,37,55,.55),rgba(3,10,20,.5));border-radius:18px}
 
 </style>
+
+<style scoped src="./star-city-mobile.css"></style>

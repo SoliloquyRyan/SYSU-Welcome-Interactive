@@ -6,7 +6,7 @@ import { createIdempotencyKey } from '../../services/api'
 import { catalogChanges, editableCatalog, eventProgramPreset, programKindLabels, validateCatalog } from './program-catalog'
 
 const props = defineProps({ snapshot: { type: Object, required: true }, canWrite: Boolean, savedSignal: Number })
-const emit = defineEmits(['select', 'apply'])
+const emit = defineEmits(['select', 'apply', 'prepare'])
 const selected = ref('')
 const draft = ref(null)
 const baseCatalog = ref(null)
@@ -31,6 +31,7 @@ watch(() => props.snapshot.programCatalog.revision, () => {
   if (!programs.value.some(({ id }) => id === selected.value)) selected.value = current.value?.id ?? programs.value[0]?.id ?? ''
 })
 watch(() => props.savedSignal, () => { draft.value = null; importError.value = '' })
+watch(selected, id => emit('prepare', id))
 
 async function preview(catalog) {
   importError.value = ''
@@ -94,19 +95,21 @@ function apply() {
     </div>
     <div class="program-control">
       <label for="v2-current-program">当前节目</label>
-      <select id="v2-current-program" v-model="selected" :disabled="!canSelect">
+      <select id="v2-current-program" v-model="selected">
         <option v-for="program in programs" :key="program.id" :value="program.id">{{ program.kind === 'PERFORMANCE' ? `${program.displayCode} · ${program.title}` : program.title }}</option>
       </select>
       <BaseButton variant="secondary" :disabled="!canSelect || !selected || selected === current?.id" @click="emit('select', selected)">设为当前节目</BaseButton>
       <BaseButton :disabled="!canSelect || !nextProgram" @click="emit('select', nextProgram.id)">{{ current ? '切换到下一项' : '开始首个节目' }}</BaseButton>
     </div>
     <p v-if="current && !current.giftsEnabled" class="interlude-notice" role="status">{{ current.title }} · 礼物已关闭</p>
-    <details class="catalog-overview"><summary>查看完整目录 · {{ programs.length }} 项</summary>
+    <details class="catalog-overview" open><summary>查看完整目录 · {{ programs.length }} 项</summary>
       <ol class="running-list">
-        <li v-for="program in programs" :key="program.id" :class="{ current: program.state === 'CURRENT', interaction: program.kind !== 'PERFORMANCE' }">
+        <li v-for="program in programs" :key="program.id" :class="{ current: program.state === 'CURRENT', prepared: selected === program.id, interaction: program.kind !== 'PERFORMANCE' }">
+          <button type="button" class="rundown-item" :aria-pressed="selected === program.id" @click="selected = program.id">
           <span v-if="program.kind === 'PERFORMANCE'">{{ program.displayCode }}</span>
           <div><strong>{{ program.title }}</strong><small v-if="program.kind === 'PERFORMANCE' && program.performers">{{ program.performers }}</small><small v-if="program.kind === 'PERFORMANCE'">{{ program.formatLabel || '形式待定' }} · {{ program.durationLabel || '时长待定' }}</small></div>
-          <span v-if="program.state === 'CURRENT' || program.kind === 'PERFORMANCE'" class="program-status">{{ program.state === 'CURRENT' ? '进行中' : `动力值 ${program.heat}` }}</span>
+          <span class="program-status">{{ program.state === 'CURRENT' ? '正在进行' : selected === program.id ? '待执行' : program.state === 'NEXT' ? '下一项' : '' }}</span>
+          </button>
         </li>
       </ol>
     </details>
@@ -191,3 +194,5 @@ summary { cursor: pointer; min-height: 44px; display: list-item; align-content: 
 @media(max-width:850px){.program-control{grid-template-columns:minmax(0,1fr) auto auto}.program-control>label{grid-column:1/-1}.program-control>select{min-width:0}}
 @media(max-width:600px){.program-cues>div{padding:14px}.program-cues>div+div{border-left:0;border-top:1px solid #91b9e426}.program-control{grid-template-columns:1fr 1fr}.program-control>select{grid-column:1/-1;width:100%}.program-control>button{padding-inline:8px;white-space:normal;line-height:1.4}.catalog-actions{gap:8px}.catalog-actions>button{flex:1 1 130px;min-width:0;white-space:normal;line-height:1.4}.running-list li{grid-template-columns:24px minmax(0,1fr);gap:6px 10px}.running-list li>.program-status{grid-column:2}.editor-list{padding:0 10px;max-height:60vh}.editor-list li{gap:8px}.editor-fields{grid-template-columns:minmax(0,1fr);gap:10px}.title-field,.performers-field{grid-column:1}.row-actions{gap:6px}.row-actions>button{flex:1;min-width:0;padding-inline:8px}.catalog-editor>.catalog-actions>button:last-child{flex-basis:100%}.program-cues strong{font-size:1rem}}
 </style>
+
+<style scoped src="./obs-rundown.css"></style>

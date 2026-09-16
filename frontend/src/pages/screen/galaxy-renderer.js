@@ -558,8 +558,8 @@ export function createGalaxyRenderer(canvas, options = {}) {
   const context = canvas.getContext('2d', { alpha: true })
   if (!context) throw new Error('2D canvas context is unavailable')
   canvas.dataset.galaxyStructure = 'inclined-flowing-spiral'
-  canvas.dataset.decorativeStars = String(DECORATIVE_STAR_COUNT)
-  canvas.dataset.visualReferenceStars = String(FORMAL_VISUAL_REFERENCE_COUNT)
+  canvas.dataset.decorativeStars = String(options.audienceOnly ? 0 : DECORATIVE_STAR_COUNT)
+  canvas.dataset.visualReferenceStars = String(options.audienceOnly ? 0 : FORMAL_VISUAL_REFERENCE_COUNT)
   canvas.dataset.densitySystem = 'layered-spiral'
   canvas.dataset.arrivalStyle = 'offscreen-meteor-orbital-capture'
   canvas.dataset.activeArrivalMeteors = '0'
@@ -1456,6 +1456,7 @@ export function createGalaxyRenderer(canvas, options = {}) {
   }
 
   function drawDecorativeStars(timestamp, transitionState, densityState) {
+    if (options.audienceOnly) return
     if (!transitionState.openingProgram && edgeMix >= 0.998 && !programBackdrop) return
     const motionTimestamp = reduced ? 0 : timestamp
     const visibility = transitionState.visibility * mix(1, 1.08, cooperativeMix * cooperative.ratio)
@@ -1808,7 +1809,7 @@ export function createGalaxyRenderer(canvas, options = {}) {
     if (!transitionState.openingProgram && mode === 'PROGRAM_SUPPORT' && edgeMix >= 1 && !programBackdrop) return
     if (!reduced && options.cinematicSceneFactory) {
       if (!cinematicScene) {
-        cinematicScene = options.cinematicSceneFactory(canvas, { stars, onFailure(reason) {
+        cinematicScene = options.cinematicSceneFactory(canvas, { stars, audienceOnly: options.audienceOnly === true, onFailure(reason) {
           canvas.dataset.supernovaFallbackReason = reason
           canvas.dataset.supernovaWarmup = 'fallback'
           canvas.dataset.galaxyRenderer = 'canvas2d-fallback'

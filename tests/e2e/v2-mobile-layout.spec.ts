@@ -84,9 +84,7 @@ test('keeps mobile controls reachable and builds a memento only from confirmed p
     await admin.getByRole('button', { name: '登录', exact: true }).click()
     await expect(admin.getByText('实时已连接', { exact: true })).toBeVisible()
     admin.on('dialog', (dialog) => void dialog.accept())
-    await admin.getByRole('button', { name: '切换为现场', exact: true }).click()
-    await admin.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
-    await expect(admin.locator('.runtime-facts')).toContainText('现场')
+    await admin.getByLabel('开始模式', { exact: true }).selectOption('LIVE')
     await admin.getByRole('button', { name: '开始活动', exact: true }).click()
     await admin.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
     await expect(page.getByRole('button', { name: '启动我的星', exact: true })).toBeVisible()
@@ -167,7 +165,7 @@ test('keeps mobile controls reachable and builds a memento only from confirmed p
   }
 })
 
-test('loads the local phone font without leaking it to other surfaces and remains usable when it fails', async ({ browser, demo }) => {
+test('loads local Noto on phone and screen, isolates display faces, and remains usable on font failure', async ({ browser, demo }) => {
   const context = await browser.newContext({ baseURL: demo.baseURL, viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
   const fallbackContext = await browser.newContext({ baseURL: demo.baseURL, viewport: { width: 320, height: 568 }, reducedMotion: 'reduce' })
   const fontPaths = new Set<string>()
@@ -185,17 +183,19 @@ test('loads the local phone font without leaking it to other surfaces and remain
   try {
     await page.goto('/admin')
     await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible()
+    expect(fontPaths.size).toBe(0)
     await page.goto('/screen')
     await expect(page.locator('canvas').first()).toBeAttached()
-    expect(fontPaths.size).toBe(0)
+    await page.evaluate(() => document.fonts.ready)
+    fontPaths.clear()
 
     await page.goto(`/welcome?token=${encodeURIComponent(demo.credentials.participants[0].inviteToken)}`)
     await expect(page.getByRole('button', { name: '确认星色', exact: true })).toBeEnabled()
     await expect.poll(() => page.evaluate(() => Array.from(document.fonts).some((font) =>
       font.family.replaceAll('"', '') === 'Welcome Sans SC' && font.status === 'loaded',
     ))).toBe(true)
-    expect(fontPaths.size).toBe(1)
-    expect([...fontPaths][0]).toContain('welcome-sans-sc-ui')
+    expect([...fontPaths].some(p => p.includes('welcome-sans-sc-ui'))).toBe(true)
+    expect([...fontPaths].every(p => p.includes('welcome-sans-sc-'))).toBe(true)
     const requestOrigins = await page.evaluate(() => performance.getEntriesByType('resource')
       .filter((entry) => entry.name.includes('welcome-sans-sc-ui') && entry.name.includes('.woff2'))
       .map((entry) => new URL(entry.name).origin))

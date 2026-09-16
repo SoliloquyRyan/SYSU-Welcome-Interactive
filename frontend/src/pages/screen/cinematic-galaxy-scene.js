@@ -35,8 +35,8 @@ function particle(star, decorative = false) {
     palette: starSpectralPalette(decorative ? '#c3d0df' : star.displayColor ?? '#e5eaec') }
 }
 
-export function makePublicStars(publicStars) {
-  return [...Array.from({ length: DECORATIVE_STAR_COUNT }, (_, i) => particle({ formationSlot: `decorative:${i}` }, true)),
+export function makePublicStars(publicStars, { audienceOnly = false } = {}) {
+  return [...Array.from({ length: audienceOnly ? 0 : DECORATIVE_STAR_COUNT }, (_, i) => particle({ formationSlot: `decorative:${i}` }, true)),
     ...publicStars.slice(0, TECHNICAL_STAR_CAPACITY).map(star => particle(star))]
 }
 
@@ -54,10 +54,10 @@ function glow(context, x, y, radius, stops) {
   context.fillStyle = gradient; context.fillRect(x - radius, y - radius, radius * 2, radius * 2)
 }
 
-export function createCinematicGalaxyScene(canvas, { stars: publicStars = [], onFailure = () => {} } = {}) {
+export function createCinematicGalaxyScene(canvas, { stars: publicStars = [], audienceOnly = false, onFailure = () => {} } = {}) {
   const context = canvas.getContext('2d', { alpha: true, desynchronized: true })
   if (!context) throw new Error('Canvas2D unavailable')
-  let dust, failed = false, stars = makePublicStars(publicStars), destroyed = false
+  let dust, failed = false, stars = makePublicStars(publicStars, { audienceOnly }), destroyed = false
   let count = Math.min(publicStars.length, TECHNICAL_STAR_CAPACITY)
   const fail = reason => { failed = true; context.clearRect(0, 0, canvas.width, canvas.height); onFailure(reason) }
   const projectStar = (star, seconds, camera) => projectRiverStar(star, seconds, camera, canvas.width, canvas.height)
@@ -163,10 +163,10 @@ export function createCinematicGalaxyScene(canvas, { stars: publicStars = [], on
   return {
     draw,
     get failed() { return failed },
-    setStars(value) { count = Math.min(value.length, TECHNICAL_STAR_CAPACITY); stars = makePublicStars(value) },
+    setStars(value) { count = Math.min(value.length, TECHNICAL_STAR_CAPACITY); stars = makePublicStars(value, { audienceOnly }) },
     diagnostics(seconds) {
       const camera = cameraAt(seconds, lastFrame.programBackdrop && lastFrame.progress >= 1 ? 0 : lastFrame.progress ?? clamp((seconds-CUE_AT)/TRANSITION_SECONDS),lastFrame.live === true)
-      return { participantCount: stars.filter(s => !s.decorative).length, decorativeCount: DECORATIVE_STAR_COUNT,
+      return { participantCount: stars.filter(s => !s.decorative).length, decorativeCount: audienceOnly ? 0 : DECORATIVE_STAR_COUNT,
         camera, samplePoints: stars.filter(s => !s.decorative).slice(0, 8).map(s => ({ slot: s.slot, ...projectStar(s, seconds, camera) })),
         visibleCanvas: { width: canvas.width, height: canvas.height },
         offscreen: dust ? { width: dust.canvas.width, height: dust.canvas.height } : null, failed }

@@ -1433,6 +1433,7 @@ export function executeV2ParticipantOnboardingCommand(
           interactionRevision,
           gift: {
             giftEventId,
+            ...(participant.displayColor ? { displayColor: participant.displayColor } : {}),
             showStarship: gift.id === 'gift-starship' && Number(database.prepare(
               "SELECT COUNT(DISTINCT CASE WHEN substr(id, 1, 5) = 'gift:' THEN substr(id, 1, 41) ELSE id END) FROM v2_gift_transactions WHERE reset_epoch = ? AND program_id = ? AND gift_id = ?",
             ).pluck().get(runtime.resetEpoch, program.id, gift.id)) <= 2,

@@ -6,6 +6,9 @@ import BaseButton from '../../components/ui/BaseButton.vue'
 import BaseCard from '../../components/ui/BaseCard.vue'
 import StatusPill from '../../components/ui/StatusPill.vue'
 import V2ProgramCatalog from './V2ProgramCatalog.vue'
+import PublicStagePreview from './PublicStagePreview.vue'
+import { createAdminWorkflow } from './admin-workflow'
+import { watch } from 'vue'
 import V2AwardsConsole from './V2AwardsConsole.vue'
 import { useV2AdminRealtime } from '../../composables/useV2AdminRealtime'
 import { ApiError, createIdempotencyKey, publicErrorMessage, v2AdminApi } from '../../services/api'
@@ -48,6 +51,10 @@ const username = ref(protectedRuntime ? 'event-admin' : 'demo-admin')
 const password = ref('')
 const snapshot = ref(null)
 const busy = ref('')
+const workflowBusy = ref('')
+const workflowProgress = ref(null)
+const workflow = createAdminWorkflow()
+const startMode = ref('REHEARSAL')
 const errorMessage = ref('')
 const successMessage = ref('')
 const receiptMessage = ref('')
@@ -71,7 +78,12 @@ const currentInteractionCode = computed(() => currentProgram.value?.kind !== 'PE
 const liveInteraction = computed(() => snapshot.value?.liveInteraction ?? { phase: 'IDLE', voteCandidates: [], totalVotes: 0 })
 const buzzerCountdown = useBuzzerCountdown(liveInteraction, computed(() => snapshot.value?.generatedAt))
 const barrages = computed(() => snapshot.value?.publishedBarrages ?? [])
-const canWrite = computed(() => realtime.state.value === 'online' && !busy.value)
+const canWrite = computed(() => realtime.state.value === 'online' && !busy.value && !workflowBusy.value)
+const nextProgram = computed(() => snapshot.value?.programs.find(item => item.state === 'NEXT'))
+const preparedProgram = computed(() => snapshot.value?.programs.find(item => item.id === selectedProgramId.value))
+const canFinishInteraction = computed(() => canStageWrite.value && runtime.value?.status === 'RUNNING' && runtime.value?.currentScene === 'PROGRAM_SUPPORT'
+  && presentation.value?.type === 'NONE' && ['BUZZER_LOCKED', 'VOTE_REVEALED'].includes(liveInteraction.value.phase) && Boolean(nextProgram.value))
+watch(() => runtime.value?.mode, mode => { if (mode) startMode.value = mode })
 const roleWrite = role => canWrite.value && snapshot.value?.roles.some(item => item === 'ALL' || item === role)
 const canStageWrite = computed(() => roleWrite('STAGE_CONTROLLER'))
 const canReviewWrite = computed(() => roleWrite('REVIEWER'))
@@ -190,42 +202,34 @@ function feedbackSuffix(command, before, after, result) {
 }
 
 async function runCommand(body, success, allowOverride = false, confirmedWarnings = []) {
+  if (!workflowBusy.value) workflowProgress.value = null
   const ownGeneration = sessionGeneration.capture()
   const before = revisionSnapshot()
   busy.value = body.command; errorMessage.value = ''; successMessage.value = ''; receiptMessage.value = ''
   const applySuccess = async (result) => {
-    if (!sessionGeneration.isCurrent(ownGeneration)) return
+    if (!sessionGeneration.isCurrent(ownGeneration)) return { ok: false }
     await refresh(ownGeneration)
-    if (!sessionGeneration.isCurrent(ownGeneration)) return
+    if (!sessionGeneration.isCurrent(ownGeneration) || !snapshot.value) return { ok: false }
     const suffix = feedbackSuffix(body.command, before, revisionSnapshot(), result)
-    successMessage.value = `${success}${suffix.unchanged}`
+    successMessage.value = success + suffix.unchanged
     receiptMessage.value = suffix.receipt
+    return { ok: true, result, snapshot: snapshot.value }
   }
   try {
-    const result = await v2AdminApi.command(body)
-    await applySuccess(result)
-    return result
+    return await applySuccess(await v2AdminApi.command(body))
   } catch (error) {
-    if (!sessionGeneration.isCurrent(ownGeneration)) return
+    if (!sessionGeneration.isCurrent(ownGeneration)) return { ok: false }
     if (allowOverride && error instanceof ApiError && error.code === 'READINESS_CONFIRMATION_REQUIRED') {
       const warnings = error.details?.warnings ?? snapshot.value.readinessWarnings
-      const alreadyConfirmed = warnings.length > 0
-        && warnings.every((item) => confirmedWarnings.includes(item))
-      const accepted = alreadyConfirmed || await askAction(`现场就绪情况已更新：${warnings.map((item) => warningLabels[item] ?? item).join('；')}。\n仍然推进吗？`)
+      const alreadyConfirmed = warnings.length > 0 && warnings.every(item => confirmedWarnings.includes(item))
+      const accepted = alreadyConfirmed || await askAction('现场就绪情况已更新：' + warnings.map(item => warningLabels[item] ?? item).join('；') + '。仍然推进吗？')
       if (accepted) {
-        try {
-          const result = await v2AdminApi.command({ ...body, idempotencyKey: createIdempotencyKey(), overrideReadinessWarnings: true })
-          await applySuccess(result)
-        } catch (overrideError) {
-          if (sessionGeneration.isCurrent(ownGeneration)) {
-            errorMessage.value = publicErrorMessage(overrideError)
-          }
-        }
+        try { return await applySuccess(await v2AdminApi.command({ ...body, idempotencyKey: createIdempotencyKey(), overrideReadinessWarnings: true })) }
+        catch (overrideError) { if (sessionGeneration.isCurrent(ownGeneration)) errorMessage.value = publicErrorMessage(overrideError) }
       }
     } else errorMessage.value = publicErrorMessage(error)
-  } finally {
-    if (sessionGeneration.isCurrent(ownGeneration)) busy.value = ''
-  }
+    return { ok: false }
+  } finally { if (sessionGeneration.isCurrent(ownGeneration)) busy.value = '' }
 }
 
 async function setMode(mode) {
@@ -233,8 +237,70 @@ async function setMode(mode) {
   return runCommand({ ...base('SET_MODE'), expectedRunRevision: runtime.value.runRevision, targetMode: mode, confirmed: true }, '模式已更新。')
 }
 async function start() {
-  if (!await askAction('确认开始并进入“星海集结”？')) return
-  return runCommand({ ...base('START'), expectedRunRevision: runtime.value.runRevision, confirmed: true }, '全场已开始。')
+  if (!canStageWrite.value || runtime.value.status !== 'READY') return
+  const targetMode = startMode.value, epoch = snapshot.value.resetEpoch
+  if (!await askAction('以' + (targetMode === 'LIVE' ? '现场' : '排练') + '模式开始活动并进入“星海集结”？')) return
+  if (!canStageWrite.value || snapshot.value.resetEpoch !== epoch) return
+  const ready = s => s.runtime.status === 'READY' && s.runtime.currentScene === null
+  const steps = []
+  if (runtime.value.mode !== targetMode) steps.push({ label: '设置开始模式', canRun: ready,
+    build: s => ({ ...base('SET_MODE'), expectedRunRevision: s.runtime.runRevision, targetMode, confirmed: true }),
+    matches: s => ready(s) && s.runtime.mode === targetMode })
+  steps.push({ label: '开始活动', canRun: s => ready(s) && s.runtime.mode === targetMode,
+    build: s => ({ ...base('START'), expectedRunRevision: s.runtime.runRevision, confirmed: true }),
+    matches: s => s.runtime.mode === targetMode && s.runtime.status === 'RUNNING' && s.runtime.currentScene === 'ASSEMBLY' })
+  await runWorkflow('开始活动', steps)
+}
+
+async function runWorkflow(name, steps) {
+  if (workflowBusy.value || busy.value || realtime.state.value !== 'online') return
+  const generation = sessionGeneration.capture()
+  workflowBusy.value = name
+  try {
+    const result = await workflow.run({ steps, read: () => snapshot.value,
+      isCurrent: () => sessionGeneration.isCurrent(generation) && realtime.state.value === 'online',
+      execute: (body, label) => runCommand(body, label + '已完成。'),
+      onProgress: progress => { if (sessionGeneration.isCurrent(generation)) workflowProgress.value = progress },
+    })
+    if (!result.ok && sessionGeneration.isCurrent(generation)) await refresh(generation).catch(() => {})
+  } finally { workflowBusy.value = '' }
+}
+
+async function finishRaffleAndVote() {
+  if (!canStageWrite.value || presentation.value.type !== 'RAFFLE' || liveInteraction.value.phase !== 'IDLE') return
+  const winners = raffle.value?.winners ?? []
+  if (winners.length < 2 || winners.length > 12) return
+  const programId = currentProgram.value?.id, epoch = snapshot.value.resetEpoch, prompt = votePrompt.value.trim() || '谁是卧底 · 现场投票'
+  const signature = winners.map(item => item.raffleDrawId).join(',')
+  if (!await askAction('完成抽取并开放“' + prompt + '”？候选星号：' + winners.map(item => item.publicStarId).join('、') + '。')) return
+  if (!canStageWrite.value || snapshot.value.resetEpoch !== epoch) return
+  const same = s => s.runtime.status === 'RUNNING' && s.runtime.currentScene === 'PROGRAM_SUPPORT' && s.currentProgram?.id === programId
+    && (s.raffle?.winners ?? []).map(item => item.raffleDrawId).join(',') === signature
+  await runWorkflow('抽取转投票', [
+    { label: '收起抽取画面', canRun: s => same(s) && s.presentation.type === 'RAFFLE' && s.liveInteraction.phase === 'IDLE',
+      build: s => ({ ...base('CLOSE_RAFFLE'), expectedRunRevision: s.runtime.runRevision, expectedPresentationRevision: s.presentationRevision, confirmed: true }),
+      matches: s => same(s) && s.presentation.type === 'NONE' },
+    { label: '开放观众投票', canRun: s => same(s) && s.presentation.type === 'NONE' && s.liveInteraction.phase === 'IDLE',
+      build: s => ({ ...base('OPEN_AUDIENCE_VOTE'), expectedInteractionRevision: s.interaction.interactionRevision, prompt, confirmed: true }),
+      matches: s => same(s) && s.liveInteraction.phase === 'VOTE_OPEN' },
+  ])
+}
+
+async function finishInteractionAndNext() {
+  if (!canFinishInteraction.value) return
+  const source = currentProgram.value.id, target = nextProgram.value.id, title = nextProgram.value.title, epoch = snapshot.value.resetEpoch
+  if (!await askAction('收起已完成的互动，并将当前节目切换为“' + title + '”？请同步操作 OBS。')) return
+  if (!canFinishInteraction.value || snapshot.value.resetEpoch !== epoch) return
+  const same = s => s.runtime.status === 'RUNNING' && s.runtime.currentScene === 'PROGRAM_SUPPORT'
+    && s.presentation.type === 'NONE' && s.currentProgram?.id === source && s.programs.find(item => item.state === 'NEXT')?.id === target
+  await runWorkflow('进入下一项', [
+    { label: '收起互动结果', canRun: s => same(s) && ['BUZZER_LOCKED', 'VOTE_REVEALED'].includes(s.liveInteraction.phase),
+      build: s => ({ ...base('CLOSE_LIVE_INTERACTION'), expectedInteractionRevision: s.interaction.interactionRevision, confirmed: true }),
+      matches: s => same(s) && s.liveInteraction.phase === 'IDLE' },
+    { label: '切换下一项', canRun: s => same(s) && s.liveInteraction.phase === 'IDLE',
+      build: s => ({ ...base('SET_PROGRAM'), expectedRunRevision: s.runtime.runRevision, expectedInteractionRevision: s.interaction.interactionRevision, programId: target, confirmed: true }),
+      matches: s => s.currentProgram?.id === target && s.runtime.status === 'RUNNING' && s.runtime.currentScene === 'PROGRAM_SUPPORT' },
+  ])
 }
 function setScene(scene) {
   return runCommand({ ...base('SET_SCENE'), expectedRunRevision: runtime.value.runRevision, expectedPresentationRevision: snapshot.value.presentationRevision, targetScene: scene, confirmed: true }, '排练场景已切换。')
@@ -256,8 +322,8 @@ function selectProgram(id) {
 async function ceremonyCommand(body) {
   if (body.command === 'REVEAL_AWARD' && !await askAction('确定向大屏揭晓当前获奖名单？')) return
   const result = await runCommand({ ...base(body.command), expectedRunRevision: runtime.value.runRevision, ...body }, body.command === 'SET_PROGRAM_HEAT' ? '节目动力值已更新。' : '舞台已更新。')
-  if (result && body.command === 'SAVE_AWARD') awardSavedSignal.value++
-  if (result && body.command === 'SET_PROGRAM_HEAT') heatSavedSignal.value++
+  if (result?.ok && body.command === 'SAVE_AWARD') awardSavedSignal.value++
+  if (result?.ok && body.command === 'SET_PROGRAM_HEAT') heatSavedSignal.value++
 }
 async function applyProgramCatalog({ catalog, expectedCatalogRevision }) {
   const ownGeneration = sessionGeneration.capture()
@@ -266,7 +332,7 @@ async function applyProgramCatalog({ catalog, expectedCatalogRevision }) {
     expectedInteractionRevision: snapshot.value.interaction.interactionRevision,
     expectedCatalogRevision, catalog, confirmed: true,
   }, `节目目录已应用，共 ${catalog.items.length} 项。`)
-  if (result && sessionGeneration.isCurrent(ownGeneration)) catalogSavedSignal.value += 1
+  if (result?.ok && sessionGeneration.isCurrent(ownGeneration)) catalogSavedSignal.value += 1
 }
 async function confirmProgress(command, message, success) {
   const warnings = [...snapshot.value.readinessWarnings]
@@ -322,7 +388,11 @@ function openBuzzer() {
 function openAudienceVote() {
   return liveCommand('OPEN_AUDIENCE_VOTE', { prompt: votePrompt.value.trim() || '谁是卧底 · 现场投票' }, '互动环节二 的观众投票已开放。')
 }
-function revealAudienceVote() {
+async function revealAudienceVote() {
+  if (!canStageWrite.value || liveInteraction.value.phase !== 'VOTE_OPEN') return
+  const epoch = snapshot.value.resetEpoch, round = liveInteraction.value.roundNumber
+  if (!await askAction('结束本轮投票并向大屏揭晓结果？')) return
+  if (!canStageWrite.value || snapshot.value.resetEpoch !== epoch || liveInteraction.value.roundNumber !== round || liveInteraction.value.phase !== 'VOTE_OPEN') return
   return liveCommand('REVEAL_AUDIENCE_VOTE', {}, '投票结果已在大屏揭晓。')
 }
 function closeLiveInteraction() {
@@ -386,19 +456,15 @@ void boot()
   >
     <ActionDialog :request="actionRequest" @answer="answerAction" />
     <header class="v2-heading">
-      <div><p>迎新之夜 · 2026</p><h1 id="v2-admin-title">现场控制台</h1></div>
+      <div class="console-brand"><span class="console-star" aria-hidden="true">✦</span><div><p>迎新之夜 · 2026</p><h1 id="v2-admin-title">现场控制台</h1></div></div>
       <div class="v2-heading-actions">
+        <span v-if="runtime" class="console-mode">{{ runtime.mode === 'LIVE' ? '现场' : '排练' }} · {{ statusLabels[runtime.status] }}</span>
         <StatusPill v-if="snapshot" :tone="realtime.state.value === 'online' ? 'success' : 'warning'">
           {{ realtime.state.value === 'online' ? '实时已连接' : '正在恢复同步' }}
         </StatusPill>
-        <BaseButton v-if="snapshot" variant="secondary" :disabled="Boolean(busy)" @click="logout">退出</BaseButton>
+        <BaseButton v-if="snapshot" variant="secondary" :disabled="Boolean(busy || workflowBusy)" @click="logout">退出</BaseButton>
       </div>
     </header>
-
-    <div v-if="errorMessage || realtime.lastError.value || authState === 'active' && successMessage" class="feedback-stack">
-      <p v-if="errorMessage || realtime.lastError.value" class="feedback error" role="alert">{{ errorMessage || realtime.lastError.value }}</p>
-      <div v-else class="feedback success"><p role="status">{{ successMessage }}</p><details v-if="receiptMessage" class="receipt-details"><summary>操作回执</summary><code>{{ receiptMessage }}</code></details></div>
-    </div>
 
     <BaseCard v-if="authState === 'checking'" padding="md"><p>正在连接控制台…</p></BaseCard>
     <BaseCard v-else-if="authState === 'login'" padding="lg" class="login-card">
@@ -411,7 +477,6 @@ void boot()
     </BaseCard>
 
     <template v-else-if="snapshot">
-
       <BaseCard padding="md" class="runtime-card">
         <div class="runtime-facts">
           <div><span>模式</span><strong>{{ runtime.mode === 'LIVE' ? '现场' : '排练' }}</strong></div>
@@ -421,8 +486,9 @@ void boot()
         </div>
         <div class="control-actions">
           <template v-if="runtime.status === 'READY'">
-            <BaseButton variant="secondary" :disabled="!canStageWrite" @click="setMode(runtime.mode === 'LIVE' ? 'REHEARSAL' : 'LIVE')">切换为{{ runtime.mode === 'LIVE' ? '排练' : '现场' }}</BaseButton>
+            <label class="start-mode-label">开始模式<select v-model="startMode" aria-label="开始模式" :disabled="!canStageWrite"><option value="REHEARSAL">排练</option><option value="LIVE">现场</option></select></label>
             <BaseButton :disabled="!canStageWrite" @click="start">开始活动</BaseButton>
+            <details class="mode-only"><summary>仅切换模式</summary><BaseButton variant="secondary" :disabled="!canStageWrite" @click="setMode(runtime.mode === 'LIVE' ? 'REHEARSAL' : 'LIVE')">切换为{{ runtime.mode === 'LIVE' ? '排练' : '现场' }}</BaseButton></details>
           </template>
           <template v-if="runtime.status === 'RUNNING'">
             <BaseButton variant="secondary" :disabled="!canStageWrite" @click="pause">暂停</BaseButton>
@@ -436,8 +502,19 @@ void boot()
         </div>
       </BaseCard>
 
-      <V2ProgramCatalog :snapshot="snapshot" :can-write="canWrite" :saved-signal="catalogSavedSignal"
-        @select="selectProgram" @apply="applyProgramCatalog" />
+      <div class="obs-workspace">
+      <V2ProgramCatalog class="obs-rundown" :snapshot="snapshot" :can-write="canWrite" :saved-signal="catalogSavedSignal"
+        @prepare="selectedProgramId = $event" @select="selectProgram" @apply="applyProgramCatalog" />
+      <div class="obs-preview">
+        <PublicStagePreview />
+        <section class="cue-sheet" aria-label="当前与下一项">
+          <div class="cue-current"><small><i></i> 正在进行</small><h2>{{ currentProgram?.title || (runtime.currentScene ? sceneLabels[runtime.currentScene].slice(3) : '等待开场') }}</h2><p>{{ currentProgram?.performers || '一起点亮，属于我们的星河' }}</p></div>
+          <div><small>下一项</small><strong>{{ nextProgram?.title || '当前阶段完成后推进场景' }}</strong></div>
+          <p v-if="preparedProgram && preparedProgram.id !== currentProgram?.id" class="cue-prepared">待执行：{{ preparedProgram.title }} · 选择后点击“设为当前节目”</p>
+        </section>
+      </div>
+      <aside class="obs-controls" aria-label="当前环节操作">
+      <section v-if="!currentInteractionCode && liveInteraction.phase === 'IDLE'" class="context-summary"><h2>当前环节</h2><p>{{ currentProgram?.title || '星海集结' }}</p><span>{{ currentProgram?.giftsEnabled ? '礼物与现场聊天已就绪' : '按流程执行节目与舞台操作' }}</span></section>
 
       <BaseCard v-if="currentInteractionCode || liveInteraction.phase !== 'IDLE'" padding="md" class="live-control-card" :data-interaction="currentInteractionCode || 'NONE'">
         <div class="panel-heading">
@@ -481,10 +558,11 @@ void boot()
             <li v-for="item in raffle.winners.slice(0, 12)" :key="item.raffleDrawId"><span>候选 {{ item.drawSequence }}</span><strong>{{ item.displayName }}</strong><code>{{ item.publicStarId }}</code></li>
           </ol>
           <p v-if="presentation.type === 'RAFFLE'" class="quiet">大屏会逐位揭晓。请等最后一位展示完成，再点击「完成抽取」。</p>
-          <div v-if="presentation.type === 'NONE' && raffle?.winners.length >= 2" class="vote-control">
+          <div v-if="['NONE', 'RAFFLE'].includes(presentation.type) && raffle?.winners.length >= 2" class="vote-control">
             <label>投票标题<input v-model="votePrompt" maxlength="120" placeholder="谁是卧底 · 现场投票"></label>
             <div class="control-actions">
-              <BaseButton v-if="liveInteraction.phase === 'IDLE'" :disabled="!canStageWrite || runtime.status !== 'RUNNING'" @click="openAudienceVote">开放观众投票</BaseButton>
+              <BaseButton v-if="presentation.type === 'RAFFLE'" :disabled="!canStageWrite || runtime.status !== 'RUNNING' || raffle.winners.length > 12" @click="finishRaffleAndVote">完成抽取并开放投票</BaseButton>
+              <BaseButton v-if="presentation.type === 'NONE' && liveInteraction.phase === 'IDLE'" :disabled="!canStageWrite || runtime.status !== 'RUNNING'" @click="openAudienceVote">开放观众投票</BaseButton>
               <BaseButton v-if="liveInteraction.phase === 'VOTE_OPEN'" :disabled="!canStageWrite" @click="revealAudienceVote">揭晓投票结果</BaseButton>
               <BaseButton v-if="['VOTE_OPEN', 'VOTE_REVEALED'].includes(liveInteraction.phase)" variant="secondary" :disabled="!canStageWrite" @click="closeLiveInteraction">关闭本轮互动</BaseButton>
             </div>
@@ -498,7 +576,10 @@ void boot()
 
       </BaseCard>
 
+      <BaseButton v-if="['BUZZER_LOCKED', 'VOTE_REVEALED'].includes(liveInteraction.phase) && nextProgram" :disabled="!canFinishInteraction" @click="finishInteractionAndNext">收起互动并进入下一项</BaseButton>
       <V2AwardsConsole :snapshot="snapshot" :can-write="canWrite" :saved-signal="awardSavedSignal" :heat-saved-signal="heatSavedSignal" @command="ceremonyCommand" @select="selectProgram" />
+      </aside>
+      </div>
       <details class="attendance-overview"><summary><strong>现场进度</strong><span>已入场 {{ snapshot.funnel.admittedCount }} · {{ snapshot.readinessWarnings.length ? `${snapshot.readinessWarnings.length} 项待确认` : '准备就绪' }}</span></summary>
         <div class="v2-grid">
         <BaseCard padding="md">
@@ -522,7 +603,7 @@ void boot()
       </details>
 
 
-      <BaseCard padding="md">
+      <BaseCard padding="md" class="moderation-panel">
         <div class="panel-heading">
           <div>
             <h2>弹幕管理</h2>
@@ -556,6 +637,15 @@ void boot()
         </details>
       </BaseCard>
     </template>
+    <div v-if="snapshot && workflowProgress" class="workflow-receipt" :class="{ 'is-failed': workflowProgress.ok === false }" role="status">
+      <strong>{{ workflowProgress.ok === true ? '操作已完成' : workflowProgress.ok === false ? '操作已停止，请核对现场状态' : '正在执行：' + workflowProgress.current }}</strong>
+      <span v-if="workflowProgress.completed.length">已确认：{{ workflowProgress.completed.join(' → ') }}</span>
+      <span v-if="workflowProgress.ok === false">待核对／待完成：{{ workflowProgress.pending.join(' → ') }}。已停止后续步骤，可使用单项操作继续。</span>
+    </div>
+    <div v-if="errorMessage || realtime.lastError.value || authState === 'active' && successMessage" class="feedback-stack">
+      <p v-if="errorMessage || realtime.lastError.value" class="feedback error" role="alert">{{ errorMessage || realtime.lastError.value }}</p>
+      <div v-else class="feedback success"><p role="status">{{ successMessage }}</p><details v-if="receiptMessage" class="receipt-details"><summary>操作回执</summary><code>{{ receiptMessage }}</code></details></div>
+    </div>
   </section>
 </template>
 
@@ -1107,3 +1197,5 @@ void boot()
 @media(max-width:680px){.v2-admin{gap:14px}.v2-heading{align-items:center;gap:16px;padding-block:8px}.v2-heading-actions{width:100%;justify-content:space-between}.v2-admin :deep(.base-card){padding:18px}.runtime-facts{gap:8px}.runtime-facts>div{padding:10px}.runtime-facts strong{font-size:.9rem}.runtime-card>.control-actions>button{flex:1 1 130px;margin-right:0;white-space:normal;line-height:1.4;padding-block:10px}.panel-heading>.control-actions{width:100%}.panel-heading>.control-actions>button{flex:1 1 120px}.attendance-overview>summary{padding:13px 16px;flex-wrap:wrap;gap:6px}.attendance-overview>summary>span{font-size:.73rem}.feedback-stack{top:auto}.feedback{padding:10px 12px}.v2-admin .login-card{padding:22px}.interaction-operation input{box-sizing:border-box}.candidate-actions>button{flex:1;min-width:0}}
 
 </style>
+
+<style scoped src="./obs-console.css"></style>

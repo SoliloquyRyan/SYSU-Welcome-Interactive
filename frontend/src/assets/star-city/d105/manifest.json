@@ -1,0 +1,237 @@
+{
+  "version": "D105",
+  "createdAt": "2026-09-16",
+  "notes": "Original generated art. Text and audience stars are rendered separately. Resizing and WebP encoding only.",
+  "art": [
+    {
+      "id": "night-flight",
+      "sourceFile": "exec-781a12ce-6c12-4e60-bcbe-36e1f76f996b.png",
+      "sourceSha256": "5297d628cd8c7816feef1f9b7ef595f24f2f0baba6d9bd83f63c66f6d4252f34",
+      "generator": "Codex imagegen",
+      "prompt": "EDIT the supplied city harbor image into a DREAMY HAZY RETRO VAPORWAVE / soft cyberpunk stage backdrop. The current image is FAR TOO SHARP and photorealistic. Preserve only its broad waterfront composition, not its photographic architectural detail. Make the city feel like a half-remembered 1980s future printed on faded film: muted dusty lilac, smoky blue-grey, washed pink, pearlescent cyan neon gently diffusing through thick atmospheric haze. Flatten contrast, soften silhouettes, almost erase windows and tiny detail, simplify the bridge into a hazy gesture. Add subtle analog airbrush texture and faint film bloom, soft milky fog layers, distant abstract retro-futurist towers melting into the mist. The foreground should also be low contrast and softly blended, not sharp rocks or crisp concrete. Gentle cyan and rose neon light halos at the outer sides, not laser rays. The central sky is a broad smooth misty mauve field for legible live titles. It should feel like dreamy vaporwave graphic art / a nostalgic album sleeve background, NOT a realistic waterfront photo, NOT a crisp game environment, NOT steampunk gears. Keep the entire image softly atmospheric with depth, not an obvious Gaussian blur overlay. NO stars, NO point particles in the sky, NO text, NO typography, NO people, NO logos, NO sun disk, NO moon, NO poster borders. Single widescreen background artwork.",
+      "images": [
+        {
+          "file": "night-flight-screen.webp",
+          "bytes": 42754,
+          "sha256": "01337a689c445295f0783028d5535241ad9fcfed7d0013b51efe5b11946314f1",
+          "width": 1672,
+          "height": 941
+        },
+        {
+          "file": "night-flight-mobile.webp",
+          "bytes": 7586,
+          "sha256": "55ce9347a1e2c6f1e9b1f9f027776daaeea43dba02e4090130f21500c38878f4",
+          "width": 720,
+          "height": 405
+        }
+      ]
+    },
+    {
+      "id": "worth-it",
+      "sourceFile": "exec-dfa71e33-6121-4f31-9513-83870a16dee1.png",
+      "sourceSha256": "3e838d0eb6b647d938525fc5550c0c6f7f7c796e317e97f687ab5d641cb51165",
+      "generator": "Codex imagegen",
+      "prompt": "Create ONE original landscape 16:9 scenic illustration for a music performance backdrop, full bleed, no frame. Simple dreamy 1980s cyber-retro vaporwave, hazy airbrush illustration with fine analog grain and soft diffusion. Use a luminous but gently restrained palette of periwinkle, misty lavender, rose pink and small cyan accents: medium pastel saturation, NOT nearly monochrome, NOT vivid neon magenta. Neon is soft and blooming, edges dissolve into fog. Three large-scale spatial layers, few simple forms, no intricate windows, signage, busy textures or photo-real detail. Quiet middle 25%-70% height with enough empty mist for titles to be drawn separately; details belong primarily to outer edges and lower area. No words, text, letters, numbers, logos, people, stars, sparkles, starry sky, moon or sun. No harbor, no water, no lake, no bridge. This belongs to a cohesive series, but the scene and camera composition must be specific and memorable. Scene: asymmetric elevated monorail interchange, low-angle oblique perspective. One broad diagonal rail sweeps from the bottom LEFT corner up toward a distant vanishing point near the RIGHT at 65% height. A second narrow luminous pink rail parallels it. Two simple cyan-lit concrete pylons at far left. Distant low violet city blocks far right, atmospheric lilac open sky across the upper two thirds. Strong diagonal geometry, sparse monumental silhouettes, no water or waterfront. Left-heavy composition, generous quiet center. Soft rose light under the track.",
+      "images": [
+        {
+          "file": "worth-it-screen.webp",
+          "bytes": 60622,
+          "sha256": "20bb3798db7b8ca87f1d5375980995e93d6315c2bd02607dcec7b5b781b0fb60",
+          "width": 1672,
+          "height": 941
+        },
+        {
+          "file": "worth-it-mobile.webp",
+          "bytes": 10458,
+          "sha256": "6944d71ae8f78a9d9efbfd0ca8f7c71513c8f095d3283f48eaa2f637b5089a38",
+          "width": 720,
+          "height": 405
+        }
+      ]
+    },
+    {
+      "id": "summer",
+      "sourceFile": "exec-88bfe6ba-5c0f-49bf-be35-e898fd3ebdef.png",
+      "sourceSha256": "5882e47278bbc071104da4f97da94c79ee120018d8d99c15b895ccd3f65032c5",
+      "generator": "Codex imagegen",
+      "prompt": "Create ONE original landscape 16:9 scenic illustration for a music performance backdrop, full bleed, no frame. Simple dreamy 1980s cyber-retro vaporwave, hazy airbrush illustration with fine analog grain and soft diffusion. Use a luminous but gently restrained palette of periwinkle, misty lavender, rose pink and small cyan accents: medium pastel saturation, NOT nearly monochrome, NOT vivid neon magenta. Neon is soft and blooming, edges dissolve into fog. Three large-scale spatial layers, few simple forms, no intricate windows, signage, busy textures or photo-real detail. Quiet middle 25%-70% height with enough empty mist for titles to be drawn separately; details belong primarily to outer edges and lower area. No words, text, letters, numbers, logos, people, stars, sparkles, starry sky, moon or sun. No harbor, no water, no lake, no bridge. This belongs to a cohesive series, but the scene and camera composition must be specific and memorable. Scene: quiet retro-futuristic sunroom or train-station window gallery. Interior viewpoint. Two broad rounded window frames crop the far RIGHT edge and upper-right corner; a low minimalist bench and pale amber sill sit bottom right, repeated thin vertical dividers suggest piano rhythm. Far left opens onto diffuse lavender city and pale blue mist. The floor is matte, dry, dusty pink and occupies only the lower fifth. Warm pastel rose and faint honey light mixed with cool periwinkle. Asymmetrical right-weighted indoor architecture; center-left is blank glowing haze. No water, no waterfront, no bridge, no keyboard or actual piano.",
+      "images": [
+        {
+          "file": "summer-screen.webp",
+          "bytes": 84474,
+          "sha256": "d4adb1469ccdcf6a79b55f7d19c5d8efd11aa3e8b1aee87814e430843be8bb14",
+          "width": 1672,
+          "height": 941
+        },
+        {
+          "file": "summer-mobile.webp",
+          "bytes": 12666,
+          "sha256": "d600ab1f4a20ce6eccd3e834732ef4997e4140aa5eed482b9f3f1553440945d1",
+          "width": 720,
+          "height": 405
+        }
+      ]
+    },
+    {
+      "id": "haunted",
+      "sourceFile": "exec-e0bfc34a-f1a2-4416-9030-1428a3e1f1f8.png",
+      "sourceSha256": "6dda30ecdebe0b3092b466d96c3dd29cba83c1bf6d5649af860d7c13e9d1ecff",
+      "generator": "Codex imagegen",
+      "prompt": "Create ONE original landscape 16:9 scenic illustration for a music performance backdrop, full bleed, no frame. Simple dreamy 1980s cyber-retro vaporwave, hazy airbrush illustration with fine analog grain and soft diffusion. Use a luminous but gently restrained palette of periwinkle, misty lavender, rose pink and small cyan accents: medium pastel saturation, NOT nearly monochrome, NOT vivid neon magenta. Neon is soft and blooming, edges dissolve into fog. Three large-scale spatial layers, few simple forms, no intricate windows, signage, busy textures or photo-real detail. Quiet middle 25%-70% height with enough empty mist for titles to be drawn separately; details belong primarily to outer edges and lower area. No words, text, letters, numbers, logos, people, stars, sparkles, starry sky, moon or sun. No harbor, no water, no lake, no bridge. This belongs to a cohesive series, but the scene and camera composition must be specific and memorable. Scene: dreamy empty retro-future night alley, one tall rectangular doorway cropped along the LEFT foreground and two thinner receding doorway silhouettes along the RIGHT. Off-center passage bends to the left into lilac fog; charcoal violet walls remain soft and translucent. Three faint cyan vertical light threads along far-right wall suggest guitar strings. Bottom fifth is dry violet pavement, a soft rose strip of light near its left edge. An intimate enclosed composition with mostly featureless mist through the middle. No Gothic horror, no ornate arches, no canal or water.",
+      "images": [
+        {
+          "file": "haunted-screen.webp",
+          "bytes": 73744,
+          "sha256": "db227e9162fb258872968d38a87f2ae875d883fcf86be3419615686ccdc5222f",
+          "width": 1672,
+          "height": 941
+        },
+        {
+          "file": "haunted-mobile.webp",
+          "bytes": 8846,
+          "sha256": "b654423c6a0e844c7f3ff40c222da92c12681687bba9a334beba499dd46b5d74",
+          "width": 720,
+          "height": 405
+        }
+      ]
+    },
+    {
+      "id": "rooftops",
+      "sourceFile": "exec-b6cb5d3c-8a86-4227-b96c-46435ee82f08.png",
+      "sourceSha256": "8edcc6f996a82f334443737cfeafa6f3b711b2c3785eda5565efc9ebd3846c1f",
+      "generator": "Codex imagegen",
+      "prompt": "Create ONE original landscape 16:9 scenic illustration for a music performance backdrop, full bleed, no frame. Simple dreamy 1980s cyber-retro vaporwave, hazy airbrush illustration with fine analog grain and soft diffusion. Use a luminous but gently restrained palette of periwinkle, misty lavender, rose pink and small cyan accents: medium pastel saturation, NOT nearly monochrome, NOT vivid neon magenta. Neon is soft and blooming, edges dissolve into fog. Three large-scale spatial layers, few simple forms, no intricate windows, signage, busy textures or photo-real detail. Quiet middle 25%-70% height with enough empty mist for titles to be drawn separately; details belong primarily to outer edges and lower area. No words, text, letters, numbers, logos, people, stars, sparkles, starry sky, moon or sun. No harbor, no water, no lake, no bridge. This belongs to a cohesive series, but the scene and camera composition must be specific and memorable. Scene: high rooftop overlook with three staggered flat roof terraces cascading from the lower LEFT toward the lower RIGHT. One thin retro antenna at far left and a round ventilation silhouette tucked in bottom corner, just two props total. A wide lavender sky covers upper 70%, gently streaked rose haze. Small pale cyan roof edging only near bottom. Far away soft block skyline very low on right. A clear high-angle rooftop composition, no water, no vertical city canyon, no symmetrical framing.",
+      "images": [
+        {
+          "file": "rooftops-screen.webp",
+          "bytes": 57538,
+          "sha256": "16847fa56f62ba2891332742a60f0e2a468e29f275bef8e861a9875a85745db2",
+          "width": 1672,
+          "height": 941
+        },
+        {
+          "file": "rooftops-mobile.webp",
+          "bytes": 9098,
+          "sha256": "0f86881a4257e6da9b9d78754cff4c7eec7f8bbe8b18ac1ea436f4d9e512fc0e",
+          "width": 720,
+          "height": 405
+        }
+      ]
+    },
+    {
+      "id": "rain-window",
+      "sourceFile": "exec-bf35e9c5-3bc4-454b-9a5c-f86cd8192124.png",
+      "sourceSha256": "922b4664f68347caf47da7d766c4eb916b697ed79575a3e004f9142ffbc0ab66",
+      "generator": "Codex imagegen",
+      "prompt": "Create ONE original landscape 16:9 scenic illustration for a music performance backdrop, full bleed, no frame. Simple dreamy 1980s cyber-retro vaporwave, hazy airbrush illustration with fine analog grain and soft diffusion. Use a luminous but gently restrained palette of periwinkle, misty lavender, rose pink and small cyan accents: medium pastel saturation, NOT nearly monochrome, NOT vivid neon magenta. Neon is soft and blooming, edges dissolve into fog. Three large-scale spatial layers, few simple forms, no intricate windows, signage, busy textures or photo-real detail. Quiet middle 25%-70% height with enough empty mist for titles to be drawn separately; details belong primarily to outer edges and lower area. No words, text, letters, numbers, logos, people, stars, sparkles, starry sky, moon or sun. No harbor, no water, no lake, no bridge. This belongs to a cohesive series, but the scene and camera composition must be specific and memorable. Scene: extreme foreground view from inside through a large rain-softened window. ONE thick dark lavender vertical mullion at 18% width and a faint slanted sill at the bottom. Glass near far LEFT contains a few broad blurry rain streaks, no sharp droplets. Beyond the glass, an out-of-focus future street descends diagonally to the lower right, smudged pink and cyan shop light rectangles only at very bottom, no legible signs. Most of center and upper right is fogged glass with diffuse violet/rose gradients. Distinct intimate window composition, not an open skyline or waterfront.",
+      "images": [
+        {
+          "file": "rain-window-screen.webp",
+          "bytes": 78648,
+          "sha256": "27478e922952543d47a4fcc86090d41c461fbb106299c85f456e9b2db59994df",
+          "width": 1672,
+          "height": 941
+        },
+        {
+          "file": "rain-window-mobile.webp",
+          "bytes": 9830,
+          "sha256": "db83b05956ed606a975ba197a8aef08c1299f01501e19696e1b5e08cd12f36e7",
+          "width": 720,
+          "height": 405
+        }
+      ]
+    },
+    {
+      "id": "mountain-city",
+      "sourceFile": "exec-fb0f9e38-df8c-4572-a331-a176cdc248e2.png",
+      "sourceSha256": "99277bcdd23f296aea3e27787b0e4087938d7c198541d4536d4c0cb665dc02e4",
+      "generator": "Codex imagegen",
+      "prompt": "Create ONE original landscape 16:9 scenic illustration for a music performance backdrop, full bleed, no frame. Simple dreamy 1980s cyber-retro vaporwave, hazy airbrush illustration with fine analog grain and soft diffusion. Use a luminous but gently restrained palette of periwinkle, misty lavender, rose pink and small cyan accents: medium pastel saturation, NOT nearly monochrome, NOT vivid neon magenta. Neon is soft and blooming, edges dissolve into fog. Three large-scale spatial layers, few simple forms, no intricate windows, signage, busy textures or photo-real detail. Quiet middle 25%-70% height with enough empty mist for titles to be drawn separately; details belong primarily to outer edges and lower area. No words, text, letters, numbers, logos, people, stars, sparkles, starry sky, moon or sun. No harbor, no water, no lake, no bridge. This belongs to a cohesive series, but the scene and camera composition must be specific and memorable. Scene: expansive horizontal misty mountain landscape behind a sparse retro-future hillside neighborhood. A single traditional long roof eave silhouettes the lower RIGHT corner, with one understated cyan edge. Three soft lavender mountain ridge profiles layer from lower left toward middle right; a gentle asymmetrical broad mountain summit around 60% height, no snow or famous landmark. Low pink haze in valleys; a few distant cuboid structures blended into slopes. Upper half is broad smooth periwinkle sky. Absolutely no water, lake, shoreline or bridge; dry hills and roofs only.",
+      "images": [
+        {
+          "file": "mountain-city-screen.webp",
+          "bytes": 79690,
+          "sha256": "9767aea56b32973428f832c3cccfcb08aa63d3e7ff8055f0974dacf581acbdac",
+          "width": 1672,
+          "height": 941
+        },
+        {
+          "file": "mountain-city-mobile.webp",
+          "bytes": 9206,
+          "sha256": "8525c92a9a42041a8fc7d46030a4ae98e5477bc810ec0693f88985dbb7685ee4",
+          "width": 720,
+          "height": 405
+        }
+      ]
+    },
+    {
+      "id": "glass-dialogue",
+      "sourceFile": "exec-d8af47c6-7b29-4ad7-bc86-cd00f827b8e6.png",
+      "sourceSha256": "c1d9d4bef8c5e7b77999daa93d1c40cce8d676e52a74b513cb5e428e8977219a",
+      "generator": "Codex imagegen",
+      "prompt": "Create ONE original landscape 16:9 scenic illustration for a music performance backdrop, full bleed, no frame. Simple dreamy 1980s cyber-retro vaporwave, hazy airbrush illustration with fine analog grain and soft diffusion. Use a luminous but gently restrained palette of periwinkle, misty lavender, rose pink and small cyan accents: medium pastel saturation, NOT nearly monochrome, NOT vivid neon magenta. Neon is soft and blooming, edges dissolve into fog. Three large-scale spatial layers, few simple forms, no intricate windows, signage, busy textures or photo-real detail. Quiet middle 25%-70% height with enough empty mist for titles to be drawn separately; details belong primarily to outer edges and lower area. No words, text, letters, numbers, logos, people, stars, sparkles, starry sky, moon or sun. No harbor, no water, no lake, no bridge. This belongs to a cohesive series, but the scene and camera composition must be specific and memorable. Scene: almost abstract architectural collage of translucent smoked-glass vertical panels. THREE offset wide rectangular glass sheets hang from top LEFT, stopping at different heights, and ONE short panel sits at far RIGHT bottom. Within them faint ghost reflections of different city windows overlap, without tiny detail. Thin cyan and pink reflected borders. A pale violet empty void through center-right forms the main negative space. Ground is a soft matte lilac band at bottom, not water. Retro-future album-cover geometry, different depths and scale, asymmetrical, visually simple.",
+      "images": [
+        {
+          "file": "glass-dialogue-screen.webp",
+          "bytes": 48780,
+          "sha256": "0a10579b8c993f64113e9bf9f67b259ef2d929ff6b2177938850d7390fda01ae",
+          "width": 1672,
+          "height": 941
+        },
+        {
+          "file": "glass-dialogue-mobile.webp",
+          "bytes": 7858,
+          "sha256": "e75493f930fd88f52c2255513bcacb369640a507005688f6e2405d04e835e864",
+          "width": 720,
+          "height": 405
+        }
+      ]
+    },
+    {
+      "id": "rose-arcade",
+      "sourceFile": "exec-20080e2f-2616-4738-91cb-b3121bbedbe0.png",
+      "sourceSha256": "9824912bbb432e713456e5ccfb81aba36fbc07a3745636bae82005465602ac2f",
+      "generator": "Codex imagegen",
+      "prompt": "Create ONE original landscape 16:9 scenic illustration for a music performance backdrop, full bleed, no frame. Simple dreamy 1980s cyber-retro vaporwave, hazy airbrush illustration with fine analog grain and soft diffusion. Use a luminous but gently restrained palette of periwinkle, misty lavender, rose pink and small cyan accents: medium pastel saturation, NOT nearly monochrome, NOT vivid neon magenta. Neon is soft and blooming, edges dissolve into fog. Three large-scale spatial layers, few simple forms, no intricate windows, signage, busy textures or photo-real detail. Quiet middle 25%-70% height with enough empty mist for titles to be drawn separately; details belong primarily to outer edges and lower area. No words, text, letters, numbers, logos, people, stars, sparkles, starry sky, moon or sun. No harbor, no water, no lake, no bridge. This belongs to a cohesive series, but the scene and camera composition must be specific and memorable. Scene: small retro-futuristic street corner viewed obliquely, a low rounded vintage theater facade across lower RIGHT with one curved rose-neon canopy and two large dark smoked-glass windows. No signs, letters or logos. Left foreground has one soft cropped cylindrical column. An empty side street slopes gently toward lower left and dissolves into lilac fog. Smoky plum, dusty rose, tiny warm amber glow under canopy and restrained cyan window edge. Upper 60% is lavender haze, sparse distant city silhouettes. A romantic record-sleeve street-corner composition, no literal roses, no water or harbor.",
+      "images": [
+        {
+          "file": "rose-arcade-screen.webp",
+          "bytes": 126636,
+          "sha256": "f16811c39b952655b6b6f6395c982fbd25319917a2d4b9f70bf0719d0b51f9b1",
+          "width": 1672,
+          "height": 941
+        },
+        {
+          "file": "rose-arcade-mobile.webp",
+          "bytes": 14462,
+          "sha256": "b412ef70a855ab3f12b2976325d41c5f14fe083c3c77cf8ef10a9f6d725a5e86",
+          "width": 720,
+          "height": 405
+        }
+      ]
+    },
+    {
+      "id": "light-years",
+      "sourceFile": "exec-c77ddda9-436b-42f7-8daf-5568ca8552fe.png",
+      "sourceSha256": "ec7258418202092f510c7b490ecb09d4e9ef0663b7f0fec64727a5b5c2285fc8",
+      "generator": "Codex imagegen",
+      "prompt": "Create ONE original landscape 16:9 scenic illustration for a music performance backdrop, full bleed, no frame. Simple dreamy 1980s cyber-retro vaporwave, hazy airbrush illustration with fine analog grain and soft diffusion. Use a luminous but gently restrained palette of periwinkle, misty lavender, rose pink and small cyan accents: medium pastel saturation, NOT nearly monochrome, NOT vivid neon magenta. Neon is soft and blooming, edges dissolve into fog. Three large-scale spatial layers, few simple forms, no intricate windows, signage, busy textures or photo-real detail. Quiet middle 25%-70% height with enough empty mist for titles to be drawn separately; details belong primarily to outer edges and lower area. No words, text, letters, numbers, logos, people, stars, sparkles, starry sky, moon or sun. No harbor, no water, no lake, no bridge. This belongs to a cohesive series, but the scene and camera composition must be specific and memorable. Scene: open retro-future circular concert plaza viewed from a very low angle. A broad elliptical pale-cyan rim crosses the bottom quarter, one slender curved structural arch rises at far RIGHT and disappears out of frame; a short cluster of low geometric city blocks far LEFT. Soft lavender and periwinkle sky fills 70%, rose atmospheric glow along horizon, one faint pewter-gold light strip at the plaza edge. Simple monumental open geometry, asymmetrical, no beams or concert equipment. Dry matte plaza, no water, no bridge, no spaceship, no moon or planet.",
+      "images": [
+        {
+          "file": "light-years-screen.webp",
+          "bytes": 61092,
+          "sha256": "877780bd91713ad3340a4520b8c2da755123f8024b61c5d108e7923a75c06629",
+          "width": 1672,
+          "height": 941
+        },
+        {
+          "file": "light-years-mobile.webp",
+          "bytes": 8538,
+          "sha256": "320e6a514dfed7713883c95f3d494a405aad0d6ca6402f23be7d6afd8bd902d3",
+          "width": 720,
+          "height": 405
+        }
+      ]
+    }
+  ]
+}

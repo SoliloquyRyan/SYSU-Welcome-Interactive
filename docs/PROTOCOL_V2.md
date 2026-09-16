@@ -1,5 +1,7 @@
 # 协议 v2：身份激活、星系与现场运行契约
 
+> **D-104（2026-09-16，本地版本，schema 21）**：`gift.sent.gift` 增加可选 `displayColor`，由服务器读取发送者锁定星色；不接收客户端指定颜色，不携带姓名、学号或发送者身份。旧事件缺少该字段仍可解析，新 UI 忽略旧 `showStarship` 次数限制。前后端配套发布；价格、批量数量、账目、幂等和数据库版本不变。节目与 HOST 展示以 [D-104](./D104_NEON_STARS_AND_GIFTS.md) 为准，覆盖下方历史透明稳态、旧星舰时长及美术描述；真实观众星与装饰星保持分离。
+
 > D-089（本地 schema 19，待配套发布）：节目顺序为 19 个正式节目与 A/B/C 三个互动环节；互动环节不计入节目且不接收礼物。新增服务器权威抢答、上台观众抽取与一人一票，礼物批量数量、个人星色弹幕、节目态礼物统计和谢幕完整账目。现场互动使用独立持久状态并通过 `live.interaction.changed` 广播；schema 18→19 保留当前 epoch 与既有记录。详见 [D-089](./D089_LIVE_INTERACTION_ACCEPTANCE.md)。
 
 > D-088（本地 schema 18，待配套发布）：节目输入增加可选 `performers`（最多 240 字单行；缺省保留既有值，显式空串清空）；`currentProgram` 与各端 `programs` 输出增加 `performers`（旧事件缺省为空）。公开大屏快照新增 `programs`，内容与当前启用目录一致。它是负责人提供的公开演出资料，不是参与者身份，仍不公开身份表的姓名、学号、邀请令牌。`program.changed` 沿用当前投影及重取快照机制，历史事件可继续解析。详见 [D-088](./D088_CREDITS_ACCEPTANCE.md)。
@@ -245,7 +247,7 @@ D-057 将已知就绪警告与不可逆说明合并到同一确认。提交后�
    | `barrage.removed` | `public`；携带本次从公开层撤下的最多 8 个 barrage ID 及 `interactionRevision` |
    | `barrage.cleared` | `public`；携带新 `displayBatch` 与 `interactionRevision`，使全部旧批次内容立即失效 |
    | `barrage.pause.changed` | `public`；携带暂停布尔值与 `interactionRevision`；暂停只拒绝新弹幕，不删除已公开事实 |
-   | `gift.sent` | `public`；携带节目、礼物 ID/名称、发生时间和 `interactionRevision`，不得包含发送者身份或余额 |
+   | `gift.sent` | `public`；携带节目、礼物 ID/名称、发生时间和 `interactionRevision`；D-104 可选 `gift.displayColor` 由服务器读取已锁定星色，格式 `#RRGGBB`；旧记录无该字段仍可读。不得包含发送者身份或余额 |
 
 5. 快照与各流续订必须从同一一致性读视图建立；客户端取得游标后按各自 `afterSeq` 续订。若服务端无法从保留窗口补齐某一流，返回 `RESYNC_REQUIRED` 并只要求重拉受影响流；`resetEpoch` 变化则重新认证并拉取全部获授权快照。任何事件均不得携带未授权私密资料。
 6. 客户端按 `(resetEpoch, publicStarId, starRevision)` 幂等合并恒星。重复或旧事件不得重复建星；`resetEpoch` 不同、某个 `streamId` 内出现缺口或 revision 无法收敛时必须丢弃对应本地投影并按上文重新拉取快照。

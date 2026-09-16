@@ -15,7 +15,7 @@
 
 使用内置 imagegen 工具生成，未使用 CLI/API 回退。输出为 2172 × 724 PNG，1,312,832 bytes，保留透明通道。
 
-- 正式项目素材：`frontend/src/assets/gifts/starship-pearl-v2.png`
+- 正式项目素材：[D-090 原素材（已归档）](./archive/visual-assets/gifts/starship-pearl-v2.png)
 - 正式组件：`frontend/src/components/GiftStarshipFlight.vue`
 - 原版组件及本轮修改前文档备份：`output/backups/d090-before-20260911/`
 - 可离线重播预览：`output/playwright/d090-starship/index.html`，由 `node scripts/build-cinema-preview.mjs output/playwright/d090-starship` 生成，提供播放、定格、镜头进度、手机/公屏切换和静态回退；`?shot=starship` 直接展示材质定格。

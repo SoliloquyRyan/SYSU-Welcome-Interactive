@@ -460,7 +460,7 @@ function drawOwnStarLabel(context, ownStar, width, height, frame, starRadius) {
   if (!label) return
   context.save()
   context.globalAlpha = label.opacity
-  context.font = '500 10.5px Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif'
+  context.font = '500 10.5px "Welcome Sans SC", "Noto Sans SC", sans-serif'
   context.textAlign = 'center'
   context.textBaseline = 'middle'
   context.lineJoin = 'round'
@@ -601,7 +601,7 @@ export function createPersonalJourneyRenderer(canvas, options = {}) {
       if(surface) { context.drawImage(surface,0,0,width,height);canvas.dataset.galaxyMaterial='flowing-spiral' }
       else { nebulaFailed=true;drawGalaxyCore(context,width,height,frame) }
     } else drawGalaxyCore(context,width,height,frame)
-    drawFarStars(context, width, height, frame, reduced ? 0 : Math.max(0, timestamp - createdAt))
+    if (!options.audienceOnly) drawFarStars(context, width, height, frame, reduced ? 0 : Math.max(0, timestamp - createdAt))
     drawDiscoveryMotes(context, width, height, frame)
     drawOrbitDust(context, width, height, frame, false)
     drawPublicStars(context, state.publicStars, state.ownStar, width, height, frame)
@@ -823,5 +823,10 @@ export function createPersonalJourneyRenderer(canvas, options = {}) {
   ownerDocument?.addEventListener?.('visibilitychange', updateLoop)
   resize()
   updateLoop()
+  // Canvas does not repaint itself when a webfont replaces the fallback.
+  // Repaint the settled reduced-motion frame too, without restarting its phase.
+  void ownerDocument?.fonts?.ready.then(() => {
+    if (!destroyed && ownerDocument?.hidden !== true) paint(now())
+  })
   return api
 }

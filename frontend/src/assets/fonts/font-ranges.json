@@ -1,0 +1,604 @@
+{
+  "family": "Welcome Sans SC",
+  "upstreamFamily": "Noto Sans SC",
+  "sourceSha256": "d68bafcb48a2707749396aa12bbbd833cb70401f3a9a689fd2902c7e0d295964",
+  "sourceUrl": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/Variable/TTF/Subset/NotoSansSC-VF.ttf",
+  "coveredCodepoints": 30890,
+  "chunkSize": 384,
+  "notoFiles": [
+    {
+      "file": "welcome-sans-sc-ui.woff2",
+      "bytes": 152888,
+      "sha256": "f972b1dece5c5bcf66a86b4d81b3a4fb126fbfe0083a7e54a0b4c58ddf0a1180",
+      "unicodeRange": "U+20-7E,U+B7,U+D7,U+2013,U+2026,U+2192-2193,U+2197,U+2212,U+2713,U+3001-3002,U+300A-300D,U+4E00-4E01,U+4E07,U+4E09-4E0B,U+4E0D-4E0E,U+4E22,U+4E2A,U+4E2D,U+4E3A-4E3B,U+4E4B,U+4E5F,U+4E8C,U+4E8E,U+4E92,U+4EA4,U+4EAE,U+4EBA,U+4EC5,U+4ECA,U+4ECD-4ECE,U+4EE5,U+4EEC,U+4EFB,U+4EFD,U+4F17,U+4F1A,U+4F46,U+4F4D,U+4F53,U+4F59,U+4F5C,U+4F60,U+4F7F,U+4FDD,U+4FE1,U+5012,U+5019,U+503C,U+505C,U+5149,U+514D,U+5165,U+5168,U+516C,U+5171,U+5173,U+5176,U+517C,U+5185,U+518D,U+5199,U+51B7,U+51C6,U+51CF,U+51FA,U+51FD,U+5206,U+521D,U+522B,U+5230,U+5237,U+523B,U+524D,U+5269,U+529B,U+52A0-52A1,U+52A8,U+5316,U+5341,U+5347,U+534F,U+5355,U+5373,U+539F,U+53C2,U+53D1,U+53D6-53D8,U+53E3,U+53EF-53F0,U+53F7,U+53F9,U+540C-540E,U+5411,U+542C,U+542F,U+547C,U+548C,U+56DE,U+5728,U+5730,U+573A,U+57DF,U+586B,U+589E,U+58EB,U+5907,U+590D,U+5916,U+591C,U+5927,U+5929-592A,U+5931,U+5934,U+59CB,U+59D3,U+5B57-5B58,U+5B66,U+5B89,U+5B8C,U+5B98,U+5B9A,U+5B9E,U+5BB9,U+5BCC,U+5BF9,U+5BFB-5BFC,U+5C06,U+5C11,U+5C14,U+5C1A,U+5C4F,U+5C5E,U+5C71,U+5C81,U+5DE5,U+5DF1-5DF2,U+5E03,U+5E26,U+5E38,U+5E55,U+5E74,U+5E76,U+5E94,U+5EA6,U+5EFA,U+5F00,U+5F02,U+5F0F,U+5F39,U+5F53,U+5F55,U+5F62,U+5F7C,U+5F80,U+5F85,U+5FF5,U+6001,U+6052,U+6062,U+606F,U+611F,U+6210-6211,U+6216,U+624B,U+624D,U+6253,U+6263,U+6267,U+626B,U+627E,U+628A,U+6295,U+62A2,U+62AC,U+62B5,U+62BD,U+62DF,U+62E9,U+6301,U+6309,U+632F,U+6355,U+636E,U+6392,U+63A5,U+63CF-63D0,U+63E1,U+63ED,U+63F4,U+64A4,U+64CD,U+6536,U+6539,U+653E,U+6545,U+6548,U+6563,U+6570,U+6587,U+65B0,U+65B9,U+65E0,U+65E5,U+65F6,U+660E,U+661F,U+662F,U+6653,U+665A,U+667A,U+6682,U+6696,U+66F4,U+6700,U+670D,U+672A,U+672C,U+673A,U+6743,U+675F,U+6761,U+677F,U+679C,U+67E5,U+6807,U+6838,U+6848,U+6863,U+68C0,U+6B21-6B22,U+6B3E,U+6B62-6B65,U+6BB5,U+6C42,U+6C47,U+6C70,U+6CB3,U+6CBF,U+6CD5,U+6D3B,U+6D41,U+6D4B,U+6D77,U+6D88,U+6DD8,U+6E29,U+6EE1,U+70B9,U+70ED,U+7231,U+7247-7248,U+7269,U+72B6,U+73AB,U+73AF-73B0,U+7470,U+751F,U+7528,U+7531,U+7559,U+767B,U+767D,U+7684,U+76EE,U+76F8,U+770B,U+771F,U+7740,U+7801,U+786E,U+793C,U+7968,U+79BB,U+79CD,U+7A0B,U+7A0D,U+7A3F,U+7A97,U+7ACB,U+7AE0,U+7AEF,U+7B26,U+7B2C,U+7B49,U+7B54,U+7B80,U+7C4D,U+7CFB,U+7D22,U+7E41,U+7EA2,U+7EA7,U+7EAA,U+7EBF,U+7EC3,U+7EC8,U+7ECF,U+7ED3,U+7EDC,U+7EDF,U+7EE7,U+7EED,U+7F16,U+7F3A,U+7F51,U+7F6E,U+7FA4,U+804A,U+80FD,U+81EA,U+81F4,U+822A,U+8272,U+8282,U+8349,U+83B7,U+84DD,U+865A,U+884C,U+8981,U+89C1-89C2,U+89E3,U+89E6,U+8BA1,U+8BA4,U+8BA9,U+8BAE,U+8BB0,U+8BBE-8BBF,U+8BC6,U+8BD5,U+8BDD,U+8BE5,U+8BF4,U+8BF7,U+8C22,U+8D39,U+8D60,U+8D74,U+8D77,U+8D85,U+8DB3,U+8EAB,U+8F68,U+8F6E,U+8F7B,U+8F93,U+8FBE,U+8FC7,U+8FCE,U+8FD1,U+8FD4,U+8FD9,U+8FDB-8FDC,U+8FDE,U+8FF9,U+9000-9001,U+9009,U+9047,U+9053,U+9080,U+914D,U+91CC-91CD,U+91CF,U+9501,U+95ED-95EE,U+961F,U+9636,U+9645,U+9650,U+9662,U+96C6,U+9700,U+9762,U+9875,U+9879-987A,U+9891,U+9897,U+989C-989D,U+9996,U+9A7B,U+9A8C,U+9AA4,U+9AD8,U+FF08-FF09,U+FF0B-FF0C,U+FF1A-FF1B,U+FF1F",
+      "codepointCount": 522
+    },
+    {
+      "file": "welcome-sans-sc-000.woff2",
+      "bytes": 32348,
+      "sha256": "f42e97d29f5059bd305e44ebd97b1294a82aaa9f86b21490adaf0a3366b2a5ef",
+      "unicodeRange": "U+A0-B6,U+B8-D6,U+D8-103,U+110-113,U+11A-11B,U+128-12B,U+143-144,U+147-148,U+14C-14F,U+152-153,U+168-16D,U+192,U+1A0-1A1,U+1AF-1B0,U+1CD-1DC,U+1F8-1F9,U+251,U+261,U+2BB,U+2C7,U+2C9-2CB,U+2D9,U+2EA-2EB,U+300-301,U+304,U+307,U+30C,U+391-3A1,U+3A3-3A9,U+3B1-3C9,U+401,U+410-44F,U+451,U+1E3E-1E3F,U+1EA0-1EF9,U+2002-2003,U+2010-2012,U+2014-2016,U+2018-201A,U+201C-201E,U+2020",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-001.woff2",
+      "bytes": 35500,
+      "sha256": "b278a07aefd7ca0f27f82b044cfa114eeafbb6ceb7acaad20f122b784aa4c1ba",
+      "unicodeRange": "U+2021-2022,U+2025,U+2027,U+2030,U+2032-2033,U+2035,U+2039-203C,U+2042,U+2047-2049,U+2051,U+2074,U+20A9,U+20AB-20AC,U+20DD-20DE,U+2100,U+2103,U+2105,U+2109-210A,U+210F,U+2113,U+2116,U+2121-2122,U+2126-2127,U+212B,U+212E,U+2135,U+213B,U+2160-216B,U+2170-217B,U+2190-2191,U+2194-2196,U+2198-2199,U+21B8-21B9,U+21C4-21C6,U+21CB-21CC,U+21D0,U+21D2,U+21D4,U+21E6-21E9,U+21F5,U+2200,U+2202-2203,U+2205-220B,U+220F,U+2211,U+2213,U+2215,U+221A,U+221D-2220,U+2223,U+2225-222E,U+2234-2237,U+223D,U+2243,U+2245,U+2248,U+224C,U+2260-2262,U+2264-2267,U+226A-226B,U+226E-226F,U+2272-2273,U+2276-2277,U+2282-2287,U+228A-228B,U+2295-2299,U+22A0,U+22A5,U+22BF,U+22DA-22DB,U+22EF,U+2305-2307,U+2312,U+2318,U+2329-232A,U+23B0-23B1,U+23BE-23CC,U+23CE,U+23DA-23DB,U+2423,U+2460-2525",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-002.woff2",
+      "bytes": 38616,
+      "sha256": "6a6ca6b93b114c3c48d86e2d9159f7864bd5452675d18ac7db557d4a357027a3",
+      "unicodeRange": "U+2526-25AB,U+25B1-25B3,U+25B6-25B7,U+25BC-25BD,U+25C0-25C1,U+25C6-25C7,U+25C9-25CC,U+25CE-25D3,U+25E2-25E6,U+25EF,U+2600-2603,U+2605-2606,U+2609,U+260E-260F,U+2616-2617,U+261C-261F,U+262F,U+2640-2642,U+2660-266F,U+2672-267D,U+26A0,U+26BD-26BE,U+2702,U+271A,U+273D,U+273F-2740,U+2756,U+2776-2793,U+27A1,U+2934-2935,U+29BF,U+29FA-29FB,U+2B05-2B07,U+2B1A,U+2B95,U+2E3A-2E3B,U+2E80-2E99,U+2E9B-2EF3,U+2F00-2F08",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-003.woff2",
+      "bytes": 95900,
+      "sha256": "57e3abb713022d7650497a04b998ec56ae64a1bde5ec84c863a92b5f0760b55f",
+      "unicodeRange": "U+2F09-2FD5,U+2FF0-2FFB,U+3000,U+3003-3009,U+300E-303F,U+3041-3096,U+3099-30AF",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-004.woff2",
+      "bytes": 68380,
+      "sha256": "84616649ffd211acebb050e2b0330ceed2a1370c5a176829fcf9ed551308cae7",
+      "unicodeRange": "U+30B0-30FF,U+3105-312F,U+3131-3163,U+3165-318E,U+3190-31BB,U+31C0-31E3,U+31F0-321E,U+3220-3248",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-005.woff2",
+      "bytes": 96012,
+      "sha256": "703b44ad790dfa0c90619187941f12edaa0ca030bbaf89e4bb0715d5c7f96cc1",
+      "unicodeRange": "U+3249-332B,U+332D-33C9",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-006.woff2",
+      "bytes": 103456,
+      "sha256": "dc2897ef12ab02fe0a134f5f463766a0d8f5222e86ed4c5473658dd14ae07f6a",
+      "unicodeRange": "U+33CA-3549",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-007.woff2",
+      "bytes": 110436,
+      "sha256": "e26ea24aba359e2da0f8a381ac866a33defa16526a892508ff34be6cac4bef82",
+      "unicodeRange": "U+354A-36C9",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-008.woff2",
+      "bytes": 116684,
+      "sha256": "49f2aa375ebc4888a9684867ae70646d6520959f7af6317fd9e517527cbe5efa",
+      "unicodeRange": "U+36CA-3849",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-009.woff2",
+      "bytes": 121660,
+      "sha256": "9157c07ebf92bc4b52dba64aef108764394eaf0c1ac5a52bbcf46b268c58b807",
+      "unicodeRange": "U+384A-39C9",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-010.woff2",
+      "bytes": 118544,
+      "sha256": "b40972da17703f719c19d21a7ee60e04d418c87e18d9ba498b708b1d650f0869",
+      "unicodeRange": "U+39CA-3B49",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-011.woff2",
+      "bytes": 135196,
+      "sha256": "ad6e511f21ffea0cf741c9b5f843757aac786d20851bc93d7702ff6b18d28ded",
+      "unicodeRange": "U+3B4A-3CC9",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-012.woff2",
+      "bytes": 130960,
+      "sha256": "449cc72d9fa37b6171743fe13cd4b5f6dd507dbac59607ff2a59fb89aa333560",
+      "unicodeRange": "U+3CCA-3E49",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-013.woff2",
+      "bytes": 125744,
+      "sha256": "ef2bb405edc26d51e37619a8731c8752dee365eae6091a7615093efa74b15da3",
+      "unicodeRange": "U+3E4A-3FC9",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-014.woff2",
+      "bytes": 117076,
+      "sha256": "999f49dea8c928ed383be27a1916f90d8762ab4fd32fbb36701e0d10e1d7e701",
+      "unicodeRange": "U+3FCA-4149",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-015.woff2",
+      "bytes": 139168,
+      "sha256": "b1257dfecf6e5ccdd10a5bdffea37bc47567f8866320cd2efda0de42cc32ff6d",
+      "unicodeRange": "U+414A-42C9",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-016.woff2",
+      "bytes": 134708,
+      "sha256": "68c715ca7de39a1e0242e961593e1a63c3dc21ebafdd3bd27eaf5a846a6aa4cb",
+      "unicodeRange": "U+42CA-4449",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-017.woff2",
+      "bytes": 122512,
+      "sha256": "9740366dee2673b76b3288045da839604f4c1b14619a529205290f04d6e86751",
+      "unicodeRange": "U+444A-45C9",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-018.woff2",
+      "bytes": 131000,
+      "sha256": "e7a277042fb0f69ed1ff42fecc032bfb50a54ec03856e04c8bbafe32ffdb56f6",
+      "unicodeRange": "U+45CA-4749",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-019.woff2",
+      "bytes": 121968,
+      "sha256": "972aec8e66cb6d8823c56308e0e9617532a47e4b2e9122ac39c4a14c7ac234b5",
+      "unicodeRange": "U+474A-48C9",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-020.woff2",
+      "bytes": 130708,
+      "sha256": "04af7ca6b536b5767f0c81394f07436b0c1f819855cd7d37e44a2d50341dfc6e",
+      "unicodeRange": "U+48CA-4A49",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-021.woff2",
+      "bytes": 136436,
+      "sha256": "7698ddaf214a3c3cd83de3bdb67a383208e83cd658317d378252c04ae29868fe",
+      "unicodeRange": "U+4A4A-4BC9",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-022.woff2",
+      "bytes": 154312,
+      "sha256": "ca7bc17a831a4f47a3143753f39951e80be3b13d49fdca5532cc08241e1e463d",
+      "unicodeRange": "U+4BCA-4D49",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-023.woff2",
+      "bytes": 98852,
+      "sha256": "55ac07118b70481ee1b4d3816dc88e3fce01ba523b14a062338ec151c97d9d05",
+      "unicodeRange": "U+4D4A-4DB5,U+4E02-4E06,U+4E08,U+4E0C,U+4E0F-4E21,U+4E23-4E29,U+4E2B-4E2C,U+4E2E-4E39,U+4E3C-4E4A,U+4E4C-4E5E,U+4E60-4E8B,U+4E8D,U+4E8F-4E91,U+4E93-4EA3,U+4EA5-4EAD,U+4EAF-4EB9,U+4EBB-4EC4,U+4EC6-4EC9,U+4ECB-4ECC,U+4ECF-4EE4,U+4EE6-4EEB,U+4EED-4EFA,U+4EFC,U+4EFE-4F16,U+4F18-4F19,U+4F1B-4F32",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-024.woff2",
+      "bytes": 94908,
+      "sha256": "498397eaf603ba83961592259122b08225a78714c135cfc3b71228b3d9fe5296",
+      "unicodeRange": "U+4F33-4F45,U+4F47-4F4C,U+4F4E-4F52,U+4F54-4F58,U+4F5A-4F5B,U+4F5D-4F5F,U+4F61-4F7E,U+4F80-4FDC,U+4FDE-4FE0,U+4FE2-5011,U+5013-5018,U+501A-503B,U+503D-505B,U+505D-50BF",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-025.woff2",
+      "bytes": 107240,
+      "sha256": "ec4e88de3c33b98cb097d8f8cb7fd05526eeb6f4b9a072cafef37f4e86f90331",
+      "unicodeRange": "U+50C0-5148,U+514A-514C,U+514E-5164,U+5166-5167,U+5169-516B,U+516D-5170,U+5172,U+5174-5175,U+5177-517B,U+517D-5184,U+5186-518C,U+518E-5198,U+519A-51B6,U+51B8-51C5,U+51C7-51CE,U+51D0-51F9,U+51FB-51FC,U+51FE-5205,U+5207-521C,U+521E-522A,U+522C-522F,U+5231-5236,U+5238-523A,U+523C-524C,U+524E-5257",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-026.woff2",
+      "bytes": 108044,
+      "sha256": "fa985f1421635061f48a383ffcc327a0450a841835aac67bdfec2139e5cf5a6c",
+      "unicodeRange": "U+5258-5268,U+526A-529A,U+529C-529F,U+52A2-52A7,U+52A9-5315,U+5317-5340,U+5342-5346,U+5348-534E,U+5350-5354,U+5356-5372,U+5374-539E,U+53A0-53C1,U+53C3-53D0,U+53D2-53D5,U+53D9-53E2,U+53E4-53E9",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-027.woff2",
+      "bytes": 80372,
+      "sha256": "12b755c90f1a1a1a948c493809ce98c84f79cfbc5b395a7bd7c9b2e4a1fdd05f",
+      "unicodeRange": "U+53EA-53EE,U+53F1-53F6,U+53F8,U+53FA-540B,U+540F-5410,U+5412-542B,U+542D-542E,U+5430-547B,U+547D-548B,U+548D-5575",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-028.woff2",
+      "bytes": 114516,
+      "sha256": "f365388e00abfd709377cecd8f16081f47fb72a9c1dff11e7e446f9169eef68a",
+      "unicodeRange": "U+5576-56DD,U+56DF-56F6",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-029.woff2",
+      "bytes": 91604,
+      "sha256": "1be66e65ab1ecebbf47d130c747bb3d85b08edbc800022a7556f63d83c5a31b6",
+      "unicodeRange": "U+56F7-5727,U+5729-572F,U+5731-5739,U+573B-57DE,U+57E0-586A,U+586C-587B",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-030.woff2",
+      "bytes": 110168,
+      "sha256": "dccd15df8d7e479b0aabb12f0adaf2dc9a77e3d2a31d2db033e8292719399d65",
+      "unicodeRange": "U+587C-589D,U+589F-58EA,U+58EC-5906,U+5908-590C,U+590E-5915,U+5917-591B,U+591D-5926,U+5928,U+592B-5930,U+5932-5933,U+5935-59CA,U+59CC-59D2,U+59D4-5A08",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-031.woff2",
+      "bytes": 131148,
+      "sha256": "2c0410101c32b36438601ed78fdeada638d35ae5a9df3d9b31515597b4cd2403",
+      "unicodeRange": "U+5A09-5B56,U+5B59-5B65,U+5B67-5B88,U+5B8A-5B8B,U+5B8D",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-032.woff2",
+      "bytes": 93824,
+      "sha256": "047465d2918596dddcf1f362bc7d5bc8f981282065b581877b9178176bac9b28",
+      "unicodeRange": "U+5B8E-5B97,U+5B99,U+5B9B-5B9D,U+5B9F-5BB8,U+5BBA-5BCB,U+5BCD-5BF8,U+5BFA,U+5BFD-5C05,U+5C07-5C10,U+5C12-5C13,U+5C15-5C19,U+5C1B-5C4E,U+5C50-5C5D,U+5C5F-5C70,U+5C72-5C80,U+5C82-5D1D",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-033.woff2",
+      "bytes": 110160,
+      "sha256": "b651ac46e2fc9a17ec87afb3a74979b2482b8a147e86c73ba7bddf41596e05dc",
+      "unicodeRange": "U+5D1E-5DE4,U+5DE6-5DF0,U+5DF3-5E02,U+5E04-5E25,U+5E27-5E37,U+5E39-5E54,U+5E56-5E73,U+5E75,U+5E77-5E93,U+5E95-5EA5,U+5EA7-5EA8",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-034.woff2",
+      "bytes": 110092,
+      "sha256": "68f623aa7a7805385d933193df3c34c978a5c38f559b874dace6f6a78f424d43",
+      "unicodeRange": "U+5EA9-5EF9,U+5EFB-5EFF,U+5F01,U+5F03-5F0E,U+5F10-5F38,U+5F3A-5F52,U+5F54,U+5F56-5F61,U+5F63-5F7B,U+5F7D-5F7F,U+5F81-5F84,U+5F86-5FF4,U+5FF6-6000,U+6002-6035",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-035.woff2",
+      "bytes": 120724,
+      "sha256": "cee69b638a2d9c937963e7091979bf24c9347fcd31fb59f12bf281aa43febd5d",
+      "unicodeRange": "U+6036-6051,U+6053-6061,U+6063-606E,U+6070-611E,U+6120-61B9",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-036.woff2",
+      "bytes": 109476,
+      "sha256": "0964271a9fb23d6d4c0e26b732d29589fb2be13817d34bc59cbe1958a3921169",
+      "unicodeRange": "U+61BA-620F,U+6212-6215,U+6217-624A,U+624C,U+624E-6252,U+6254-6262,U+6264-6266,U+6268-626A,U+626C-627D,U+627F-6289,U+628B-6294,U+6296-62A1,U+62A3-62AB,U+62AD-62B4,U+62B6-62BC,U+62BE-62DE,U+62E0-62E8,U+62EA-6300,U+6302-6308,U+630A-632E,U+6330-634E",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-037.woff2",
+      "bytes": 119244,
+      "sha256": "a05cc286adc2d1a719cfad3589e12205f8ce09f1a9bc250ebd781356d9778dad",
+      "unicodeRange": "U+634F-6354,U+6356-636D,U+636F-6391,U+6393-63A4,U+63A6-63CE,U+63D1-63E0,U+63E2-63EC,U+63EE-63F3,U+63F5-64A3,U+64A5-64CC,U+64CE-64D9",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-038.woff2",
+      "bytes": 121228,
+      "sha256": "699cb2ada6cebbff0396996c7d3491e04e259a5638b553b96ea0d48f5e946bd0",
+      "unicodeRange": "U+64DA-6535,U+6537-6538,U+653A-653D,U+653F-6544,U+6546-6547,U+6549-6562,U+6564-656F,U+6571-6586,U+6588-65AF,U+65B1-65B8,U+65BA-65DF,U+65E1-65E4,U+65E6-65F5,U+65F7-660D,U+660F-661E,U+6620-662E,U+6630-6652,U+6654-6659,U+665B-666B",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-039.woff2",
+      "bytes": 98836,
+      "sha256": "62145f43ea92fb42fda2620a7189a2cb82d4c2701787d7972103a949c2e8f3c5",
+      "unicodeRange": "U+666C-6679,U+667B-6681,U+6683-6695,U+6697-66F3,U+66F5-66FF,U+6701-670C,U+670E-6729,U+672B,U+672D-6739,U+673B-6742,U+6744-675E,U+6760,U+6762-677E,U+6780-679B,U+679D-67E4,U+67E6-67FA",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-040.woff2",
+      "bytes": 109644,
+      "sha256": "7c545f935f237e26c48507cfbb55605e9402b948454bea707cf6e2b43716e894",
+      "unicodeRange": "U+67FB-6806,U+6808-6837,U+6839-6847,U+6849-6862,U+6864-68BF,U+68C1-697F",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-041.woff2",
+      "bytes": 138100,
+      "sha256": "624349a55aa0753b3c3d5fa3aacb0f67691a2dceb727c4b49d0115e1150e98a3",
+      "unicodeRange": "U+6980-6AFF",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-042.woff2",
+      "bytes": 122656,
+      "sha256": "26841953ed4f45a6d02001d10ca567d45eed87671f16d0990ded489f911a7845",
+      "unicodeRange": "U+6B00-6B20,U+6B23-6B3D,U+6B3F-6B61,U+6B66-6BB4,U+6BB6-6C41,U+6C43-6C46,U+6C48-6C6F,U+6C71-6C8A",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-043.woff2",
+      "bytes": 101608,
+      "sha256": "e9ce38a54a22f5ecfadee3afb395b4a8900da36c10076df48173825d814d18ce",
+      "unicodeRange": "U+6C8B-6CB2,U+6CB4-6CBE,U+6CC0-6CD4,U+6CD6-6D3A,U+6D3C-6D40,U+6D42-6D4A,U+6D4C-6D76,U+6D78-6D87,U+6D89-6DD7,U+6DD9-6E13",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-044.woff2",
+      "bytes": 127164,
+      "sha256": "ab8ca7110dc16cd3011f09738bb76c421615d36f7b21e0942a94a98e4c8f0da1",
+      "unicodeRange": "U+6E14-6E28,U+6E2A-6EE0,U+6EE2-6F95",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-045.woff2",
+      "bytes": 138640,
+      "sha256": "0d38f9ef61b6954f1327eed1bf138e7e889914b9a5f61fabdded9c30559dc00d",
+      "unicodeRange": "U+6F96-70B8,U+70BA-70EC,U+70EE-7117",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-046.woff2",
+      "bytes": 131472,
+      "sha256": "084cb2235c2a73cc891400f642656293dd4c8b9baebefd01f72afd52f8fe6261",
+      "unicodeRange": "U+7118-7230,U+7232-7246,U+7249-7268,U+726A-729B",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-047.woff2",
+      "bytes": 113248,
+      "sha256": "64b6381155e5b0ba990a0624fa283297dcb50288c6ca8af0622fd12a96397564",
+      "unicodeRange": "U+729C-72B5,U+72B7-73AA,U+73AC-73AE,U+73B1-741F",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-048.woff2",
+      "bytes": 118740,
+      "sha256": "6e253e34c204c7d6b5b063e2bd2dcd05415ce3c005cb4d912e53cbcbdfcc6c53",
+      "unicodeRange": "U+7420-746F,U+7471-751E,U+7520-7527,U+7529-7530,U+7532-7558,U+755A-75A4",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-049.woff2",
+      "bytes": 117796,
+      "sha256": "0af9bc616c9b96fa382dc9de521cc3983efdeddf09b5afc508fb6d84b0717581",
+      "unicodeRange": "U+75A5-767A,U+767C,U+767E-7683,U+7685-76ED,U+76EF-76F7,U+76F9-770A,U+770C-771E,U+7720-772B",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-050.woff2",
+      "bytes": 100692,
+      "sha256": "95b2376f0e94b0362f7b027fe51755a7d2e6d866712fe92ef335d8960930d04f",
+      "unicodeRange": "U+772C-773F,U+7741-7800,U+7802-786D,U+786F-78AE",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-051.woff2",
+      "bytes": 117088,
+      "sha256": "55bbe90da7df9269238f444441a3a1f15434c373625da0309f2a2dc0a7730360",
+      "unicodeRange": "U+78AF-793B,U+793D-7967,U+7969-79BA,U+79BC-79CC,U+79CE-7A0A,U+7A0C,U+7A0E-7A34",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-052.woff2",
+      "bytes": 129348,
+      "sha256": "0eaae902abc828f63d8e475c6ae5c4fc741a687539bafa8cf698a6995dc0d18a",
+      "unicodeRange": "U+7A35-7A3E,U+7A40-7A96,U+7A98-7ACA,U+7ACC-7ADF,U+7AE1-7AEE,U+7AF0-7B25,U+7B27-7B2B,U+7B2D-7B48,U+7B4A-7B53,U+7B55-7B7F,U+7B81-7BBE",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-053.woff2",
+      "bytes": 141924,
+      "sha256": "b6a26b07078f86a81a78a99362c01522811b85d9f42047f272ec77323d1745e2",
+      "unicodeRange": "U+7BBF-7C4C,U+7C4E-7CFA,U+7CFC-7D21,U+7D23-7D41",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-054.woff2",
+      "bytes": 162568,
+      "sha256": "a3509321d3a57ddb975cb71ec5510c3d3da582c0068a6cb0866ab79bb6c8b138",
+      "unicodeRange": "U+7D42-7E40,U+7E42-7EA1,U+7EA3-7EA6,U+7EA8-7EA9,U+7EAB-7EBE,U+7EC0-7EC2,U+7EC4-7EC7",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-055.woff2",
+      "bytes": 125636,
+      "sha256": "cbb49f923b7f2a71846de56c2aa4b6bbc6349626e2a4f08921f46f42d1c510e7",
+      "unicodeRange": "U+7EC9-7ECE,U+7ED0-7ED2,U+7ED4-7EDB,U+7EDD-7EDE,U+7EE0-7EE6,U+7EE8-7EEC,U+7EEE-7F15,U+7F17-7F39,U+7F3B-7F50,U+7F52-7F6D,U+7F6F-7FA3,U+7FA5-8049,U+804B-8054",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-056.woff2",
+      "bytes": 115592,
+      "sha256": "0cae1e59e66d4cb82e2ae2b1c689371b1bddb13f30847436649ab05356e40885",
+      "unicodeRange": "U+8055-80FC,U+80FE-81D5",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-057.woff2",
+      "bytes": 99004,
+      "sha256": "3224058776c787071b5d1199cd351c36f5bd5d3945cf16d366b87ddcc6033f96",
+      "unicodeRange": "U+81D6-81E9,U+81EB-81F3,U+81F5-8229,U+822B-8271,U+8273-8281,U+8283-8348,U+834A-835B",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-058.woff2",
+      "bytes": 104884,
+      "sha256": "b7f184b01ae4f69c15ecec0d17bbf643d3813e0289f02be853725aff14770f5a",
+      "unicodeRange": "U+835C-83B6,U+83B8-84DC",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-059.woff2",
+      "bytes": 135540,
+      "sha256": "ad6da57abeefe6cb56bf166ef264016d47efd2215d7ef7b0740db6fe0cef1803",
+      "unicodeRange": "U+84DE-8659,U+865B-865E",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-060.woff2",
+      "bytes": 118448,
+      "sha256": "6eea4e6987f04ce4681516b4ad68d19fe21055d17842c7762c85acc883e1baaa",
+      "unicodeRange": "U+865F-87DE",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-061.woff2",
+      "bytes": 134680,
+      "sha256": "c48413b31945b1ea07d4a4703780ecd4ae884136ec2cd86ae0ddd8cbecd3ee7c",
+      "unicodeRange": "U+87DF-884B,U+884D-895F",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-062.woff2",
+      "bytes": 110144,
+      "sha256": "bbcae2311c76993166b243b58c7f7d81ffbc3baa9bfb56a989e0e2c2d9fcfb9c",
+      "unicodeRange": "U+8960-8980,U+8982-89C0,U+89C3-89E2,U+89E4-89E5,U+89E7-8AE4",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-063.woff2",
+      "bytes": 126300,
+      "sha256": "ad47ea39e394dbbcd9d244d30e996928288c9dafe5c5a2a34eb3f7bfa6ca0d74",
+      "unicodeRange": "U+8AE5-8BA0,U+8BA2-8BA3,U+8BA5-8BA8,U+8BAA-8BAD,U+8BAF,U+8BB1-8BBD,U+8BC0-8BC5,U+8BC7-8BD4,U+8BD6-8BDC,U+8BDE-8BE4,U+8BE6-8BF3,U+8BF5-8BF6,U+8BF8-8C21,U+8C23-8C72",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-064.woff2",
+      "bytes": 112552,
+      "sha256": "6d8b6b77bec94c0352e08647260db9f2ba2bc77efe4501b83f627326f90e0aa4",
+      "unicodeRange": "U+8C73-8D38,U+8D3A-8D5F,U+8D61-8D73,U+8D75-8D76,U+8D78-8D84,U+8D86-8DB2,U+8DB4-8DF8",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-065.woff2",
+      "bytes": 114588,
+      "sha256": "7ab245fe9acdc8a61a8db8dab76c598fbed96a1863e5e2b62098d92bf13a5394",
+      "unicodeRange": "U+8DF9-8EAA,U+8EAC-8F67,U+8F69-8F6D,U+8F6F-8F7A,U+8F7C",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-066.woff2",
+      "bytes": 114188,
+      "sha256": "ec1c6512a6e613f8a14a2eb16a4306a1b4bec24cf1fdb456c4c8b99aac82f361",
+      "unicodeRange": "U+8F7D-8F92,U+8F94-8FBD,U+8FBF-8FC6,U+8FC8-8FCD,U+8FCF-8FD0,U+8FD2-8FD3,U+8FD5-8FD8,U+8FDA,U+8FDD,U+8FDF-8FF8,U+8FFA-8FFF,U+9002-9008,U+900A-9046,U+9048-9052,U+9054-907F,U+9081-910D",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-067.woff2",
+      "bytes": 116136,
+      "sha256": "7aaa708defcd1a030a68c678692dc95d0fc55de392de3652877c9c6e1fdd5dae",
+      "unicodeRange": "U+910E-914C,U+914E-91CB,U+91CE,U+91D0-9291",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-068.woff2",
+      "bytes": 128832,
+      "sha256": "9f09992d0ca125439639ee13ee0d769b89a206e6ef3087d7d38d7fabfe6f0ab2",
+      "unicodeRange": "U+9292-9411",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-069.woff2",
+      "bytes": 131764,
+      "sha256": "48050ca4c45316f0ec37351ab2905087b7dc39aacbd7dbde2d1f8611cca46d34",
+      "unicodeRange": "U+9412-9500,U+9502-9592",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-070.woff2",
+      "bytes": 110020,
+      "sha256": "ee8dc87027c66f61baa3a0fa4905582feb8442ccbb6c27979e32a0d2db1ab5f9",
+      "unicodeRange": "U+9593-95EC,U+95EF-961E,U+9620-9635,U+9637-9644,U+9646-964F,U+9651-9661,U+9663-96C5,U+96C7-96FF,U+9701-971B",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-071.woff2",
+      "bytes": 117376,
+      "sha256": "06a1d6b1818abdeba6aa5ca7018673e5b18dbdb32541d907c556297fb89eb422",
+      "unicodeRange": "U+971C-9761,U+9763-9874,U+9876-9878,U+987B-9890,U+9892-9896,U+9898-989B,U+989E-98A3",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-072.woff2",
+      "bytes": 135080,
+      "sha256": "066d875aead657171f92868733f01da7b3ecab9f4dde7be5f82681d1663a687f",
+      "unicodeRange": "U+98A4-9995,U+9997-9A24",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-073.woff2",
+      "bytes": 146324,
+      "sha256": "dc09100c2232400c92ad490f9fcad808fec40fc91cd259c50bbc39b1ec405e8e",
+      "unicodeRange": "U+9A25-9A7A,U+9A7C-9A8B,U+9A8D-9AA3,U+9AA5-9AD7,U+9AD9-9BA8",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-074.woff2",
+      "bytes": 133628,
+      "sha256": "997a44223921984b59915a7314d34bebf5da130762453d1aa6131674d6b53340",
+      "unicodeRange": "U+9BA9-9D28",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-075.woff2",
+      "bytes": 156192,
+      "sha256": "21aae9a3b095bfe11571aa3abb1d1eaf52575fd7046f002377de259f1aa6ee08",
+      "unicodeRange": "U+9D29-9EA8",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-076.woff2",
+      "bytes": 138628,
+      "sha256": "c0a0fbad753c1f3ccdd6848802fd64fccefbc1c5ada03e16192837632fac625a",
+      "unicodeRange": "U+9EA9-9FEF,U+F900-F903,U+F905-F906,U+F90B-F90C,U+F915,U+F917-F91A,U+F921,U+F92C-F92D,U+F92F,U+F931-F935,U+F937-F93A,U+F943,U+F947-F94A,U+F94E,U+F952-F953,U+F95E,U+F962-F967,U+F96E,U+F972,U+F974,U+F976,U+F979-F97B,U+F97E-F980,U+F984-F985,U+F98A-F98C,U+F98E",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-077.woff2",
+      "bytes": 53600,
+      "sha256": "8e266cd31d1c5fdc47fb912840e24c92e6be3173239a6e3f93daabd0e4f4e5e3",
+      "unicodeRange": "U+F993,U+F995,U+F998,U+F9AE,U+F9B3,U+F9B7,U+F9BB,U+F9BD-F9BE,U+F9C0,U+F9C5-F9C6,U+F9D0,U+F9D8-F9D9,U+F9DC-F9E0,U+F9E2-F9E4,U+F9E7,U+F9E9,U+F9F1,U+F9F4-F9F5,U+F9FA,U+F9FD,U+F9FF,U+FA02,U+FA05-FA08,U+FA0A,U+FA0C-FA0F,U+FA11,U+FA13-FA14,U+FA18,U+FA1F-FA21,U+FA23-FA24,U+FA27-FA29,U+FA2F,U+FA33-FA35,U+FA37-FA38,U+FA3A,U+FA47,U+FA49,U+FA4B,U+FA5D-FA5E,U+FB00-FB04,U+FE10-FE19,U+FE30-FE52,U+FE54-FE66,U+FE68-FE6B,U+FF01-FF07,U+FF0A,U+FF0D-FF19,U+FF1C-FF1E,U+FF20-FF9F,U+FFA1-FFBE,U+FFC2-FFC7,U+FFCA-FFCF,U+FFD2-FFD7,U+FFDA-FFDC,U+FFE0-FFE6,U+FFE8-FFEE,U+1F100-1F10C,U+1F110-1F11F",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-078.woff2",
+      "bytes": 89148,
+      "sha256": "3c8f71040d6b374c4f2d3acff64a2d19224a945549bffe7292e4f7198f0037b0",
+      "unicodeRange": "U+1F120-1F16C,U+1F170-1F1AC,U+1F200-1F202,U+1F210-1F23B,U+1F240-1F248,U+1F250-1F251,U+20087,U+20089,U+200CC,U+20164,U+20628,U+20676,U+20CD0,U+2139A,U+21413,U+215D7,U+2298F,U+235CB,U+23C97-23C98,U+23E23,U+241FE,U+2420E,U+248E9,U+249DB,U+24A01,U+24A7D,U+24AC9,U+25532,U+25562,U+255A8,U+25AD7,U+25ED7,U+26221,U+2648D,U+26676,U+2677C,U+26951,U+26B5C,U+26C21,U+278B2,U+27EAF,U+27FB7,U+27FF9,U+28408,U+28678,U+28695,U+287E0,U+28B49,U+28C47,U+28C4F,U+28C51,U+28C54,U+28E0F,U+28E99,U+2967F,U+29810,U+29F7E,U+29F83,U+29F8C,U+2A7DD,U+2A8FB,U+2A917,U+2AA30,U+2AA36,U+2AA58,U+2AFA2,U+2B127-2B128,U+2B137-2B138,U+2B1ED,U+2B300,U+2B363,U+2B36F,U+2B372,U+2B37D,U+2B404,U+2B410,U+2B413,U+2B461,U+2B4E7,U+2B4EF,U+2B4F6,U+2B4F9,U+2B50D-2B50E,U+2B536,U+2B5AE-2B5AF,U+2B5B3,U+2B5E7,U+2B5F4,U+2B61C-2B61D,U+2B626-2B628,U+2B62A,U+2B62C,U+2B695-2B696,U+2B6AD,U+2B6ED,U+2B7A9,U+2B7C5,U+2B7E6,U+2B7F9,U+2B7FC,U+2B806,U+2B80A,U+2B81C,U+2B8B8,U+2BAC7,U+2BB5F,U+2BB62,U+2BB7C,U+2BB83,U+2BC1B,U+2BD77,U+2BD87,U+2BDF7,U+2BE29,U+2C029-2C02A,U+2C0A9,U+2C0CA,U+2C1D5,U+2C1D9,U+2C1F9,U+2C27C,U+2C288,U+2C2A4,U+2C317,U+2C35B,U+2C361,U+2C364,U+2C488,U+2C494,U+2C497,U+2C542,U+2C613,U+2C618,U+2C621,U+2C629,U+2C62B-2C62D,U+2C62F,U+2C642,U+2C64A-2C64B,U+2C72C,U+2C72F,U+2C79F,U+2C7C1,U+2C7FD,U+2C8D9,U+2C8DE,U+2C8E1,U+2C8F3,U+2C907,U+2C90A,U+2C91D,U+2CA02,U+2CA0E,U+2CA7D,U+2CAA9,U+2CB29,U+2CB2D-2CB2E,U+2CB31,U+2CB38-2CB39,U+2CB3B,U+2CB3F,U+2CB41,U+2CB4A,U+2CB4E,U+2CB5A-2CB5B,U+2CB64,U+2CB69,U+2CB6C,U+2CB6F,U+2CB73,U+2CB76,U+2CB78,U+2CB7C,U+2CBB1,U+2CBBF-2CBC0,U+2CBCE,U+2CC56",
+      "codepointCount": 384
+    },
+    {
+      "file": "welcome-sans-sc-079.woff2",
+      "bytes": 17464,
+      "sha256": "ce31bb0c2f4e0fa05a39cb5560d6d34be2fc7d2ad5c9f98c3fd6f44d1730f02e",
+      "unicodeRange": "U+2CC5F,U+2CCF5-2CCF6,U+2CCFD,U+2CCFF,U+2CD02-2CD03,U+2CD0A,U+2CD8B,U+2CD8D,U+2CD8F-2CD90,U+2CD9F-2CDA0,U+2CDA8,U+2CDAD-2CDAE,U+2CDD5,U+2CE18,U+2CE1A,U+2CE23,U+2CE26,U+2CE2A,U+2CE7C,U+2CE88,U+2CE93,U+2D544,U+2F884,U+2F8B6,U+30EDD-30EDE,U+3106C",
+      "codepointCount": 32
+    }
+  ],
+  "cssSha256": "641a075fe0cdd8c0b5f76d90be4381ce7577e3bdb6665a7946cb2e6e4f28c794",
+  "titleFiles": [
+    {
+      "file": "smiley-sans-oblique.woff2",
+      "bytes": 1150924,
+      "sha256": "731f22973349404b15a88a99ef3b5dd4104c0965c23b7e485c1f11e84fea99e2"
+    },
+    {
+      "file": "oxanium.woff2",
+      "bytes": 18936,
+      "sha256": "e9839c3dc932c5218b4a6abfaad40cb7ebbfc6b0e411fb92d9d56559a2c5a58c"
+    }
+  ],
+  "titleSources": {
+    "smiley": {
+      "version": "2.0.1",
+      "url": "https://github.com/atelier-anchor/smiley-sans/releases/tag/v2.0.1",
+      "archiveSha256": "299c0be6c960ae37361762eca76f7d0cd516615435bb96c0d4b98a1e70178a07"
+    },
+    "oxanium": {
+      "commit": "a8f39e0c71186190027a093e9001459410192d1e",
+      "sourceSha256": "2ce01d946e1e1ffc8d7eecfffbda8623bedd63eaf811a20488c4b69af45babb0",
+      "url": "https://github.com/sevmeyer/oxanium"
+    }
+  },
+  "license": "OFL-1.1",
+  "fallback": "Emoji, characters outside upstream coverage and failed font requests use the readable browser fallback."
+}

@@ -1,0 +1,24 @@
+.v2-screen{--stage-paper:#f0eafa;--stage-muted:#c9c0d9}
+.v2-program-stage{z-index:0}
+.city-outgoing{animation:city-to-galaxy 1.8s ease-in-out both;z-index:0}
+@keyframes city-to-galaxy{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-2%)}}
+.v2-live-interaction,.v2-raffle{background:linear-gradient(180deg,#221b344f,#27223563);color:var(--stage-paper)}
+.v2-live-interaction::before{animation:none;opacity:.08}.v2-live-interaction__rings{animation:none;opacity:.18}
+.v2-live-interaction__rings i:nth-child(3){background:none;box-shadow:none;border:1px solid #c3b1e63b}
+.v2-live-interaction h1{font-weight:500;letter-spacing:.055em;text-shadow:none}
+.v2-kicker{color:var(--city-accent,#cfbfed)}
+.v2-buzzer-status{animation:none;filter:none;transform:none;color:var(--city-accent);text-shadow:0 0 30px #c3acec18}
+.v2-buzzer-winner{color:#f1e4d6;text-shadow:none;animation:city-content-reveal .5s ease both}
+.v2-vote-count strong{color:var(--city-accent)}
+.v2-vote-board{width:min(1140px,88vw);gap:14px 24px}
+.v2-vote-board article{position:relative;min-height:64px;padding:12px 20px 12px 38px;border:1px solid #c8b6e345;border-radius:16px 3px 16px 3px;background:#292234b8;box-sizing:border-box}
+.v2-vote-board article::before{content:'✦';position:absolute;left:14px;color:var(--candidate-color);font-size:13px}
+.v2-vote-board article>i{height:5px;background:#c9b9df1f}.v2-vote-board article>i>b{box-shadow:none;background:var(--candidate-color);transition-duration:.5s}
+.v2-vote-board article>span{font-size:clamp(16px,1.1vw,22px)}
+.v2-raffle__code{color:#f2e8fb;text-shadow:0 0 28px #bba1e628}.v2-raffle__history li{background:#31273e9c;border-color:#c4abd64d;border-radius:12px 3px 12px 3px}
+.v2-raffle__history li.current{background:#7359804a;color:#f1e5fa;border-color:#d2bde899}
+.program-title-cue{color:#f2eafa}.program-title-cue>span{color:var(--city-accent)}.program-title-cue h2{text-shadow:0 2px 14px #19132655}.program-title-cue p{color:#e0d7e8}
+.v2-gift-room-stats li{background:#30243caa;border-color:#c6b0d940;border-radius:12px 3px 12px 3px;box-shadow:none;backdrop-filter:none}
+.v2-screen-settings{background:#292439f2!important;border-color:#bca8d550!important;color:#ece5f7}
+@keyframes city-content-reveal{from{opacity:0}to{opacity:1}}
+.is-reduced-motion .city-outgoing,.is-reduced-motion .v2-buzzer-winner{animation:none;transform:none}

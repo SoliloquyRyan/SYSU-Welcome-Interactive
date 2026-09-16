@@ -1,5 +1,5 @@
 <script setup>
-import { createGiftFlightQueue } from "../../rendering/gift-flight-queue"
+import { createGiftSkyQueue } from '../../rendering/gift-sky-queue'
 import { useBuzzerCountdown } from '../../composables/useBuzzerCountdown'
 import GiftSignalIcon from '../student/GiftSignalIcon.vue'
 import ArrivalCount from '../../components/ArrivalCount.vue'
@@ -9,10 +9,13 @@ import { useReducedMotion } from '../../composables/useReducedMotion'
 import { useV2ScreenRealtime } from '../../composables/useV2ScreenRealtime'
 import { v2ScreenApi } from '../../services/api'
 import { barragePaint } from '../../services/barrage-colors'
-import { programCredits } from '../../services/program-credits'
 import { interactionLabel } from '../../services/interaction-label'
-import GiftStarshipFlight from '../../components/GiftStarshipFlight.vue'
+import GiftSkyEffects from '../../components/GiftSkyEffects.vue'
 import ProgramStageBackground from '../../components/ProgramStageBackground.vue'
+import StarCityAtmosphere from '../../components/StarCityAtmosphere.vue'
+import ProgramStageTitle from '../../components/ProgramStageTitle.vue'
+import { programVisual, hasProgramArtwork, persistentProgramCredits } from '../../rendering/program-visuals'
+import { starCityTheme, starCityStyle, programBackground } from '../../rendering/star-city-theme'
 import { CINEMA_TIMING } from '../../rendering/cinema-timing'
 import { createGalaxyRenderer } from './galaxy-renderer'
 import { createCinematicGalaxyScene, projectPublicStar } from './cinematic-galaxy-scene'
@@ -36,9 +39,10 @@ const sceneTransitionLayer = ref(null)
 const finaleLayer = ref(null)
 const flyingBarrages = ref([])
 const giftFlights = ref([])
+const giftAggregate = ref(null)
 const errorMessage = ref('')
 const route = useRoute()
-const transparentMedia = computed(() => route.query.media === 'overlay')
+const transparentMedia = computed(() => route.query.media === 'overlay' && !hasProgramArtwork(snapshot.value?.currentProgram))
 const programCue = ref(null)
 const pageHidden = ref(document.hidden)
 let programCueTimer = null
@@ -65,13 +69,9 @@ let disposed = false
 const activeAnimations = new Set()
 const barrageAnimations = new Map()
 const barrageTimers = new Map()
-const giftFlightQueue = createGiftFlightQueue({
-  duration: () => reducedMotion.value ? CINEMA_TIMING.starshipStaticMs : CINEMA_TIMING.starshipScreenMs + 200,
-  gap: CINEMA_TIMING.starshipGapMs,
-  onChange: flight => {
-    giftFlights.value = flight ? [flight] : []
-
-  },
+const giftFlightQueue = createGiftSkyQueue({
+  reduced: () => reducedMotion.value,
+  onChange: ({ effects, aggregate }) => { giftFlights.value = effects; giftAggregate.value = aggregate },
 })
 const seenGiftFlights = new Set()
 let barrageSerial = 0
@@ -87,11 +87,11 @@ function clearGiftFlights() {
 }
 
 function launchGiftFlight(gift) {
-  if (!interactionVisible.value || snapshot.value?.currentProgram?.id !== gift.programId || document.hidden || gift.showStarship !== true || gift.giftId !== 'gift-starship' || seenGiftFlights.has(gift.giftEventId)) return
+  if (realtime.state.value !== 'online') return
+  if (!interactionVisible.value || snapshot.value?.currentProgram?.id !== gift.programId || document.hidden || seenGiftFlights.has(gift.giftEventId)) return
   seenGiftFlights.add(gift.giftEventId)
   if (seenGiftFlights.size > 256) seenGiftFlights.delete(seenGiftFlights.values().next().value)
-  const flight = { id: gift.giftEventId, quantity: gift.quantity ?? 1 }
-  giftFlightQueue.enqueue(flight)
+  giftFlightQueue.enqueue(gift)
 }
 
 function applyGiftEvent(gift) {
@@ -110,6 +110,9 @@ const previewingFinale = computed(() => presentation.value.type === 'FINALE_PREV
 const raffleActive = computed(() => presentation.value.type === 'RAFFLE')
 const raffle = computed(() => snapshot.value?.raffle)
 const liveInteraction = computed(() => snapshot.value?.liveInteraction ?? { phase: 'IDLE', voteCandidates: [] })
+const cityTheme = computed(() => starCityTheme({ program: snapshot.value?.currentProgram, stage: snapshot.value?.stage, presentation: presentation.value, liveInteraction: liveInteraction.value }))
+const audioAvailable = ref(false)
+const audioEnabled = computed(() => route.query.audio !== 'off' && realtime.state.value === 'online' && currentScene.value === 'PROGRAM_SUPPORT' && runtime.value?.status === 'RUNNING' && ceremonyStage.value.mode === 'PROGRAM' && presentation.value.type === 'NONE' && liveInteraction.value.phase === 'IDLE' && !sceneTransition.value && !completed.value)
 const buzzerCountdown = useBuzzerCountdown(liveInteraction, computed(() => snapshot.value?.generatedAt))
 const giftRoomStats = computed(() => snapshot.value?.currentProgram?.kind === 'PERFORMANCE'
   ? (snapshot.value.currentProgram.giftCatalog ?? [])
@@ -128,6 +131,11 @@ const interactionVisible = computed(() =>
   && !sceneTransition.value,
 )
 const scene = computed(() => sceneCopy[currentScene.value] ?? sceneCopy.ASSEMBLY)
+const activeVisual = computed(() => programVisual(snapshot.value?.currentProgram, ceremonyStage.value))
+const stageStars = computed(() => sceneTransition.value ? [] : snapshot.value?.publicStars ?? [])
+// Use the renderer's cover-projected points for gift anchors, including after resize.
+const skyPoints = ref([])
+const showPersistentCredits = computed(() => interactionVisible.value && persistentProgramCredits(snapshot.value?.currentProgram, ceremonyStage.value))
 const openingProgram = computed(() => sceneTransition.value?.fromScene === 'ASSEMBLY'
   && sceneTransition.value?.toScene === 'PROGRAM_SUPPORT')
 const connectionLabel = computed(() => {
@@ -606,6 +614,8 @@ watch(interactionVisible, (visible) => {
   if (!visible) { clearFlyingBarrages(); clearGiftFlights() }
 })
 
+watch(reducedMotion, clearGiftFlights)
+
 watch(transparentMedia, () => renderer?.setProgramBackdrop(false))
 
 watch(() => runtime.value?.status, (status) => {
@@ -662,6 +672,7 @@ onMounted(async () => {
   if (canvas.value) {
     renderer = createGalaxyRenderer(canvas.value, {
       reduced: reducedMotion.value,
+      audienceOnly: true,
       cinematicSceneFactory: createCinematicGalaxyScene,
       projectCinematicStar: projectPublicStar,
       programBackdrop: false,
@@ -691,7 +702,7 @@ onBeforeUnmount(() => {
   <section
     ref="root"
     class="v2-screen"
-    :style="{ '--opening-duration': `${PROGRAM_OPENING_TRANSITION_MS}ms` }"
+    :style="{ '--opening-duration': `${PROGRAM_OPENING_TRANSITION_MS}ms`, ...starCityStyle(cityTheme) }"
     :class="[
       `scene-${currentScene.toLowerCase()}`,
       {
@@ -711,21 +722,18 @@ onBeforeUnmount(() => {
     data-transition-architecture="native-webgl2-supernova-with-canvas2d-fallback"
     data-screen-palette="orbital-signal-spectrum"
     data-visual-palette="orbital-signal-spectrum"
+    :data-city-theme="cityTheme.id"
   >
     <div ref="stageBackdrop" class="v2-stage-backdrop" aria-hidden="true"></div>
+    <ProgramStageBackground v-if="sceneTransition?.fromScene === 'PROGRAM_SUPPORT' && sceneTransition.toScene !== 'PROGRAM_SUPPORT' && !transparentMedia" class="city-outgoing" :theme="cityTheme.id" paused :branded="false" />
     <ProgramStageBackground v-if="currentScene === 'PROGRAM_SUPPORT' && !completed && !transparentMedia && !ceremonyVisible"
-      class="v2-program-stage" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED'" />
-    <Transition name="ceremony-fade"><AwardStage v-if="ceremonyVisible" :stage="ceremonyStage" :title="snapshot?.currentProgram?.kind === 'SPEECH' ? snapshot.currentProgram.title : ''" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED'" /></Transition>
+      class="v2-program-stage" :stars="stageStars" :visual="activeVisual" :theme="cityTheme.id" :variant="programBackground(snapshot?.currentProgram, ceremonyStage)" :audio="audioEnabled" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED' || Boolean(sceneTransition)" @sky-points="skyPoints = $event" @audio-status="audioAvailable = $event" />
+    <StarCityAtmosphere v-if="currentScene === 'PROGRAM_SUPPORT' && transparentMedia && !completed && !ceremonyVisible" overlay :stars="stageStars" :effects="giftFlights" :visual="activeVisual" :audio="audioEnabled" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED' || Boolean(sceneTransition)" @sky-points="skyPoints = $event" @audio-status="audioAvailable = $event" />
+    <Transition name="ceremony-fade"><AwardStage v-if="ceremonyVisible" :stage="ceremonyStage" :stars="stageStars" :audio="audioEnabled" :title="snapshot?.currentProgram?.kind === 'SPEECH' ? snapshot.currentProgram.title : ''" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED'" @audio-status="audioAvailable = $event" /></Transition>
     <canvas ref="canvas" class="v2-galaxy" aria-hidden="true"></canvas>
     <ArrivalCount v-if="snapshot && currentScene === 'ASSEMBLY' && !completed && presentation.type === 'NONE'"
       :count="snapshot.aggregate.admittedCount" :reduced="reducedMotion" />
-    <GiftStarshipFlight
-      v-for="flight in giftFlights"
-      :key="flight.id"
-      surface="screen"
-      :quantity="flight.quantity"
-      :reduced="reducedMotion"
-    />
+    <GiftSkyEffects :points="skyPoints" :protected-areas="activeVisual.protectedAreas" :effects="giftFlights" :aggregate="giftAggregate" :reduced="reducedMotion" />
 
     <aside v-if="showScreenSettings" class="v2-screen-settings" aria-label="大屏动效设置">
       <label for="screen-motion-policy">大屏动效</label>
@@ -737,8 +745,13 @@ onBeforeUnmount(() => {
       </select>
       <label for="screen-media">节目底图</label>
       <select id="screen-media" :value="transparentMedia ? 'overlay' : 'background'" @change="router.replace({query: {...route.query, media: $event.target.value}})">
-        <option value="background">学院舞台底图</option><option value="overlay">透明叠加表演视频</option>
+        <option value="background">雾紫星城底图</option><option value="overlay">透明叠加表演视频</option>
       </select>
+      <label for="screen-audio">音乐光尘</label>
+      <select id="screen-audio" :value="route.query.audio === 'off' ? 'off' : 'on'" @change="router.replace({ query: { ...route.query, audio: $event.target.value } })">
+        <option value="on">跟随 OBS 节目音量</option><option value="off">仅环境动效</option>
+      </select>
+      <p role="status">{{ audioEnabled && audioAvailable && !reducedMotion ? '音乐光尘已连接' : '环境星光 · 等待可用节目音量' }}</p>
       <p role="status">当前：{{ reducedMotion ? '静态显示，弹幕保留正文' : '完整动效' }}</p>
       <p>系统动画偏好：{{ systemReducedMotion ? '减少动态' : '正常动态' }}</p>
       <p>{{ connectionLabel || '大屏实时已连接' }}</p>
@@ -746,7 +759,7 @@ onBeforeUnmount(() => {
     </aside>
 
     <p v-if="connectionLabel || errorMessage" class="v2-signal" role="status">
-      {{ errorMessage || connectionLabel }}
+      <span aria-hidden="true">✦ </span>{{ errorMessage || connectionLabel }}
     </p>
 
     <template v-if="snapshot">
@@ -824,9 +837,8 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="interactionVisible && programCue" :key="programCue.id" class="program-title-cue">
-        <span v-if="programCue.kind === 'PERFORMANCE'">PROGRAM {{ programCue.displayCode }}</span><h2>{{ programCue.title }}</h2><p v-if="programCredits(programCue)">{{ programCredits(programCue) }}</p>
-      </div>
+      <ProgramStageTitle v-if="showPersistentCredits" :key="snapshot.currentProgram.id" :program="snapshot.currentProgram" :visual="activeVisual" :reduced="reducedMotion" />
+      <ProgramStageTitle v-else-if="interactionVisible && programCue && !hasProgramArtwork(programCue)" :key="programCue.id" :program="programCue" :visual="activeVisual" transient :reduced="reducedMotion" />
       <aside v-if="interactionVisible && giftRoomStats.length" class="v2-gift-room-stats" aria-label="当前节目礼物统计">
         <ul><li v-for="gift in giftRoomStats" :class="{ 'gift-received': gift.sentCount > 0 }" :key="gift.id + '-' + gift.sentCount" :data-gift-id="gift.id"><GiftSignalIcon :gift-id="gift.id" aria-hidden="true" /><span>{{ gift.name }}</span><strong>×{{ gift.sentCount ?? 0 }}</strong></li></ul>
       </aside>
@@ -958,3 +970,5 @@ html.v2-program-overlay,html.v2-program-overlay body,html.v2-program-overlay .ap
 @keyframes gift-color-flash{0%{opacity:0}18%{opacity:.58}100%{opacity:0}}
 .v2-screen.is-reduced-motion .v2-gift-room-stats li::after{animation:none;opacity:0}
 </style>
+
+<style scoped src="./star-city-screen.css"></style>

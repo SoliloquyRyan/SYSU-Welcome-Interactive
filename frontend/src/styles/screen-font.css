@@ -1,0 +1,55 @@
+@import './mobile-font.css';
+/* User-supplied Fangxian Light. Provenance and local-review scope: fangxian-title.json. */
+@font-face {
+  font-family: 'Fangxian';
+  src: url('../assets/fonts/fangxian-title.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Orbitron';
+  src: url('../assets/fonts/orbitron.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Welcome Stage Serif';
+  src: url('../assets/fonts/welcome-stage-serif.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+/* Official OFL assets, served by this application. Only screen title selectors
+   request these two families; participant text remains Noto Sans SC. */
+@font-face {
+  font-family: 'Smiley Sans';
+  src: url('../assets/fonts/smiley-sans-oblique.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Oxanium';
+  src: url('../assets/fonts/oxanium.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
+.v2-screen, .screen-route-state {
+  --font-family-cjk: 'Welcome Sans SC', 'Noto Sans SC', sans-serif;
+  --font-family-ui: var(--font-family-cjk);
+  --font-family-display: 'Orbitron', 'Fangxian', 'Smiley Sans', 'Welcome Sans SC', sans-serif;
+  --font-family-signal: 'Orbitron', 'Welcome Sans SC', sans-serif;
+  --font-family-data: 'Orbitron', 'Welcome Sans SC', sans-serif;
+  font-family: var(--font-family-ui);
+}
+.v2-screen :is(h1,h2,.v2-raffle__code,.v2-buzzer-winner) {
+  font-family: var(--font-family-display);
+  font-weight: 400;
+  text-shadow: 0 0 14px #bdb1db24;
+}
+.v2-screen :is(.program-title-cue p,.award-winners strong,.award-winners p,.ceremony-kicker,.ceremony-description,.v2-barrage-stream__item) {
+  font-family: var(--font-family-ui);
+}

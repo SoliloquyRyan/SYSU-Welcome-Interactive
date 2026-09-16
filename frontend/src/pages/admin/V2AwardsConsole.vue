@@ -27,7 +27,7 @@ const invalid = computed(() => parsed.value.length > (draft.value?.id === 'point
   || parsed.value.some(item => !item.name || item.name.length > 60 || item.detail.length > 120)
   || !draft.value?.title.trim() || draft.value.title.trim().length > 80)
 const onStage = computed(() => stage.value.award?.id === selected.value && stage.value.mode === 'AWARD')
-const modeLabel = computed(() => stage.value.mode === 'AWARD' ? stage.value.revealed ? '名单展示中' : '奖项标题' : stage.value.mode === 'HOST' ? '主持背景' : '节目画面')
+const modeLabel = computed(() => stage.value.mode === 'AWARD' ? stage.value.revealed ? '名单展示中' : '奖项标题' : stage.value.mode === 'HOST' ? '报幕／主题背景' : '节目画面')
 
 watch(() => props.savedSignal, () => { draft.value = null })
 watch(() => current.value?.awardGroup, group => {
@@ -49,7 +49,7 @@ function save(confirmed) {
 <template>
   <BaseCard padding="md" class="awards-console">
     <header><div><h2>舞台与颁奖</h2><p role="status">{{ modeLabel }}<template v-if="stage.mode === 'AWARD'"> · {{ stage.award?.title }}</template></p></div>
-      <div class="award-actions"><BaseButton variant="secondary" :disabled="!controllable || stage.mode === 'HOST'" @click="command('SET_STAGE_MODE', { mode: 'HOST' })">主持背景</BaseButton><BaseButton variant="secondary" :disabled="!controllable || !current || ['AWARD', 'SPEECH'].includes(current.kind) || stage.mode === 'PROGRAM'" @click="command('SET_STAGE_MODE', { mode: 'PROGRAM' })">返回节目</BaseButton></div>
+      <div class="award-actions"><BaseButton variant="secondary" :disabled="!controllable || stage.mode === 'HOST'" @click="command('SET_STAGE_MODE', { mode: 'HOST' })">报幕／主题背景</BaseButton><BaseButton variant="secondary" :disabled="!controllable || !current || ['AWARD', 'SPEECH'].includes(current.kind) || stage.mode === 'PROGRAM'" @click="command('SET_STAGE_MODE', { mode: 'PROGRAM' })">返回节目</BaseButton></div>
     </header>
     <nav class="ceremony-shortcuts" aria-label="颁奖流程"><BaseButton v-for="item in snapshot.programs.filter(item => ['AWARD','SPEECH'].includes(item.kind) || item.title.replace(/[《》]/g, '') === '光年之外')" :key="item.id" variant="secondary" :aria-current="item.id === current?.id ? 'step' : undefined" :disabled="!controllable || item.id === current?.id" @click="emit('select', item.id)">{{ item.title }}</BaseButton></nav>
     <details class="award-workspace" :open="current?.kind === 'AWARD' || Boolean(draft)">

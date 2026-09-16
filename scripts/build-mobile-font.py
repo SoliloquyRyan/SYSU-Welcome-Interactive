@@ -23,12 +23,17 @@ LICENSE_SHA256 = "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2b
 COPY_FILES = (
     "frontend/src/pages/student/V2WelcomeExperience.vue",
     "frontend/src/pages/student/PersonalMemento.vue",
+    "frontend/src/pages/student/WelcomeRoutePage.vue",
+    "frontend/src/pages/student/MobileBarrage.vue",
     "frontend/src/pages/student/v2-mobile-state.js",
     "frontend/src/services/api.js",
 )
 ASSET = ROOT / "frontend/src/assets/fonts/welcome-sans-sc-ui.woff2"
 MANIFEST = ASSET.with_name("welcome-sans-sc-ui.json")
 LICENSE_OUTPUT = ROOT / "frontend/public/licenses/welcome-sans-sc-OFL.txt"
+# Noto SC does not contain the decorative four-point star. It is not UI prose;
+# keep its readable symbol fallback, as for Emoji and other uncovered glyphs.
+FALLBACK_CODEPOINTS = {0x2726}
 
 
 def checksum(data):
@@ -44,7 +49,7 @@ def ui_characters():
     for item in json.loads(program_file.read_text(encoding="utf-8"))["items"]:
         characters.update(item["titleAsProvided"])
         characters.update(item.get("interludeLabelAsProvided", ""))
-    return {ord(c) for c in characters}
+    return {ord(c) for c in characters} - FALLBACK_CODEPOINTS
 
 
 def main():
@@ -122,7 +127,8 @@ def main():
         "weightRange": [400, 700], "copySources": list(COPY_FILES),
         "programTitleSource": "docs/event-program-2026.json",
         "codepoints": [f"U+{c:04X}" for c in sorted(requested)],
-        "fallback": "System CJK fonts for characters outside the public UI subset",
+        "decorativeFallbackCodepoints": [f"U+{c:04X}" for c in sorted(FALLBACK_CODEPOINTS)],
+        "fallback": "Local Noto range chunks for other supported glyphs; system fallback only outside font coverage or on loading failure",
         "output": {"file": ASSET.name, "bytes": ASSET.stat().st_size, "sha256": checksum(ASSET.read_bytes())},
     }
     MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

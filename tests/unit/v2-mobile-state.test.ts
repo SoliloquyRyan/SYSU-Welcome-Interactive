@@ -8,7 +8,7 @@ import {
   boundedMobileStars,
   mobileAmbientPlacement,
   mobileStarPlacement,
-} from '../../frontend/src/pages/student/mobile-galaxy-renderer.js'
+} from '../../docs/archive/code/mobile-galaxy-renderer.js'
 import {
   participantEventFrameValid,
   participantHelloAckValid,
@@ -489,7 +489,9 @@ describe('V2-08 mobile state and motion gates', () => {
     // The approved procedural galaxy retired the old bitmap. Keep checking
     // the shared journey, privacy and completion contracts below.
     expect(stage).toContain('data-background-system="orbital-signal-reset"')
-    expect(stage).toContain('publicStars: []')
+    // D-105: phone uses the same admitted audience, without decorative stars.
+    expect(stage).toContain('publicStars: props.publicStars')
+    expect(stage).toContain('audienceOnly: true')
     expect(stage).toContain('renderer?.waitForPhase(phase)')
     expect(renderer).toContain('drawDiscoveryMotes')
     expect(renderer).toContain('drawOrbitDust(context, width, height, frame, false)')

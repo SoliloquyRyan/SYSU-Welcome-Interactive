@@ -1,4 +1,5 @@
 import path from 'node:path'
+import fs from 'node:fs/promises'
 import type { BrowserContext, Page, Response } from '@playwright/test'
 
 import { expect, test } from './support/v2-test.js'
@@ -113,11 +114,11 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     )
     await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
       'data-decorative-stars',
-      '420',
+      '0',
     )
     await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
       'data-visual-reference-stars',
-      '220',
+      '0',
     )
     await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
       'data-density-system',
@@ -191,7 +192,7 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     const catalogPanel = adminPage.locator('.catalog-panel')
     await catalogPanel.getByRole('button', { name: '载入本场节目单', exact: true }).click()
     await catalogPanel.getByRole('button', { name: '确认应用 25 项', exact: true }).click()
-    await confirmAction(adminPage, '切换为现场')
+    await adminPage.getByLabel('开始模式', { exact: true }).selectOption('LIVE')
     await waitForRuntime(adminPage, '待开始', '尚未开始')
     await confirmAction(adminPage, '开始活动')
     await waitForRuntime(adminPage, '运行中', '01 星海集结')
@@ -475,6 +476,12 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
       stageLine: false,
       normalRealtimeLabel: false,
     })
+  } catch (error) {
+    let detail=String((error as Error).stack)
+    for(const value of [demo.credentials.admin.username,demo.credentials.admin.password,...demo.credentials.participants.flatMap(p=>[p.inviteToken,p.studentNumber,p.displayName,p.publicStarId])])detail=detail.replaceAll(value,'[redacted]')
+    const out=path.resolve('output/playwright/d105-hazy-city',test.info().project.name)
+    await fs.mkdir(out,{recursive:true});await fs.writeFile(path.join(out,'lifecycle-failure.txt'),detail.replace(/https?:\/\/\S+/g,'[url]').slice(0,4000))
+    throw error
   } finally {
     await Promise.allSettled([
       participantContext?.close() ?? Promise.resolve(),
@@ -508,7 +515,7 @@ test('keeps static barrages readable and full motion working without GSAP under 
     await screen.emulateMedia({ reducedMotion: 'no-preference' })
     await expect(screen.locator('.v2-screen')).toHaveAttribute('data-motion-state', 'static')
     await loginAdmin(admin, demo.credentials.admin.username, demo.credentials.admin.password)
-    await confirmAction(admin, '切换为现场')
+    await admin.getByLabel('开始模式', { exact: true }).selectOption('LIVE')
     await confirmAction(admin, '开始活动')
     const credential = demo.credentials.participants[0]!
     await phone.goto(`/welcome?token=${encodeURIComponent(credential.inviteToken)}`)
@@ -593,6 +600,12 @@ test('keeps static barrages readable and full motion working without GSAP under 
     })
     await expect(screen.locator('html')).not.toHaveClass(/v2-stage-motion-full/u)
     expect(pageErrors).toEqual([])
+  } catch (error) {
+    let detail = String((error as Error).message)
+    for (const value of [demo.credentials.admin.username, demo.credentials.admin.password, ...demo.credentials.participants.flatMap(p => [p.inviteToken, p.studentNumber, p.displayName, p.publicStarId])]) detail = detail.replaceAll(value, '[redacted]')
+    await fs.mkdir('output/playwright/d105-regression/star-city', { recursive: true })
+    await fs.writeFile('output/playwright/d105-regression/star-city/barrage-regression-failure.txt', detail.replace(/https?:\/\/\S+/g, '[url]').slice(0, 2200))
+    throw error
   } finally {
     await Promise.allSettled(contexts.map((context) => context.close()))
   }
@@ -665,7 +678,7 @@ test('queues rapid raffle draws, restores static feedback and confirms incomplet
     const catalogPanel = admin.locator('.catalog-panel')
     await catalogPanel.getByRole('button', { name: '载入本场节目单', exact: true }).click()
     await catalogPanel.getByRole('button', { name: '确认应用 25 项', exact: true }).click()
-    await recordedAction('切换为现场')
+    await admin.getByLabel('开始模式', { exact: true }).selectOption('LIVE')
     await recordedAction('开始活动')
     await waitForRuntime(admin, '运行中', '01 星海集结')
     const phones: Page[] = []

@@ -13,6 +13,13 @@ async function loginAdmin(page: Page, username: string, password: string) {
 }
 
 async function command(page: Page, name: string) {
+  if (name === '揭晓投票结果') {
+    await page.getByRole('button', { name, exact: true }).click()
+    const response = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v2/admin/commands' && response.request().method() === 'POST')
+    await page.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
+    expect((await response).ok()).toBe(true)
+    return
+  }
   const [response]: [Response, void] = await Promise.all([page.waitForResponse((response) => (
     new URL(response.url()).pathname === '/api/v2/admin/commands'
     && response.request().method() === 'POST'
@@ -23,7 +30,7 @@ async function command(page: Page, name: string) {
 test('runs A/C-style buzzer, B draw and vote, gift batches, star color barrages and the full closing ledger', async ({ browser, demo }, testInfo) => {
   test.setTimeout(150_000)
   let checkpoint = 'login-and-admission'
-  const directory = path.resolve('output/d089/browser')
+  const directory = path.resolve('output/playwright/d105-regression/interactions')
   await fs.mkdir(directory, { recursive: true })
   const adminContext = await browser.newContext({ baseURL: demo.baseURL })
   const screenContext = await browser.newContext({ baseURL: demo.baseURL, viewport: { width: 1920, height: 1080 }, reducedMotion: 'reduce' })
@@ -149,9 +156,9 @@ test('runs A/C-style buzzer, B draw and vote, gift batches, star color barrages 
     await phoneA.getByRole('dialog', { name: '送礼物', exact: true }).getByRole('button', { name: /发送/u }).click()
     const starship = screen.locator('[data-gift-visual="starship"]')
     await expect(starship).toBeVisible()
-    await expect(starship.locator('.gift-starship-flight__portal i')).toHaveCount(3)
-    await expect(starship.locator('.gift-starship-flight__particles i')).toHaveCount(22)
-    await expect(starship.locator('.gift-starship-flight__caption')).toContainText('×2')
+    await expect(starship.locator('.gift-small-ship')).toHaveCount(1)
+    expect(await starship.locator('.gift-small-ship').evaluate(el => el.getBoundingClientRect().width)).toBe(72)
+    await expect(starship).toHaveAttribute('data-gift-quantity', '2')
     await starship.evaluate(element => {
       for (const animation of element.getAnimations({ subtree: true })) {
         const duration = Number(animation.effect?.getTiming().duration)

@@ -1,103 +1,91 @@
 <script setup>
-import { useId } from 'vue'
+import { computed } from 'vue'
 import StageCollegeBrand from './StageCollegeBrand.vue'
-
-defineProps({ compact: Boolean, reduced: Boolean, paused: Boolean, branded: { type: Boolean, default: true } })
-const id = useId()
-const stars = [
-  [7, 37, .6], [15, 68, .4], [23, 16, .4], [31, 89, .5], [69, 12, .45],
-  [79, 74, .5], [87, 31, .55], [94, 57, .5], [92, 85, .7], [4, 83, .4],
-]
+import StarCityAtmosphere from './StarCityAtmosphere.vue'
+import { STAR_CITY_THEMES, starCityStyle } from '../rendering/star-city-theme'
+import { DEFAULT_PROGRAM_VISUAL, programVisualStyle } from '../rendering/program-visuals'
+const props = defineProps({ compact: Boolean, reduced: Boolean, paused: Boolean, overlay: Boolean, audio: Boolean,
+  stars: { type: Array, default: () => [] }, effects: { type: Array, default: () => [] }, ownStarId: String, visual: Object,
+  theme: { type: String, default: 'program' }, variant: { type: String, default: 'theme' }, branded: { type: Boolean, default: true } })
+defineEmits(['audio-status', 'sky-points'])
+const themeStyle = computed(() => ({ ...starCityStyle(STAR_CITY_THEMES[props.theme] ?? STAR_CITY_THEMES.program), ...programVisualStyle(props.visual) }))
+const assets = import.meta.glob('../assets/star-city/d105/*.webp', { eager: true, query: '?url', import: 'default' })
+const effectiveVisual = computed(() => props.visual ?? DEFAULT_PROGRAM_VISUAL)
+const artwork = computed(() => {
+  const name = !effectiveVisual.value.art || effectiveVisual.value.art === 'theme' ? 'night-flight' : effectiveVisual.value.art
+  return assets['../assets/star-city/d105/' + name + (props.compact ? '-mobile.webp' : '-screen.webp')]
+})
 </script>
-
 <template>
-  <div class="program-stage-background" :class="{ 'is-compact': compact, 'is-static': reduced, 'is-paused': paused }"
-    aria-hidden="true" data-testid="program-stage-background" data-background-system="silver-blue-stage"
-    :data-motion="reduced ? 'static' : paused ? 'paused' : 'ambient'">
-    <div class="stage-light-field"></div>
-    <div class="stage-upper-light"></div>
-    <svg class="stage-contours" :viewBox="compact ? '0 0 600 1000' : '0 0 1920 1080'" preserveAspectRatio="xMidYMid slice">
-      <defs>
-        <linearGradient :id="`${id}-ribbon`" x1="0" y1="1" x2=".9" y2="0">
-          <stop stop-color="#a8c4db" stop-opacity="0"/>
-          <stop offset=".22" stop-color="#58748e" stop-opacity=".08"/>
-          <stop offset=".59" stop-color="#779fbf" stop-opacity=".22"/>
-          <stop offset=".8" stop-color="#b8d8ec" stop-opacity=".43"/>
-          <stop offset="1" stop-color="#9ebfda" stop-opacity=".02"/>
-        </linearGradient>
-        <linearGradient :id="`${id}-edge`" x1="0" y1="1" x2="1" y2="0">
-          <stop stop-color="#9bb6ce" stop-opacity="0"/>
-          <stop offset=".29" stop-color="#769bb8" stop-opacity=".16"/>
-          <stop offset=".63" stop-color="#d5eafa" stop-opacity=".65"/>
-          <stop offset=".81" stop-color="#bddcef" stop-opacity=".25"/>
-          <stop offset="1" stop-color="#6e99ba" stop-opacity="0"/>
-        </linearGradient>
-        <linearGradient :id="`${id}-fold`" x1="0" y1="0" x2=".2" y2="1">
-          <stop stop-color="#c5e0f4" stop-opacity=".23"/>
-          <stop offset=".12" stop-color="#6f95b6" stop-opacity=".1"/>
-          <stop offset=".46" stop-color="#446483" stop-opacity=".035"/>
-          <stop offset="1" stop-color="#03101c" stop-opacity="0"/>
-        </linearGradient>
-        <linearGradient :id="`${id}-halo`" x1="0" y1="0" x2="1" y2="1">
-          <stop stop-color="#42647f" stop-opacity="0"/>
-          <stop offset=".28" stop-color="#8cadc7" stop-opacity=".08"/>
-          <stop offset=".54" stop-color="#b9dcef" stop-opacity=".29"/>
-          <stop offset=".82" stop-color="#638baa" stop-opacity=".06"/>
-          <stop offset="1" stop-color="#638baa" stop-opacity="0"/>
-        </linearGradient>
-        <radialGradient :id="`${id}-floor`">
-          <stop stop-color="#b0d3ef" stop-opacity=".12"/>
-          <stop offset=".38" stop-color="#7ca7cb" stop-opacity=".05"/>
-          <stop offset="1" stop-color="#385875" stop-opacity="0"/>
-        </radialGradient>
-      </defs>
-      <g v-if="compact">
-        <path class="stage-ribbon-soft" d="M 273 -159 C 838 -127 868 437 285 946 C 804 674 1013 48 486 -184 Z" :fill="`url(#${id}-halo)`" />
-        <path d="M -205 1083 C 111 811 403 1057 763 556 L 861 684 C 455 1145 153 908 -205 1163 Z" :fill="`url(#${id}-ribbon)`" />
-        <path d="M -205 1083 C 111 811 403 1057 763 556" :stroke="`url(#${id}-edge)`" stroke-width="1.2" fill="none" />
-        <path d="M -144 1110 C 152 893 415 1063 766 659 L 810 784 C 457 1137 135 972 -144 1190 Z" :fill="`url(#${id}-fold)`" />
-        <path d="M -144 1110 C 152 893 415 1063 766 659" :stroke="`url(#${id}-edge)`" stroke-width=".7" opacity=".55" fill="none" />
-        <path d="M 350 -104 C 754 107 705 453 485 680" :stroke="`url(#${id}-edge)`" stroke-width=".8" opacity=".45" fill="none" />
-      </g>
-      <g v-else>
-        <!-- Broad translucent curves carry the volume; their edges only define folds. -->
-        <g class="stage-ribbon-soft">
-          <path d="M 923 -334 C 1823 -306 2213 365 1570 934 C 2304 578 2140 -145 1198 -375 Z" :fill="`url(#${id}-halo)`" />
-          <path d="M 1378 -224 C 2056 33 2149 447 1745 912 C 2236 545 2284 35 1613 -225 Z" :fill="`url(#${id}-halo)`" opacity=".6" />
+  <div class="program-stage-background" :class="{ 'is-compact': compact, 'is-static': reduced, 'is-paused': paused, 'is-overlay': overlay }"
+    :style="themeStyle" aria-hidden="true" data-testid="program-stage-background" data-background-system="mist-star-city"
+    :data-theme="theme" :data-program-art="effectiveVisual.art" :data-background-variant="variant" :data-motion="reduced ? 'static' : paused ? 'paused' : 'ambient'">
+    <template v-if="!overlay">
+      <Transition name="program-art"><div :key="artwork || variant" class="city-panorama" :class="{ 'has-artwork': artwork }" :style="artwork ? { backgroundImage: 'url(' + artwork + ')' } : undefined"></div></Transition>
+      <div class="city-color-wash"></div><div class="city-mist"></div>
+      <div v-if="artwork" class="city-rim-glow"></div>
+      <svg v-else class="city-contours" viewBox="0 0 1920 1080" :preserveAspectRatio="compact ? 'none' : 'xMidYMid slice'">
+        <g class="city-silhouettes">
+          <path d="M22 780V450h54V342h6v108h39v330 M1780 890V590h48V510h8v80h47v300 M145 490V285h7v205 M159 320h28m-21-12v25" />
+          <path d="M0 630h76v25h89v90h58v184 M1920 400h-50v145h-48v260" />
         </g>
-        <path d="M 1036 -249 C 1843 -146 2208 383 1696 929" :stroke="`url(#${id}-edge)`" stroke-width="1.25" fill="none" opacity=".55" />
-        <path d="M 1069 -258 C 1878 -155 2243 374 1731 920" :stroke="`url(#${id}-edge)`" stroke-width=".65" fill="none" opacity=".22" />
-        <ellipse cx="964" cy="1060" rx="1050" ry="190" :fill="`url(#${id}-floor)`" />
-        <path d="M -305 1170 C 406 705 1116 1240 2140 427 L 2250 657 C 1200 1304 442 897 -305 1280 Z" :fill="`url(#${id}-ribbon)`" />
-        <path d="M -305 1170 C 406 705 1116 1240 2140 427" :stroke="`url(#${id}-edge)`" stroke-width="1.45" fill="none" />
-        <path d="M -223 1180 C 428 820 1170 1240 2107 596 L 2233 785 C 1229 1291 521 955 -223 1280 Z" :fill="`url(#${id}-fold)`" />
-        <path d="M -223 1180 C 428 820 1170 1240 2107 596" :stroke="`url(#${id}-edge)`" stroke-width=".9" fill="none" opacity=".74" />
-        <path d="M -178 1227 C 525 900 1216 1276 2185 740 L 2240 1004 C 1265 1317 521 1034 -178 1320 Z" :fill="`url(#${id}-ribbon)`" opacity=".6" />
-        <path d="M -178 1227 C 525 900 1216 1276 2185 740" :stroke="`url(#${id}-edge)`" stroke-width=".65" fill="none" opacity=".45" />
-        <path d="M 145 1136 Q 960 829 1775 1136" :stroke="`url(#${id}-edge)`" stroke-width=".65" fill="none" opacity=".28" />
-      </g>
-    </svg>
-    <div class="stage-edge-glow"></div>
-    <i v-for="(star, index) in stars" :key="index" class="stage-pinpoint" :style="{ left: `${star[0]}%`, top: `${star[1]}%`, opacity: star[2] * .28 }"></i>
-    <div class="stage-vignette"></div>
-    <StageCollegeBrand v-if="branded && !compact" />
+        <g class="city-neon">
+          <path d="M143 177v360 M159 274v86 M1746 293v312 M1830 567v149 M0 914Q420 1040 742 1038 M1190 1039Q1600 1018 1920 894" />
+          <path class="city-neon-pink" d="M276 540v105 M1850 239v95 M172 542v16m0 10v34 M1782 737h43v42 M-20 930Q195 1018 418 1037" />
+          <path class="city-hanging-light" d="M55 0v180h80 M1810 0v161h88 M1830 0v112h44" />
+        </g>
+        <g v-if="variant === 'rhythm'" class="city-railway">
+          <path d="M-80 790Q145 795 350 915T780 1065 M-80 821Q130 825 340 940T760 1090 M2000 753Q1740 780 1530 920T1110 1080 M2000 795Q1755 821 1554 950T1155 1100" />
+          <path class="city-neon-pink" d="M60 822v204 M180 852v210 M1810 818v186 M1680 864v175" />
+        </g>
+        <g v-if="variant === 'instrumental'" class="city-arcade">
+          <path d="M-80 1100V300Q40 130 172 300v800 M-65 1100V312Q43 158 157 312v788 M1740 1100V392q80-148 168 0v708 M1760 1100V400q61-105 126 0v700" />
+          <path d="M24 1070V419q46-77 94 0v651 M1794 1100V512q38-72 82 0v588" />
+        </g>
+        <g v-if="variant === 'lyric'" class="city-bay">
+          <path d="M300 953q650-35 1270 0 M366 968q555-29 1180 0 M530 1004q412-27 802-2 M698 1026h227m70 8h140" />
+        </g>
+      </svg>
+      <div class="city-readability"></div>
+    </template>
+    <StarCityAtmosphere :stars="stars" :effects="effects" :own-star-id="ownStarId" :visual="effectiveVisual" :compact="compact" :reduced="reduced" :paused="paused" :overlay="overlay" :audio="audio" @sky-points="$emit('sky-points', $event)" @audio-status="$emit('audio-status', $event)" />
+    <StageCollegeBrand v-if="branded && !compact && !overlay" />
   </div>
 </template>
-
 <style scoped>
-.program-stage-background{position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none;background:#03060c;isolation:isolate}
-.stage-light-field{position:absolute;inset:-8%;background:radial-gradient(ellipse 44% 62% at 106% 41%,#38618445,transparent 78%),radial-gradient(ellipse 60% 20% at 38% 112%,#365b7838,transparent 80%),linear-gradient(122deg,#080e17,#03060b 51%,#09121e);animation:stage-atmosphere 28s ease-in-out infinite alternate}
-.stage-upper-light{position:absolute;inset:0;background:conic-gradient(from 161deg at 79% -17%,transparent 0deg,#9bc7e40a 8deg,#c6e6fc12 10deg,#7ca2c408 14deg,transparent 22deg),conic-gradient(from 134deg at 101% 0%,transparent 0deg,#a9d5f10c 14deg,transparent 33deg);mask-image:linear-gradient(180deg,#000,transparent 92%);opacity:.72}
-.stage-contours{position:absolute;inset:0;width:100%;height:100%;opacity:.96}
-.stage-ribbon-soft{opacity:.87}
-.stage-edge-glow{position:absolute;inset:-2%;background:radial-gradient(ellipse 17% 26% at 101% 49%,#a1c9e822,transparent 75%),radial-gradient(ellipse 43% 4% at 72% 96%,#a5ccea1a,transparent 79%),radial-gradient(ellipse 25% 3% at 31% 97%,#aecfed0c,transparent 78%);animation:stage-edge-drift 34s ease-in-out infinite alternate}
-.stage-pinpoint{position:absolute;width:2px;height:2px;background:#cfdfef;border-radius:50%;box-shadow:0 0 5px #9ac4e933}
-.stage-vignette{position:absolute;inset:0;background:radial-gradient(ellipse 47% 42% at 45% 40%,#01030940,transparent 86%),linear-gradient(90deg,#01030a24,transparent 19%,transparent 88%,#01030a0a),linear-gradient(180deg,#01030a10,transparent 24%,transparent 82%,#01030a22)}
-.is-compact .stage-light-field{background:radial-gradient(ellipse at 114% 44%,#47769829,transparent 49%),radial-gradient(ellipse at -15% 106%,#345d7d29,transparent 39%),linear-gradient(145deg,#080e18,#03060c 60%,#09131f)}
-.is-compact .stage-contours{opacity:.58}.is-compact .stage-upper-light{opacity:.32}.is-compact .stage-edge-glow{opacity:.42}.is-compact .stage-pinpoint{width:1px;height:1px}
-.is-paused .stage-light-field,.is-paused .stage-edge-glow{animation-play-state:paused}
-.is-static .stage-light-field,.is-static .stage-edge-glow{animation:none;transform:none}
-@keyframes stage-atmosphere{from{opacity:.8;transform:translate3d(-.35%,.2%,0)}to{opacity:1;transform:translate3d(.35%,-.2%,0)}}
-@keyframes stage-edge-drift{from{opacity:.63;transform:translate3d(-.7%,.4%,0)}to{opacity:1;transform:translate3d(.7%,-.4%,0)}}
-@media(prefers-reduced-motion:reduce){.stage-light-field,.stage-edge-glow{animation:none;transform:none}}
+.program-stage-background{--city-audio:0;position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none;background:#272438;isolation:isolate}
+.city-panorama{position:absolute;inset:0;background:url('../assets/star-city/mist-city-d103.webp') center/cover no-repeat;opacity:.88}
+.city-panorama.has-artwork{opacity:1}
+.city-panorama.has-artwork~.city-color-wash{opacity:0}
+.city-rim-glow{position:absolute;inset:0;background:radial-gradient(ellipse at 5% 70%,var(--program-accent),transparent 28%),radial-gradient(ellipse at 97% 64%,var(--program-secondary),transparent 26%);opacity:calc(.035 + var(--city-audio)*.13);mix-blend-mode:screen}
+.program-art-enter-active,.program-art-leave-active{transition:opacity .5s ease}.program-art-enter-from,.program-art-leave-to{opacity:0}
+.is-static .program-art-enter-active,.is-static .program-art-leave-active{transition:none}
+.city-color-wash{position:absolute;inset:0;background:linear-gradient(125deg,color-mix(in srgb,var(--city-haze) 25%,transparent),transparent 62%),linear-gradient(0deg,#1d203736,transparent);mix-blend-mode:color}
+.city-mist{position:absolute;inset:-3%;background:radial-gradient(ellipse at 18% 83%,#b8a3cc25,transparent 37%),radial-gradient(ellipse at 74% 61%,#bcd3e320,transparent 41%);opacity:calc(.55 + var(--city-audio)*.2);animation:city-mist-drift 32s ease-in-out infinite alternate}
+.city-contours{position:absolute;inset:0;width:100%;height:100%;fill:none;stroke:var(--city-accent);stroke-width:1.1;opacity:calc(.22 + var(--city-audio)*.16)}
+.city-contours-soft{stroke-width:12;opacity:.055}
+.city-readability{position:absolute;inset:0;background:linear-gradient(180deg,#14132196 0%,#18182930 32%,transparent 58%,#1716217a 100%),linear-gradient(90deg,#18152659,transparent 48%)}
+.city-panorama.has-artwork~.city-readability{background:linear-gradient(180deg,#24232f40,transparent 24%,transparent 50%,#21202b35),radial-gradient(ellipse at 50% 43%,#22212d30,transparent 57%)}
+.is-compact .city-panorama{background-image:url('../assets/star-city/mist-city-mobile-d103.webp');opacity:.75}
+.is-compact .city-panorama.has-artwork{opacity:.65}
+.is-compact .city-readability{background:linear-gradient(180deg,#201c3275,transparent 32%,#17172566 65%,#171725b3)}
+.is-compact .city-contours{opacity:.15}.is-compact .city-mist{animation-duration:42s;opacity:.4}
+.is-overlay{background:transparent}.is-paused .city-mist{animation-play-state:paused}.is-static .city-mist{animation:none;transform:none}
+.city-contours{opacity:1;stroke-linecap:round;stroke-linejoin:round}
+.city-silhouettes{fill:#191d30;stroke:#485269;stroke-width:2;opacity:.55}
+.city-panorama.has-artwork~.city-contours .city-silhouettes{opacity:.12}
+.city-panorama.has-artwork~.city-contours{opacity:.45}
+.city-neon{stroke:#8ac5e0;stroke-width:2;opacity:calc(.3 + var(--city-audio)*.16);animation:city-neon-breathe 14s ease-in-out infinite alternate}
+.city-neon-pink{stroke:#d6a2cf}.city-hanging-light{stroke-width:1.3;opacity:.55}
+.city-railway{stroke:#92c4dc;stroke-width:2;opacity:.35}.city-railway path:first-child{stroke-width:3}
+.city-arcade{stroke:#a2c5d8;stroke-width:1.6;opacity:.36}.city-arcade path+path{opacity:.5}
+.city-bay{stroke:#ddb8d4;stroke-width:1;opacity:.22}
+[data-background-variant="lyric"] .city-color-wash{background:linear-gradient(0deg,#d293b431,transparent 49%),linear-gradient(130deg,#9a7fac18,transparent)}
+[data-background-variant="rhythm"] .city-color-wash{background:linear-gradient(105deg,#4593a721,transparent 36%,transparent 64%,#9c69ab20)}
+[data-background-variant="rhythm"] .city-neon{opacity:calc(.42 + var(--city-audio)*.18)}
+[data-background-variant="instrumental"] .city-color-wash{background:linear-gradient(130deg,#739cc431,#93a3bf0d)}
+.is-compact .city-contours{opacity:.65}.is-compact .city-neon{animation:none}
+.is-paused .city-neon{animation-play-state:paused}.is-static .city-neon{animation:none}
+@keyframes city-neon-breathe{from{opacity:calc(.27 + var(--city-audio)*.16)}to{opacity:calc(.43 + var(--city-audio)*.16)}}
+@keyframes city-mist-drift{from{transform:translate3d(-.6%,.4%,0)}to{transform:translate3d(.6%,-.4%,0)}}
 </style>

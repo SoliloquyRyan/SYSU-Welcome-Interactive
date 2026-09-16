@@ -722,3 +722,13 @@ h1 {
     gap: 10px;
   }
 }
+/* D-103: operations surface uses a compact OBS-style workbench. */
+.app-shell.route-admin:has(.v2-admin){width:100%;padding:0 18px;background:#1d212b;--color-bg-canvas:#1d212b;--color-border-subtle:#3b4150;--color-text-primary:#edf0f7;--color-text-secondary:#b5becd}
+.route-admin:has(.v2-admin)>.ambient-field{display:none}
+.route-admin:has(.v2-admin) .site-header{min-height:50px;padding-block:8px;gap:14px}
+.route-admin:has(.v2-admin) .site-title{display:none}
+.route-admin:has(.v2-admin) .site-kicker{font-size:11px;color:#a4afc3;letter-spacing:.08em}
+.route-admin:has(.v2-admin) .dev-nav a{min-height:30px;padding:4px 12px;font-size:11px}
+.route-admin:has(.v2-admin) .page-content{padding:16px 0 28px;min-width:0}
+.route-admin:has(.v2-admin) .site-footer{min-height:44px;font-size:10px}
+@media(max-width:680px){.app-shell.route-admin:has(.v2-admin){padding:0 12px}.route-admin:has(.v2-admin) .site-header{flex-wrap:wrap}}

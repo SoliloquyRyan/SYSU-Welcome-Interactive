@@ -661,6 +661,16 @@ describe('protocol v2 shared contract', () => {
       },
     }
     expect(V2RealtimeEventEnvelopeSchema.safeParse(giftEvent).success).toBe(true)
+    const giftCommand = { protocolVersion: '2', resetEpoch: 1, idempotencyKey: 'gift-color-is-server-owned', expectedParticipantRevision: 2, command: 'SEND_GIFT', programId: 'program-001', giftId: 'gift-starship', quantity: 1 }
+    expect(V2ParticipantCommandSchema.safeParse(giftCommand).success).toBe(true)
+    expect(V2ParticipantCommandSchema.safeParse({ ...giftCommand, displayColor: '#FF0000' }).success).toBe(false)
+    for (const displayColor of ['#a4D7f3', '#FFC48A']) {
+      expect(V2RealtimeEventEnvelopeSchema.safeParse({ ...giftEvent, payload: { ...giftEvent.payload, gift: { ...giftEvent.payload.gift, displayColor } } }).success).toBe(true)
+    }
+    for (const displayColor of ['red', '#123', '#12345678', 'url(private)']) {
+      expect(V2RealtimeEventEnvelopeSchema.safeParse({ ...giftEvent, payload: { ...giftEvent.payload, gift: { ...giftEvent.payload.gift, displayColor } } }).success).toBe(false)
+    }
+
     expect(V2RealtimeEventEnvelopeSchema.safeParse({
       ...giftEvent,
       payload: {
