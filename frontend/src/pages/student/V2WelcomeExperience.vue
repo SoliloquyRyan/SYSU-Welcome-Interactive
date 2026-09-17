@@ -744,11 +744,11 @@ async function activate(method, fields) {
 function activateAssisted() {
   const name = displayName.value.trim()
   if (!name || visibleCharacterCount(name) > 40) {
-    persistentError.value = '请输入学生姓名（1–40 个字符）。'
+    persistentError.value = '请输入姓名或分配的工作人员名称（1–40 个字符）。'
     return
   }
   if (!/^\d{8}$/.test(studentNumber.value)) {
-    persistentError.value = '请输入 8 位学号。'
+    persistentError.value = '请输入 8 位学号或工作口令。'
     return
   }
   void activate('ASSISTED_STUDENT', {
@@ -1150,8 +1150,8 @@ onBeforeUnmount(() => {
 
       <section v-else-if="!snapshot" class="entry-copy">
         <p class="kicker">身份核验</p>
-        <h2>重新进入你的星域</h2>
-        <p>输入学生姓名与 8 位学号，或再次轻触 NFC、扫描邀请函。</p>
+        <h2>进入你的星域</h2>
+        <p>核验身份，选择星色，让你的星加入今晚的星河。</p>
       </section>
 
       <section
@@ -1245,16 +1245,16 @@ onBeforeUnmount(() => {
       <p v-else-if="persistentNotice" class="dock-message" role="status">{{ persistentNotice }}</p>
 
       <div v-if="!snapshot && (entryState === 'checking' || busy === 'activation')" class="dock-body dock-waiting" role="status">
-        <span aria-hidden="true"></span><p>正在核验邀请，找回你的星…</p>
+        <span aria-hidden="true"></span><p>正在核验身份，找回你的星…</p>
       </div>
 
       <form v-else-if="!snapshot" class="dock-body entry-form" novalidate @submit.prevent="activateAssisted">
-        <label>学生姓名<input v-model="displayName" autocomplete="off" maxlength="40" placeholder="请输入学生姓名" aria-describedby="v2-assisted-disclosure" /></label>
-        <label>8 位学号<input v-model="studentNumber" inputmode="numeric" autocomplete="off" maxlength="8" pattern="[0-9]{8}" placeholder="00000001" aria-describedby="v2-assisted-disclosure" /></label>
+        <label>姓名<input v-model="displayName" autocomplete="off" maxlength="40" placeholder="姓名或分配的工作人员名称" aria-describedby="v2-assisted-disclosure" /></label>
+        <label>8 位学号／工作口令<input v-model="studentNumber" inputmode="numeric" autocomplete="off" maxlength="8" pattern="[0-9]{8}" placeholder="请输入 8 位数字" aria-describedby="v2-assisted-disclosure" /></label>
         <button class="dock-primary" type="submit" :disabled="busy === 'activation'">
-          {{ busy === 'activation' ? '正在核验…' : '核验并重新进入' }}
+          {{ busy === 'activation' ? '正在核验…' : '核验并进入' }}
         </button>
-        <p id="v2-assisted-disclosure" class="dock-disclosure">{{ protectedRuntime ? '请填写邀请函对应的姓名与 8 位学号以恢复本人档案；也可重新轻触 NFC 或扫码。' : '当前排练仅识别分配的测试姓名与 8 位编号，不会核验真实学籍信息；也可重新轻触 NFC 或扫码。' }}</p>
+        <p id="v2-assisted-disclosure" class="dock-disclosure">{{ protectedRuntime ? '学生填写名单中的姓名与 8 位学号；工作人员填写分配的名称与 8 位工作口令。已入场会恢复原星色和余额。' : '当前排练仅识别分配的测试姓名与 8 位编号，不会核验真实学籍信息。' }}</p>
       </form>
 
       <div
