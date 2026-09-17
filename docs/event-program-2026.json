@@ -2,9 +2,9 @@
   "schemaVersion": 2,
   "status": "approved_source_transcription",
   "source": {
-    "filename": "节目单(7).docx",
-    "sha256": "e45b5343fd4f39de959e5232c06f2b37c207237c453ee34dad3104d751a4c0eb",
-    "providedOn": "2026-09-11"
+    "filename": "节目单(7)(2).docx",
+    "sha256": "d23123b472fa4294848035367075e7f774c27dcef989b2b1128c5f984b0e29f6",
+    "providedOn": "2026-09-17"
   },
   "openingRemarksSeconds": 180,
   "items": [
@@ -45,7 +45,7 @@
         "approximate": false
       },
       "kind": "performance",
-      "performers": "王奇琪"
+      "performers": "王奇琦"
     },
     {
       "sourceSequence": 4,
@@ -316,8 +316,8 @@
   ],
   "closingRemarksSeconds": 120,
   "nominalTotalSeconds": {
-    "min": 7003,
-    "max": 7303
+    "min": 8683,
+    "max": 8983
   },
   "notes": [
     "The running order contains 19 numbered performances and three lettered interaction segments.",
@@ -331,14 +331,24 @@
       "ceremonyType": "AWARD",
       "awardGroup": "PROGRAM",
       "systemFormat": "颁奖",
-      "durationAsProvided": ""
+      "durationAsProvided": "约 5 分钟",
+      "durationSeconds": {
+        "min": 300,
+        "max": 300,
+        "approximate": true
+      }
     },
     {
       "id": "ceremony-speech",
       "titleAsProvided": "负责人讲话",
       "ceremonyType": "SPEECH",
       "systemFormat": "讲话",
-      "durationAsProvided": ""
+      "durationAsProvided": "约 8 分钟",
+      "durationSeconds": {
+        "min": 480,
+        "max": 480,
+        "approximate": true
+      }
     },
     {
       "id": "ceremony-campus-awards",
@@ -346,7 +356,12 @@
       "ceremonyType": "AWARD",
       "awardGroup": "CAMPUS",
       "systemFormat": "颁奖",
-      "durationAsProvided": ""
+      "durationAsProvided": "约 15 分钟",
+      "durationSeconds": {
+        "min": 900,
+        "max": 900,
+        "approximate": true
+      }
     }
   ]
 }

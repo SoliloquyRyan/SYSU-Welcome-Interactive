@@ -1,3 +1,4 @@
+import { archiveAndResetRound } from './services/v2-formal-reset.js'
 import websocket from '@fastify/websocket'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import {
@@ -40,6 +41,9 @@ import {
   revokeSession,
   serializeClearedSessionCookie,
   serializeSessionCookie,
+  serializeGuestCookie,
+  parseCookies,
+  GUEST_COOKIE_NAME,
   sessionSecretFromCookie,
   type AuthenticatedSession,
   type SessionType,
@@ -124,6 +128,7 @@ import { readScreenSnapshot } from './services/screen-snapshot.js'
 import { readV2AdminSnapshot, readV2ParticipantSnapshot, readV2ScreenSnapshot } from './services/v2-snapshots.js'
 import {
   activateV2Participant,
+  restoreGuestSession,
   executeV2ParticipantOnboardingCommand,
   V2ParticipantCommandError,
 } from './services/v2-participant-onboarding.js'
@@ -233,7 +238,9 @@ export async function buildApp(
       }
     }, Math.floor(V1_SERVICE_LEASE_MS / 3))
     serviceHeartbeat?.unref()
+  let roundResetInProgress = false
   app.addHook('onRequest', async (request) => {
+    if (roundResetInProgress && request.url.startsWith('/api/v2/') && request.method !== 'GET') throw new ApiError('SERVICE_UNAVAILABLE', '正在归档本轮，请稍后重试。', 503)
     if (!v2Active) {
       assertV1RuntimeCompatible(database)
       return
@@ -308,6 +315,7 @@ export async function buildApp(
     credentialContext ??= readCredentialContext(config.seedManifestPath)
     return credentialContext
   }
+  const guestRegistrationLimiter = new InMemoryLoginRateLimiter({maxFailures: 120})
   const loginRateLimiter =
     options.loginRateLimiter ?? new InMemoryLoginRateLimiter()
   let closeRealtimePromise: Promise<void> | null = null
@@ -492,6 +500,8 @@ export async function buildApp(
     if (!v2Active) throw new ApiError('SERVICE_UNAVAILABLE', 'v2 运行时尚未启用。', 409)
     const session = v2ParticipantSession(request)
     if (!session || !v2SessionValid(session)) {
+      const recovered = !roundResetInProgress && restoreGuestSession(database, parseCookies(request.headers.cookie).get(GUEST_COOKIE_NAME), now())
+      if (recovered) return reply.header('cache-control', 'no-store').header('set-cookie', serializeSessionCookie('PARTICIPANT', recovered.session.secret, cookieOptions)).send(recovered.snapshot)
       throw new ApiError('AUTH_REQUIRED', '需要有效的 v2 参与者会话。', 401)
     }
     return reply.header('cache-control', 'no-store').send(readV2ParticipantSnapshot(database, session.subjectId, now()))
@@ -567,22 +577,29 @@ export async function buildApp(
     if (!v2Active) throw new ApiError('SERVICE_UNAVAILABLE', 'v2 运行时尚未启用。', 409)
     const sourceIp = loginSourceIp(request)
     const attemptAt = now()
-    assertLoginAllowed('participant-activation', sourceIp, attemptAt)
+    const kind: LoginKind = (request.body as {method?: string})?.method === 'GUEST' ? 'guest-entry' : 'participant-activation'
+    assertLoginAllowed(kind, sourceIp, attemptAt)
+    if (kind === 'guest-entry') {
+      const decision = guestRegistrationLimiter.check(kind, sourceIp, attemptAt)
+      if (!decision.allowed) throw new ApiError('RATE_LIMITED', '游客入口繁忙，请稍后重试。', 429)
+      guestRegistrationLimiter.recordFailure(kind, sourceIp, attemptAt)
+    }
     try {
-      const result = activateV2Participant(database, credentials(), request.body, attemptAt)
-      loginRateLimiter.recordSuccess('participant-activation', sourceIp)
+      const result = activateV2Participant(database, credentials(), request.body, attemptAt, parseCookies(request.headers.cookie).get(GUEST_COOKIE_NAME))
+      loginRateLimiter.recordSuccess(kind, sourceIp)
       return reply
         .header('cache-control', 'no-store')
-        .header('set-cookie', serializeSessionCookie('PARTICIPANT', result.session.secret, cookieOptions))
+        .header('set-cookie', result.guestRecoverySecret || parseCookies(request.headers.cookie).has(GUEST_COOKIE_NAME) ? [serializeSessionCookie('PARTICIPANT', result.session.secret, cookieOptions), serializeGuestCookie(result.guestRecoverySecret ?? null, cookieOptions)] : serializeSessionCookie('PARTICIPANT', result.session.secret, cookieOptions))
         .send(V2ActivateParticipantResponseSchema.parse({
           status: 'ok',
           protocolVersion: '2',
           activationCreated: result.activated,
+          admissionCreated: result.admissionCreated,
           snapshot: result.snapshot,
         }))
     } catch (error) {
       if (countsAsLoginFailure(error)) {
-        loginRateLimiter.recordFailure('participant-activation', sourceIp, attemptAt)
+        loginRateLimiter.recordFailure(kind, sourceIp, attemptAt)
       }
       throw error
     }
@@ -626,6 +643,34 @@ export async function buildApp(
       throw new ApiError('AUTH_REQUIRED', '需要有效的 v2 后台会话。', 401)
     }
     const parsed = V2AdminCommandSchema.parse(request.body)
+    if (parsed.command === 'RESET_FORMAL_ROUND') {
+      roundResetInProgress = true
+      let secret = ''
+      // Keep only the executing session recoverable if the response is lost.
+      const existingSession = database.prepare('SELECT * FROM v2_sessions WHERE id = ?').get(session.id) as Record<string, unknown>
+      try {
+        const result = await archiveAndResetRound(database, parsed, {
+          roles: JSON.parse(session.rolesJson), actorId: session.subjectId,
+          migrationsPath: config.migrationsPath, manifestPath: config.seedManifestPath,
+          participantCount: config.seedParticipantCount, now: now(),
+          beforeCommit: epoch => {
+            const row = {...existingSession, reset_epoch: epoch}
+            const columns = Object.keys(row)
+            database.prepare(`INSERT INTO v2_sessions (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`).run(...Object.values(row))
+            secret = createV2AdminSession(session.subjectId, now())
+          },
+        })
+        if (!secret) secret = createV2AdminSession(session.subjectId, now())
+        const snapshot = readV2AdminSnapshot(database, JSON.parse(session.rolesJson), now())
+        return reply.header('cache-control', 'no-store').header('set-cookie', serializeSessionCookie('ADMIN', secret, cookieOptions))
+          .send(V2AdminCommandResponseSchema.parse({
+            status: 'ok', protocolVersion: '2', resetEpoch: result.resetEpoch, command: parsed.command,
+            replayed: result.replayed, runtime: snapshot.runtime, presentation: snapshot.presentation,
+            presentationRevision: snapshot.presentationRevision, interactionRevision: snapshot.interaction.interactionRevision,
+            aggregateRevision: snapshot.aggregateRevision, funnel: snapshot.funnel, readinessWarnings: snapshot.readinessWarnings,
+          }))
+      } finally { roundResetInProgress = false }
+    }
     if (parsed.command === 'RESET_DEMO') {
       const roles = JSON.parse(session.rolesJson) as string[]
       if (!roles.includes('ALL') && !roles.includes('DEMO_ADMIN')) {

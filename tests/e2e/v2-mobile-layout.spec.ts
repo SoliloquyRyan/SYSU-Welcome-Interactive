@@ -1,3 +1,4 @@
+import {prepareProgram,executePrepared,waitRuntime,adminSnapshot} from './support/d109-console.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Locator, Page } from '@playwright/test'
@@ -74,7 +75,7 @@ test('keeps mobile controls reachable and builds a memento only from confirmed p
     await page.evaluate(() => { document.documentElement.style.fontSize = '' })
     checkpoint = 'admission-and-program'
     await confirm.click()
-    await expect(page.getByText('1 颗星，已在这里相遇')).toBeVisible()
+    await expect(page.getByText('你的星色，已为今晚点亮')).toBeVisible()
     await unconfirmed.goto(`/welcome?token=${encodeURIComponent(demo.credentials.participants[1].inviteToken)}`)
     await expect(unconfirmed.getByRole('button', { name: '确认星色', exact: true })).toBeEnabled()
 
@@ -88,10 +89,10 @@ test('keeps mobile controls reachable and builds a memento only from confirmed p
     await admin.getByRole('button', { name: '开始活动', exact: true }).click()
     await admin.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
     await expect(page.getByRole('button', { name: '启动我的星', exact: true })).toBeVisible()
-    await admin.getByRole('button', { name: '推进下一场景', exact: true }).click()
+    await admin.getByRole('button', { name: '进入节目', exact: true }).click()
     await admin.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
-    await expect(admin.locator('.runtime-facts')).toContainText('02 节目应援')
-    await admin.getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await waitRuntime(admin,'02 节目应援')
+    await executePrepared(admin)
     const input = page.getByRole('textbox', { name: '弹幕', exact: true })
     await expect(input).toBeEnabled()
     await page.screenshot({ path: path.join(output, 'program.png') })
@@ -120,7 +121,7 @@ test('keeps mobile controls reachable and builds a memento only from confirmed p
     await page.getByRole('button', { name: '星程', exact: true }).click()
 
     checkpoint = 'completed-memento'
-    await admin.getByRole('button', { name: '结束晚会并播放片尾', exact: true }).click()
+    await admin.getByRole('button', { name: '结束并播放片尾', exact: true }).click()
     await admin.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
     const memento = page.getByRole('region', { name: '今夜的个人纪念' })
     await expect(memento).toBeVisible()
@@ -145,10 +146,8 @@ test('keeps mobile controls reachable and builds a memento only from confirmed p
     await page.evaluate(() => { document.documentElement.style.fontSize = '' })
     await page.reload()
     await expect(memento.getByRole('listitem')).toHaveText(['抵达星河'])
-    const canvas = page.locator('.personal-journey-stage__canvas')
-    const before = await canvas.screenshot()
-    await page.waitForTimeout(300)
-    expect((await canvas.screenshot()).equals(before)).toBe(true)
+    await expect(page.locator('.personal-journey-stage__canvas')).toHaveCount(0)
+    await expect(page.getByTestId('personal-entry-meteor')).toHaveCount(0)
     await page.getByRole('button', { name: '查看个人档案' }).click()
     await expect(page.getByRole('heading', { name: '星际档案', exact: true })).toBeVisible()
     expect(errors).toEqual([])
@@ -210,7 +209,7 @@ test('loads local Noto on phone and screen, isolates display faces, and remains 
     await reachable(confirm)
     await noPageOverflow(fallback)
     await confirm.click()
-    await expect(fallback.getByText('1 颗星，已在这里相遇')).toBeVisible()
+    await expect(fallback.getByText('你的星色，已为今晚点亮')).toBeVisible()
     await fallback.getByRole('button', { name: '档案', exact: true }).click()
     await expect(fallback.getByRole('heading', { name: '星际档案', exact: true })).toBeVisible()
   } finally {

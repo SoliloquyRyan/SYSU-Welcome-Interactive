@@ -1,3 +1,4 @@
+import {prepareProgram,executePrepared,waitRuntime,adminSnapshot} from './support/d109-console.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { Page, Response } from '@playwright/test'
@@ -58,11 +59,11 @@ test('runs A buzzer, offline C, independent B voting and confirmed gift feedback
 
     await admin.getByRole('button', { name: '开始活动', exact: true }).click()
     await admin.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
-    await admin.getByRole('button', { name: '02 节目应援', exact: true }).click()
+    await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button', { name: '02 节目应援', exact: true }).click()
 
     checkpoint = 'interaction-a-buzzer'
-    await catalog.getByLabel('当前节目', { exact: true }).selectOption('event2026-07')
-    await catalog.getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await prepareProgram(admin, 'event2026-07')
+    await executePrepared(admin)
     await command(admin, '开始抢答')
     await screen.goto('/screen?motion=reduced')
     await expect(screen.getByText('抢答开放', { exact: true })).toBeVisible()
@@ -75,16 +76,16 @@ test('runs A buzzer, offline C, independent B voting and confirmed gift feedback
     await command(admin, '关闭本轮互动')
 
     checkpoint = 'interaction-c-offline'
-    await catalog.getByLabel('当前节目', { exact: true }).selectOption('event2026-21')
-    await catalog.getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await prepareProgram(admin, 'event2026-21')
+    await executePrepared(admin)
     await expect(admin.getByRole('heading', {name:'谁是最“人” · 线下互动'})).toBeVisible()
     await expect(admin.getByRole('button', {name:'开始抢答',exact:true})).toHaveCount(0)
     await expect(phoneA.getByRole('button', {name:'立即抢答',exact:true})).toHaveCount(0)
     await screen.screenshot({ path: path.join(directory, 'interaction-c-offline-1920.png') })
 
     checkpoint = 'interaction-b-manual-vote'
-    await catalog.getByLabel('当前节目', { exact: true }).selectOption('event2026-14')
-    await catalog.getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await prepareProgram(admin, 'event2026-14')
+    await executePrepared(admin)
     await admin.getByLabel('选手人数', {exact:true}).fill('2')
     await admin.getByLabel('选手 1', {exact:true}).fill('一号 · 星光')
     await admin.getByLabel('选手 2', {exact:true}).fill('二号 · 月色')
@@ -106,8 +107,8 @@ test('runs A buzzer, offline C, independent B voting and confirmed gift feedback
     await command(admin, '收起本轮结果')
 
     checkpoint = 'gift-batch-and-personal-barrage'
-    await catalog.getByLabel('当前节目', { exact: true }).selectOption('event2026-01')
-    await catalog.getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await prepareProgram(admin, 'event2026-01')
+    await executePrepared(admin)
     await phoneA.getByRole('button', { name: '送礼物', exact: true }).click()
     for (let i = 0; i < 4; i++) await phoneA.getByRole('button', { name: '增加礼物数量', exact: true }).click()
     await phoneA.getByRole('button', { name: /微光，单个 1 动力，本次 5 个共 5 动力/u }).click()
@@ -164,7 +165,7 @@ test('runs A buzzer, offline C, independent B voting and confirmed gift feedback
 
     checkpoint = 'closing-ledger'
     await screen.goto('/screen?motion=reduced')
-    await admin.getByRole('button', { name: '03 谢幕准备', exact: true }).click()
+    await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button', { name: '03 谢幕准备', exact: true }).click()
     await command(admin, '预览电影片尾')
     await expect(screen.locator('.closing-credits')).toHaveAttribute('data-phase', 'poster')
     await screen.getByRole('button', { name: '互动纪念', exact: true }).click()

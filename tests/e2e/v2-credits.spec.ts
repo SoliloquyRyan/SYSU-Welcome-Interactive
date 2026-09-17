@@ -1,3 +1,4 @@
+import {prepareProgram,executePrepared,waitRuntime,adminSnapshot} from './support/d109-console.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { expect, test } from './support/v2-test.js'
@@ -18,12 +19,12 @@ test('starts fresh completion credits immediately while locking the event, then 
     await admin.getByRole('button', { name: '开始活动', exact: true }).click()
     await admin.getByRole('dialog').getByRole('button', { name: '确定', exact: true }).click()
     await expect(screen.getByRole('heading', { name: '星海集结' })).toBeVisible()
-    await admin.getByRole('button', { name: '推进下一场景', exact: true }).click()
+    await admin.getByRole('button', { name: '进入节目', exact: true }).click()
     await admin.getByRole('dialog').getByRole('button', { name: '确定', exact: true }).click()
-    await expect(admin.locator('.runtime-facts')).toContainText('02 节目应援')
-    await admin.getByRole('button', { name: '结束晚会并播放片尾', exact: true }).click()
+    await waitRuntime(admin,'02 节目应援')
+    await admin.getByRole('button', { name: '结束并播放片尾', exact: true }).click()
     await admin.getByRole('dialog').getByRole('button', { name: '确定', exact: true }).click()
-    await expect(admin.locator('.runtime-facts')).toContainText('已完成')
+    await waitRuntime(admin,'已完成')
     await expect(screen.locator('.closing-credits')).toHaveAttribute('data-phase', 'intro')
     await screen.waitForTimeout(6200)
     await expect(screen.locator('.closing-credits')).toHaveAttribute('data-phase', 'credits')
@@ -62,8 +63,8 @@ test('plays current programme credits once, preserves rehearsal state and expose
     await expect(screen.locator('.v2-signal')).toHaveCount(0)
     await admin.getByRole('button', { name: '开始活动', exact: true }).click()
     await admin.getByRole('dialog').getByRole('button', { name: '确定', exact: true }).click()
-    await admin.getByRole('button', { name: '03 谢幕准备', exact: true }).click()
-    await admin.getByRole('button', { name: '预览电影片尾', exact: true }).click()
+    await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button', { name: '03 谢幕准备', exact: true }).click()
+    await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button', { name: '预览电影片尾', exact: true }).click()
     await admin.getByRole('dialog', {name:'确认操作'}).getByRole('button',{name:'确定',exact:true}).click()
     const credits = screen.locator('.closing-credits')
     await expect(credits).toHaveAttribute('data-phase', 'intro')
@@ -79,12 +80,12 @@ test('plays current programme credits once, preserves rehearsal state and expose
     // Seek the actual browser animation; this does not change business state or dispatch fake events.
     await roll.evaluate(el => { const a = el.getAnimations()[0]!; a.currentTime = Number(a.effect!.getTiming().duration) * .2 })
     await screen.screenshot({ path: path.join(directory, 'roll-1920.png') })
-    await admin.getByRole('button', { name: '暂停', exact: true }).click()
+    await admin.getByRole('button', { name: '全场暂停', exact: true }).click()
     // The existing stage contract withdraws a rehearsal projection on PAUSE.
     await expect(credits).toHaveCount(0)
     await admin.getByRole('button', { name: '恢复运行', exact: true }).click()
     await expect(credits).toHaveCount(0)
-    await admin.getByRole('button', { name: '预览电影片尾', exact: true }).click()
+    await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button', { name: '预览电影片尾', exact: true }).click()
     await admin.getByRole('dialog', {name:'确认操作'}).getByRole('button',{name:'确定',exact:true}).click()
     await expect(credits).toHaveAttribute('data-phase', 'intro')
     await screen.waitForTimeout(6200)
@@ -97,7 +98,7 @@ test('plays current programme credits once, preserves rehearsal state and expose
     await expect(credits).toHaveAttribute('data-phase', 'poster')
     await screen.screenshot({ path: path.join(directory, 'poster-1920.png') })
     expect(await credits.evaluate(el => el.getAnimations({ subtree: true }).length)).toBe(0)
-    await expect(admin.locator('.runtime-facts')).toContainText('运行中')
+    await waitRuntime(admin,'运行中')
     await screen.reload()
     await expect(credits).toHaveAttribute('data-phase', 'poster')
     await screen.goto('/screen?motion=reduced')

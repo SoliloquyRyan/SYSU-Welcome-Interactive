@@ -35,8 +35,8 @@ onBeforeUnmount(() => clearInterval(timer))
 .program-title-meta{display:flex;align-items:center;justify-content:center;gap:18px;font:400 15px/1.4 var(--font-family-ui);letter-spacing:.22em;color:#e1d9e2}
 .program-title-meta i{width:44px;height:1px;background:var(--program-accent);opacity:.6}.program-title-index{font:500 17px/1.2 var(--font-family-signal)}
 .program-stage-title h2{margin:25px 0 27px;font-family:var(--font-family-display);font-size:clamp(44px,5.6vw,112px);line-height:1.24;font-weight:400;letter-spacing:.14em;overflow-wrap:anywhere;text-wrap:balance}
-.program-stage-title.font-tech h2{font-family:'Orbitron','Welcome Sans SC',sans-serif;font-weight:600;letter-spacing:.065em}
-.program-stage-title.font-retro h2{font-family:'Welcome Stage Serif','Welcome Sans SC',serif;font-weight:600;letter-spacing:.16em}
+.program-stage-title.font-tech h2{font-family:var(--font-family-display);font-weight:600;letter-spacing:.065em}
+.program-stage-title.font-retro h2{font-family:var(--font-family-display);font-weight:600;letter-spacing:.16em}
 .program-title-rule{display:flex;align-items:center;justify-content:center;gap:12px;margin:0 0 23px}.program-title-rule i{width:64px;height:1px;background:linear-gradient(90deg,transparent,var(--program-accent));opacity:.55}.program-title-rule i:last-child{transform:rotate(180deg)}.program-title-rule b{width:5px;height:5px;border:1px solid var(--program-secondary);transform:rotate(45deg);opacity:.65}
 .program-title-performers{margin:0;font:400 clamp(21px,1.6vw,31px)/1.8 var(--font-family-ui);letter-spacing:.18em;color:#e9e3eb;white-space:pre-wrap;overflow-wrap:anywhere}
 .credit-group{display:inline-block;white-space:nowrap}
@@ -69,4 +69,8 @@ onBeforeUnmount(() => clearInterval(timer))
 .program-stage-title.is-transient h2{font-size:clamp(38px,4.6vw,94px);font-weight:700;line-height:1.2}
 .program-stage-title.is-transient[data-long-title="true"] h2{font-size:clamp(36px,4.6vw,90px);letter-spacing:.025em}
 .program-stage-title[data-long-title="true"]{top:34%;left:13%;width:74%}.program-title-page{font:600 20px var(--font-family-ui);opacity:.7;margin:14px 0 0}
+</style>
+
+<style scoped>
+.program-stage-title h2{font-family:var(--font-family-display)!important;font-weight:700}
 </style>

@@ -240,3 +240,8 @@ export function replaceAdminSessionRoles(
     return normalized
   })
 }
+
+export const GUEST_COOKIE_NAME = 'sysu_welcome_guest'
+export function serializeGuestCookie(secret: string | null, options: {secure?: boolean} = {}) {
+  return `${GUEST_COOKIE_NAME}=${secret ? encodeURIComponent(secret) : ''}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${secret ? 30*86400 : 0}${options.secure ? '; Secure' : ''}`
+}

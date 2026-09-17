@@ -2,7 +2,7 @@ import { readV2Stage, readV2AwardSummaries, readV2Awards } from './v2-ceremony.j
 import { readCurrentV2Program, readV2ProgramSchedule } from './v2-program-catalog.js'
 import { readV2ClosingRecap } from './v2-closing-recap.js'
 import { currentInteractionCode, readLiveInteractionRow, readV2LiveInteraction } from './v2-live-interactions.js'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto'
 
 import {
   V2ActivateParticipantRequestSchema,
@@ -79,6 +79,8 @@ export interface V2ActivationResult {
   snapshot: V2ParticipantSnapshot
   session: V2CreatedParticipantSession
   activated: boolean
+  admissionCreated: boolean
+  guestRecoverySecret?: string
 }
 
 interface RuntimeRow {
@@ -103,7 +105,7 @@ interface IdentityRow {
 }
 
 interface ParticipantRow {
-  accountType: 'STUDENT' | 'STAFF'
+  accountType: 'STUDENT' | 'STAFF' | 'GUEST'
   identityId: string
   participantRevision: number
   onboardingState: 'NEEDS_COLOR' | 'NEEDS_CAPSULE_DECISION' | 'ADMITTED'
@@ -214,14 +216,15 @@ function assertParticipantWriteOpen(runtime: RuntimeRow): void {
 }
 
 function readParticipant(database: SqliteDatabase, identityId: string): ParticipantRow {
-  const hasRole = (database.pragma('table_info(synthetic_identities)') as Array<{ name: string }>).some(column => column.name === 'account_type')
+  const columns = database.pragma('table_info(synthetic_identities)') as Array<{ name: string }>
+  const roleColumn = columns.some(column => column.name === 'account_kind') ? 'account_kind' : columns.some(column => column.name === 'account_type') ? 'account_type' : null
   const participant = database
     .prepare(
        `SELECT participant.identity_id AS identityId,
               participant.participant_revision AS participantRevision,
               participant.onboarding_state AS onboardingState,
               identity.display_name AS displayName,
-              ${hasRole ? 'identity.account_type' : "'STUDENT'"} AS accountType,
+              ${roleColumn ? `identity.${roleColumn}` : "'STUDENT'"} AS accountType,
               participant.activated_at AS activatedAt,
               participant.color_temperature_kelvin AS colorTemperatureKelvin,
               participant.display_color AS displayColor,
@@ -698,8 +701,8 @@ function allowedActions(database: SqliteDatabase, runtime: RuntimeRow, participa
     if (readV2Stage(database).mode !== 'HOST' && (!current || current.kind === 'PERFORMANCE' && current.giftsEnabled !== false)) actions.push('SEND_GIFT')
     actions.push('POST_BARRAGE')
     const live = readV2LiveInteraction(database, runtime.resetEpoch, { identityId: participant.identityId })
-    if (participant.accountType !== 'STAFF' && live.segmentCode === 'A' && live.phase === 'BUZZER_OPEN' && !live.participation.hasBuzzed) actions.push('BUZZ_IN')
-    if (participant.accountType !== 'STAFF' && live.phase === 'VOTE_OPEN' && !live.participation.hasVoted) actions.push('CAST_AUDIENCE_VOTE')
+    if (participant.accountType === 'STUDENT' && live.segmentCode === 'A' && live.phase === 'BUZZER_OPEN' && !live.participation.hasBuzzed) actions.push('BUZZ_IN')
+    if (participant.accountType === 'STUDENT' && live.phase === 'VOTE_OPEN' && !live.participation.hasVoted) actions.push('CAST_AUDIENCE_VOTE')
   }
   return actions
 }
@@ -963,6 +966,7 @@ function resolveIdentity(
   credentials: CredentialContext,
   request: ReturnType<typeof V2ActivateParticipantRequestSchema.parse>,
 ): IdentityRow | undefined {
+  if (request.method === 'GUEST') return undefined
   if (request.method === 'INVITATION_TOKEN') {
     return database
       .prepare(
@@ -1062,30 +1066,78 @@ function saveIdempotency(
     )
 }
 
+function lockEntryColor(database: SqliteDatabase, identityId: string, runtime: RuntimeRow, participant: ParticipantRow, kelvin: number, timestamp: string) {
+        const revision = participant.participantRevision + 1
+        const displayColor = displayColorForKelvin(
+          kelvin,
+        )
+        database
+          .prepare(
+            `UPDATE v2_participant_states
+             SET participant_revision = ?, onboarding_state = 'ADMITTED',
+                 color_temperature_kelvin = ?, display_color = ?,
+                 color_locked_at = ?, capsule_decision = 'SKIPPED',
+                 capsule_skipped_at = ?, admitted_at = ?, admitted_scene = ?,
+                 admitted_run_revision = ?, updated_at = ?
+             WHERE identity_id = ? AND reset_epoch = ?`,
+          )
+          .run(
+            revision,
+            kelvin,
+            displayColor,
+            timestamp,
+            timestamp,
+            timestamp,
+            runtime.currentScene,
+            runtime.runRevision,
+            timestamp,
+            identityId,
+            runtime.resetEpoch,
+          )
+        database
+          .prepare(
+            `INSERT INTO v2_public_stars (
+               identity_id, reset_epoch, public_star_id,
+               color_temperature_kelvin, display_color, formation_slot,
+               started, star_revision, updated_at
+             ) SELECT ?, ?, public_star_id, ?, ?, formation_slot, 0, 1, ?
+               FROM v2_identity_slots WHERE identity_id = ?`,
+          )
+          .run(
+            identityId,
+            runtime.resetEpoch,
+            kelvin,
+            displayColor,
+            timestamp,
+            identityId,
+          )
+        appendStarEvent(database, runtime, identityId, timestamp)
+        appendParticipantEvent(
+          database,
+          identityId,
+          runtime.resetEpoch,
+          revision,
+          timestamp,
+        )
+}
+
 export function activateV2Participant(
   database: SqliteDatabase,
   credentials: CredentialContext,
   input: unknown,
   now: Date = new Date(),
+  recoverySecret?: string,
 ): V2ActivationResult {
   const request = V2ActivateParticipantRequestSchema.parse(input)
-  const identity = resolveIdentity(database, credentials, request)
-  if (
-    !identity ||
-    identity.enabled !== 1 ||
-    identity.invitationStatus !== 'ACTIVE'
-  ) {
-    throw new V2ParticipantCommandError(
-      'AUTH_REQUIRED',
-      '入口或核验信息无效，请重新轻触或扫码。',
-      401,
-    )
-  }
-
   database.exec('BEGIN IMMEDIATE')
   try {
     const runtime = readRuntime(database)
     assertExpectedEpoch(runtime, request.resetEpoch)
+    const guest = request.method === 'GUEST' ? resolveGuest(database, credentials, request, runtime, now, recoverySecret) : null
+    const identity = guest?.identity ?? resolveIdentity(database, credentials, request)
+    if (!identity || identity.enabled !== 1 || identity.invitationStatus !== 'ACTIVE') {
+      throw new V2ParticipantCommandError('AUTH_REQUIRED', '姓名或学号不匹配，请检查后重试。', 401)
+    }
     const existing = database
       .prepare(
         `SELECT 1 FROM v2_participant_states
@@ -1176,6 +1228,14 @@ export function activateV2Participant(
       activated = true
     }
 
+    let admissionCreated = false
+    const participant = readParticipant(database, identity.identityId)
+    if (request.colorTemperatureKelvin !== undefined && participant.onboardingState === 'NEEDS_COLOR') {
+      assertParticipantWriteOpen(runtime)
+      lockEntryColor(database, identity.identityId, runtime, participant, request.colorTemperatureKelvin, now.toISOString())
+      appendAggregateEvents(database, readRuntime(database), now)
+      admissionCreated = true
+    }
     if (!idempotency.replayed) {
       saveIdempotency(database, {
         resetEpoch: runtime.resetEpoch,
@@ -1199,7 +1259,7 @@ export function activateV2Participant(
       now,
     )
     database.exec('COMMIT')
-    return { snapshot, session, activated }
+    return { snapshot, session, activated, admissionCreated, ...(guest ? { guestRecoverySecret: guest.secret } : {}) }
   } catch (error) {
     if (database.inTransaction) database.exec('ROLLBACK')
     throw error
@@ -1310,7 +1370,7 @@ export function executeV2ParticipantOnboardingCommand(
       if (request.command === 'COOPERATIVE_LIGHT') {
         throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '晚会将由主控结束并播放片尾。', 409, runtime.resetEpoch)
       }
-      if (participant.accountType === 'STAFF' && ['BUZZ_IN', 'CAST_AUDIENCE_VOTE'].includes(request.command)) {
+      if (participant.accountType !== 'STUDENT' && ['BUZZ_IN', 'CAST_AUDIENCE_VOTE'].includes(request.command)) {
         throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '工作人员应援账号不参与抢答与投票。', 403, runtime.resetEpoch)
       }
       if (request.command === 'SEND_GIFT' && readV2Stage(database).mode === 'HOST') {
@@ -1407,11 +1467,11 @@ export function executeV2ParticipantOnboardingCommand(
         )
         for (let index = 0; index < request.quantity; index += 1) {
           insertGift.run(`${giftEventId}:${index + 1}`, runtime.resetEpoch, identityId,
-            request.programId, request.giftId, gift.powerCost, timestamp, participant.accountType === 'STAFF' ? 0 : 1)
+            request.programId, request.giftId, gift.powerCost, timestamp, participant.accountType !== 'STUDENT' ? 0 : 1)
         }
         database.prepare(
           `UPDATE v2_program_catalog SET heat = heat + ?, updated_at = ? WHERE id = ?`,
-        ).run(participant.accountType === 'STAFF' ? 0 : totalPower, timestamp, program.id)
+        ).run(participant.accountType !== 'STUDENT' ? 0 : totalPower, timestamp, program.id)
         database.prepare(
           `UPDATE v2_participant_states SET participant_revision = ?,
              first_gift_at = COALESCE(first_gift_at, ?), power_balance = ?,
@@ -1629,58 +1689,7 @@ export function executeV2ParticipantOnboardingCommand(
           runtime.resetEpoch,
         )
       } else {
-        const revision = participant.participantRevision + 1
-        const displayColor = displayColorForKelvin(
-          request.colorTemperatureKelvin,
-        )
-        database
-          .prepare(
-            `UPDATE v2_participant_states
-             SET participant_revision = ?, onboarding_state = 'ADMITTED',
-                 color_temperature_kelvin = ?, display_color = ?,
-                 color_locked_at = ?, capsule_decision = 'SKIPPED',
-                 capsule_skipped_at = ?, admitted_at = ?, admitted_scene = ?,
-                 admitted_run_revision = ?, updated_at = ?
-             WHERE identity_id = ? AND reset_epoch = ?`,
-          )
-          .run(
-            revision,
-            request.colorTemperatureKelvin,
-            displayColor,
-            timestamp,
-            timestamp,
-            timestamp,
-            runtime.currentScene,
-            runtime.runRevision,
-            timestamp,
-            identityId,
-            runtime.resetEpoch,
-          )
-        database
-          .prepare(
-            `INSERT INTO v2_public_stars (
-               identity_id, reset_epoch, public_star_id,
-               color_temperature_kelvin, display_color, formation_slot,
-               started, star_revision, updated_at
-             ) SELECT ?, ?, public_star_id, ?, ?, formation_slot, 0, 1, ?
-               FROM v2_identity_slots WHERE identity_id = ?`,
-          )
-          .run(
-            identityId,
-            runtime.resetEpoch,
-            request.colorTemperatureKelvin,
-            displayColor,
-            timestamp,
-            identityId,
-          )
-        appendStarEvent(database, runtime, identityId, timestamp)
-        appendParticipantEvent(
-          database,
-          identityId,
-          runtime.resetEpoch,
-          revision,
-          timestamp,
-        )
+        lockEntryColor(database, identityId, runtime, participant, request.colorTemperatureKelvin, timestamp)
         aggregateChanged = true
       }
     }
@@ -1715,4 +1724,44 @@ export function executeV2ParticipantOnboardingCommand(
     if (database.inTransaction) database.exec('ROLLBACK')
     throw error
   }
+}
+
+// Recovery credentials are server-derived, stored only as digests and scoped to a round.
+function resolveGuest(database: SqliteDatabase, credentials: CredentialContext,
+  request: Extract<ReturnType<typeof V2ActivateParticipantRequestSchema.parse>, {method: 'GUEST'}>,
+  runtime: RuntimeRow, now: Date, recoverySecret?: string) {
+  const row = recoverySecret ? database.prepare(`SELECT identity_id AS id FROM v2_guest_credentials
+    WHERE recovery_digest = ? AND reset_epoch = ? AND expires_at > ?`).get(sha256(recoverySecret), runtime.resetEpoch, now.toISOString()) as {id: string}|undefined : undefined
+  if (row) return {identity: {identityId: row.id, enabled: 1, invitationStatus: 'ACTIVE' as const}, secret: recoverySecret!}
+  const keyDigest = sha256(request.idempotencyKey)
+  const previous = database.prepare(`SELECT identity_id AS id, creation_request_digest AS digest FROM v2_guest_credentials
+    WHERE creation_key_digest = ? AND reset_epoch = ? AND expires_at > ?`).get(keyDigest, runtime.resetEpoch, now.toISOString()) as {id: string; digest: string}|undefined
+  const secret = createHmac('sha256', credentials.credentialPepper).update(`guest:${runtime.resetEpoch}:${request.idempotencyKey}`).digest('base64url')
+  if (previous) {
+    if (previous.digest !== requestDigest(request)) throw new V2ParticipantCommandError('IDEMPOTENCY_CONFLICT', '请使用原入场信息重试。', 409)
+    return {identity: {identityId: previous.id, enabled: 1, invitationStatus: 'ACTIVE' as const}, secret}
+  }
+  assertParticipantWriteOpen(runtime)
+  const guests = Number(database.prepare("SELECT COUNT(*) FROM synthetic_identities WHERE account_kind = 'GUEST'").pluck().get())
+  const total = Number(database.prepare('SELECT COUNT(*) FROM synthetic_identities').pluck().get())
+  if (guests >= 94 || total >= 400) throw new V2ParticipantCommandError('STAR_CAPACITY_REACHED', '本轮游客名额已满，已入场游客仍可恢复。', 409, runtime.resetEpoch)
+  const identityId = randomUUID(), index = Number(database.prepare('SELECT COALESCE(MAX(seed_index), 0) + 1 FROM synthetic_identities').pluck().get())
+  const publicStarId = `G-${String(index).padStart(4, '0')}`, visualSeed = randomBytes(16).toString('hex'), timestamp = now.toISOString()
+  database.prepare(`INSERT INTO synthetic_identities (id, seed_index, display_name, student_number_digest,
+    public_star_id, visual_seed, enabled, created_at, account_kind) VALUES (?, ?, ?, ?, ?, ?, 1, ?, 'GUEST')`)
+    .run(identityId, index, request.displayName, sha256(randomBytes(32).toString('hex')), publicStarId, visualSeed, timestamp)
+  database.prepare(`INSERT INTO v2_identity_slots (identity_id, seed_index, public_star_id, formation_slot, reserved_reset_epoch, reserved_at)
+    VALUES (?, ?, ?, ?, NULL, NULL)`).run(identityId, index, publicStarId, `slot:${visualSeed}`)
+  database.prepare(`INSERT INTO v2_guest_credentials (identity_id, reset_epoch, recovery_digest, creation_key_digest, creation_request_digest, created_at, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(identityId, runtime.resetEpoch, sha256(secret), keyDigest, requestDigest(request), timestamp, new Date(+now + 30*86400000).toISOString())
+  return {identity: {identityId, enabled: 1, invitationStatus: 'ACTIVE' as const}, secret}
+}
+
+export function restoreGuestSession(database: SqliteDatabase, recoverySecret: string | undefined, now = new Date()) {
+  if (!recoverySecret) return null
+  const runtime = readRuntime(database)
+  const row = database.prepare(`SELECT identity_id AS id FROM v2_guest_credentials WHERE recovery_digest = ? AND reset_epoch = ? AND expires_at > ?`)
+    .get(sha256(recoverySecret), runtime.resetEpoch, now.toISOString()) as {id: string}|undefined
+  if (!row) return null
+  return {session: createParticipantSession(database, row.id, runtime, now), snapshot: readV2ParticipantSnapshot(database, row.id, now)}
 }

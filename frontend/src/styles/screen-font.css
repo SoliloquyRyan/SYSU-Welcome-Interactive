@@ -1,12 +1,5 @@
 @import './mobile-font.css';
-/* User-supplied Fangxian Light. Provenance and local-review scope: fangxian-title.json. */
-@font-face {
-  font-family: 'Fangxian';
-  src: url('../assets/fonts/fangxian-title.woff2') format('woff2');
-  font-style: normal;
-  font-weight: 300;
-  font-display: swap;
-}
+@import './fangxian-ranges.css';
 @font-face {
   font-family: 'Orbitron';
   src: url('../assets/fonts/orbitron.woff2') format('woff2');
@@ -14,33 +7,15 @@
   font-weight: 400 900;
   font-display: swap;
 }
-@font-face {
-  font-family: 'Welcome Stage Serif';
-  src: url('../assets/fonts/welcome-stage-serif.woff2') format('woff2');
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-}
-/* Official OFL assets, served by this application. Only screen title selectors
-   request these two families; participant text remains Noto Sans SC. */
-@font-face {
-  font-family: 'Smiley Sans';
-  src: url('../assets/fonts/smiley-sans-oblique.woff2') format('woff2');
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Oxanium';
-  src: url('../assets/fonts/oxanium.woff2') format('woff2');
-  font-style: normal;
-  font-weight: 200 800;
-  font-display: swap;
-}
+
+/* Titles use local Orbitron (OFL) and the supplied Fangxian font.
+   Font provenance is retained with the assets; phone text uses Noto Sans SC. */
+
+
 .v2-screen, .screen-route-state {
   --font-family-cjk: 'Welcome Sans SC', 'Noto Sans SC', sans-serif;
   --font-family-ui: var(--font-family-cjk);
-  --font-family-display: 'Orbitron', 'Fangxian', 'Smiley Sans', 'Welcome Sans SC', sans-serif;
+  --font-family-display: 'Orbitron', 'Fangxian', 'Welcome Sans SC', sans-serif;
   --font-family-signal: 'Orbitron', 'Welcome Sans SC', sans-serif;
   --font-family-data: 'Orbitron', 'Welcome Sans SC', sans-serif;
   font-family: var(--font-family-ui);

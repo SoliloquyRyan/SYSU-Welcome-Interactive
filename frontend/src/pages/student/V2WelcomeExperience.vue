@@ -1,4 +1,5 @@
 <script setup>
+import PersonalEntryMeteor from '../../components/PersonalEntryMeteor.vue'
 import { createGiftSkyQueue } from '../../rendering/gift-sky-queue'
 import {
   computed,
@@ -72,6 +73,8 @@ const props = defineProps({
   capability: { type: Object, required: true },
 })
 
+let admissionEpoch = props.capability.resetEpoch
+
 const COLLEGE_WEBSITE_URL = 'https://ise.sysu.edu.cn/'
 const PROGRAM_STATE_LABELS = Object.freeze({
   CURRENT: '进行中',
@@ -133,6 +136,10 @@ const giftQuantity = ref(1)
 const voteChoice = ref('')
 const dockTextInputFocused = ref(false)
 const giftOpen = ref(false)
+const guestEntry = ref(false)
+const studentVerification = ref(false)
+const entryMeteor = ref(false)
+
 const titleMotionEnabled = ref(false)
 const archiveMetricHelp = ref('')
 const busy = ref('')
@@ -274,8 +281,7 @@ const programBackgroundVisible = computed(() => admitted.value && !completed.val
   && runtime.value?.currentScene === 'PROGRAM_SUPPORT' && !journeyPlaying.value)
 const galaxyCapacityValid = computed(() => (snapshot.value?.publicStars?.length ?? 0) <= 400)
 const connectionMessage = computed(() => {
-  // COMPLETED intentionally closes realtime. The memento carries the durable
-  // end state; intentional suspension must not look like a connection fault.
+  // The memento remains quiet while the read-only connection watches for a new round.
   if (completed.value) return ''
   if (!snapshot.value || realtime.state.value === 'online') return ''
   if (realtime.state.value === 'offline') return '设备已离线；未确认的内容不会自动提交。'
@@ -476,6 +482,8 @@ function clearSession() {
   abortSnapshotRequests()
   realtime.stop()
   snapshot.value = null
+  guestEntry.value = false
+  studentVerification.value = false
   clearSensitiveDrafts()
   commandKeys.clear()
   activationAttempt = null
@@ -501,6 +509,7 @@ function clearSession() {
 }
 
 function putSnapshot(next) {
+  admissionEpoch = next.resetEpoch
   const previous = snapshot.value
   const resetLiveContent = !previous || (previous.resetEpoch !== next.resetEpoch || previous.runtime.status !== next.runtime.status || previous.runtime.currentScene !== next.runtime.currentScene || previous.presentation.type !== next.presentation.type)
   if (previous && resetLiveContent) {
@@ -554,6 +563,7 @@ async function refreshSnapshot() {
     return next
   } catch (error) {
     if (error?.name === 'AbortError') return null
+    if (error instanceof ApiError && Number.isSafeInteger(error.resetEpoch) && error.resetEpoch > admissionEpoch) admissionEpoch = error.resetEpoch
     if (error instanceof ApiError && ['AUTH_REQUIRED', 'STALE_RESET_EPOCH'].includes(error.code)) {
       clearSession()
     }
@@ -669,30 +679,15 @@ async function acceptActivation(response, activationSession) {
   let realtimeConnection = null
   if (!galaxyCapacityValid.value) {
     realtime.suspend('星系容量数据异常，已停止写入。')
-  } else if (response.snapshot.runtime.status === 'COMPLETED') {
-    realtime.suspend('本场活动已结束，你的记录已保存。')
+
   } else {
-    // Synchronization is authoritative recovery, not presentation. Start it
-    // immediately so the 2.8s camera never delays current state or writes.
+    // Keep the read-only subscription after completion so a formal reset
+    // returns this phone to entry without requiring a manual reload.
     realtimeConnection = realtime.connect()
   }
-  if (shouldPlayDiscovery({
-    activationCreated: response.activationCreated,
-    onboardingState: response.snapshot.participant.onboardingState,
-    reducedMotion: reducedMotion.value,
-  })) {
-    cinematic.value = 'discovery-pending'
-    const visibleReady = await waitForStableDocumentVisibility()
-    if (!visibleReady || !sessionIsCurrent(activeSession) || reducedMotion.value || document.hidden) {
-      finishCinematic()
-    } else {
-      cinematic.value = 'discovering'
-      await nextTick()
-      await waitForJourneyPhase(PERSONAL_JOURNEY_PHASES.DISCOVERY, DISCOVERY_CINEMATIC_DURATION_MS)
-    }
-    if (!sessionIsCurrent(activeSession)) return
-    cinematic.value = ''
-  }
+  studentVerification.value = false
+  cinematic.value = ''
+  entryMeteor.value = Boolean(response.admissionCreated && !reducedMotion.value && !document.hidden)
   if (!sessionIsCurrent(activeSession)) return
   if (realtimeConnection) await realtimeConnection
   if (sessionIsCurrent(activeSession)) titleMotionEnabled.value = true
@@ -707,7 +702,7 @@ async function activate(method, fields) {
   persistentError.value = ''
   const request = {
     protocolVersion: '2',
-    resetEpoch: props.capability.resetEpoch,
+    resetEpoch: admissionEpoch,
     method,
     ...fields,
   }
@@ -727,6 +722,7 @@ async function activate(method, fields) {
     await acceptActivation(response, activationSession)
   } catch (error) {
     if (!sessionIsCurrent(activationSession, { allowEmpty: true })) return
+    if (error instanceof ApiError && Number.isSafeInteger(error.resetEpoch) && error.resetEpoch > admissionEpoch) admissionEpoch = error.resetEpoch
     if (definitive(error)) {
       if (activationAttempt?.key === attempt.key) activationAttempt = null
       if (method === 'INVITATION_TOKEN') invitationToken = null
@@ -744,16 +740,21 @@ async function activate(method, fields) {
 function activateAssisted() {
   const name = displayName.value.trim()
   if (!name || visibleCharacterCount(name) > 40) {
-    persistentError.value = '请输入姓名或分配的工作人员名称（1–40 个字符）。'
+    persistentError.value = '请输入姓名。'
     return
   }
+  if (guestEntry.value && !studentVerification.value) {
+    if (visibleCharacterCount(name) > 20) { persistentError.value = '昵称最多 20 个字符。'; return }
+    return activate('GUEST', {displayName: name, colorTemperatureKelvin: clampStarTemperature(colorKelvin.value)})
+  }
   if (!/^\d{8}$/.test(studentNumber.value)) {
-    persistentError.value = '请输入 8 位学号或工作口令。'
+    persistentError.value = '请输入 8 位学号。'
     return
   }
   void activate('ASSISTED_STUDENT', {
     displayName: name,
     studentNumber: studentNumber.value,
+    colorTemperatureKelvin: clampStarTemperature(colorKelvin.value),
   })
 }
 
@@ -800,9 +801,6 @@ async function runCommand(command, fields, successMessage) {
     ].includes(error.code))) {
       try {
         await refreshSnapshot()
-        if (runtime.value?.status === 'COMPLETED') {
-          realtime.suspend('本场活动已结束，你的记录已保存。')
-        }
       } catch (refreshError) {
         if (refreshError instanceof ApiError && ['AUTH_REQUIRED', 'STALE_RESET_EPOCH'].includes(refreshError.code)) {
           const message = persistentError.value
@@ -829,17 +827,9 @@ async function lockColor() {
     '',
   )
   if (!next || !sessionIsCurrent(colorSession)) return
-  if (shouldPlayPullback({ previousState, nextSnapshot: next, reducedMotion: reducedMotion.value })) {
-    cinematic.value = 'color-confirm'
-    await nextTick()
-    await waitForJourneyPhase(PERSONAL_JOURNEY_PHASES.CONFIRM, COLOR_CONFIRM_CINEMATIC_DURATION_MS)
-    if (!sessionIsCurrent(colorSession)) return
-    cinematic.value = ''
-  }
-  if (!sessionIsCurrent(colorSession)) return
-  await playOrbitHandoff(previousState, next, colorSession)
-  if (!sessionIsCurrent(colorSession)) return
-  setToast('星色已锁定；你的星已经汇入智工星河。')
+  cinematic.value = ''
+  entryMeteor.value = Boolean(previousState === 'NEEDS_COLOR' && !reducedMotion.value && !document.hidden)
+  setToast('星色已锁定，欢迎入场。')
 }
 
 async function playOrbitHandoff(previousState, next, commandSession) {
@@ -999,7 +989,6 @@ watch(() => runtime.value?.status, (next, previous) => {
   toast.value = ''
   if (next === 'COMPLETED' && previous !== 'COMPLETED') {
     finishCinematic()
-    realtime.suspend('本场活动已结束，你的记录已保存。')
     void nextTick(() => sceneHeading.value?.focus())
   }
 })
@@ -1035,8 +1024,7 @@ onMounted(async () => {
     if (!mounted || !initialSnapshot) return
     if (!galaxyCapacityValid.value) {
       realtime.suspend('星系容量数据异常，已停止写入。')
-    } else if (runtime.value?.status === 'COMPLETED') {
-      realtime.suspend('本场活动已结束，你的记录已保存。')
+
     } else {
       await realtime.connect()
     }
@@ -1077,6 +1065,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onEscape)
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
+watch([pageHidden, reducedMotion], () => { if (pageHidden.value || reducedMotion.value) entryMeteor.value = false })
+watch(() => snapshot.value?.resetEpoch, (value, old) => { if (old !== undefined && value !== old) entryMeteor.value = false })
 </script>
 
 <template>
@@ -1088,6 +1078,7 @@ onBeforeUnmount(() => {
       'is-content-page': navigationAvailable && (activeTab !== 'scene' || runtime?.currentScene === 'PROGRAM_SUPPORT'),
       'is-live-chat': admitted && activeTab === 'scene' && runtime?.currentScene === 'PROGRAM_SUPPORT' && runtime?.status === 'RUNNING' && snapshot?.presentation.type === 'NONE',
       'is-onboarding': snapshot && !admitted,
+      'is-single-entry': !snapshot || studentVerification,
       'is-completed': runtime?.status === 'COMPLETED',
       'is-discovery-active': discoveryActive,
       'is-discovery-pending': cinematic === 'discovery-pending',
@@ -1101,18 +1092,9 @@ onBeforeUnmount(() => {
     :data-program-opening="mobileProgramOpening ? 'playing' : 'settled'"
   >
     <OpeningMusic :scene="runtime?.currentScene" :status="runtime?.status" />
-    <PersonalJourneyStage
-      v-if="!programBackgroundVisible || mobileProgramOpening"
-      :class="{ 'is-opening-galaxy': mobileProgramOpening && programBackgroundVisible }"
-      ref="journeyStage"
-      :phase="journeyPhase"
-      :playing="journeyPlaying"
-      :reduced="reducedMotion"
-      :paused="pageHidden || runtime?.status === 'PAUSED'"
-      :color="selectedColor"
-      :own-star="journeyOwnStar"
-      :public-stars="snapshot?.publicStars ?? []"
-    />
+    <ProgramStageBackground v-if="!programBackgroundVisible || mobileProgramOpening" compact :stars="[]" :reduced="reducedMotion" :paused="pageHidden" theme="program" variant="theme" class="personal-neon-entry" :class="{'is-opening-galaxy': mobileProgramOpening && programBackgroundVisible}" />
+    <div v-if="!programBackgroundVisible && !completed" class="entry-personal-light" :style="{'--personal-color': participant?.displayColor || selectedColor}" aria-label="我的星色"><span>✦</span><small>{{ admitted ? personalStarCode : '你的专属星色' }}</small></div>
+    <PersonalEntryMeteor v-if="entryMeteor && !reducedMotion && !pageHidden" :color="participant?.displayColor || selectedColor" @finish="entryMeteor = false" />
     <ProgramStageBackground v-if="admitted && !completed" :class="{ 'is-preloaded-background': !programBackgroundVisible, 'is-opening-city': mobileProgramOpening && programBackgroundVisible }" compact :stars="snapshot?.publicStars ?? []" :effects="giftFlights" :own-star-id="participant?.ownPublicStarId" :visual="phoneVisual" :variant="programBackground(currentProgram, snapshot?.stage)" :theme="starCityTheme({ program: currentProgram, stage: snapshot?.stage, presentation: snapshot?.presentation, liveInteraction: snapshot?.liveInteraction }).id" :reduced="reducedMotion" :paused="pageHidden || !programBackgroundVisible || runtime?.status === 'PAUSED'" @sky-points="phoneSkyPoints = $event" />
     <MobileProgramOpening v-if="mobileProgramOpening && programBackgroundVisible" @finish="finishMobileProgramOpening" />
     <GiftSkyEffects compact :points="phoneSkyPoints" :effects="giftFlights" :aggregate="giftAggregate" :reduced="reducedMotion" />
@@ -1151,7 +1133,7 @@ onBeforeUnmount(() => {
       <section v-else-if="!snapshot" class="entry-copy">
         <p class="kicker">身份核验</p>
         <h2>进入你的星域</h2>
-        <p>核验身份，选择星色，让你的星加入今晚的星河。</p>
+        <p>以星光作序，与未来相逢。</p>
       </section>
 
       <section
@@ -1248,13 +1230,15 @@ onBeforeUnmount(() => {
         <span aria-hidden="true"></span><p>正在核验身份，找回你的星…</p>
       </div>
 
-      <form v-else-if="!snapshot" class="dock-body entry-form" novalidate @submit.prevent="activateAssisted">
-        <label>姓名<input v-model="displayName" autocomplete="off" maxlength="40" placeholder="姓名或分配的工作人员名称" aria-describedby="v2-assisted-disclosure" /></label>
-        <label>8 位学号／工作口令<input v-model="studentNumber" inputmode="numeric" autocomplete="off" maxlength="8" pattern="[0-9]{8}" placeholder="请输入 8 位数字" aria-describedby="v2-assisted-disclosure" /></label>
-        <button class="dock-primary" type="submit" :disabled="busy === 'activation'">
-          {{ busy === 'activation' ? '正在核验…' : '核验并进入' }}
-        </button>
-        <p id="v2-assisted-disclosure" class="dock-disclosure">{{ protectedRuntime ? '学生填写名单中的姓名与 8 位学号；工作人员填写分配的名称与 8 位工作口令。已入场会恢复原星色和余额。' : '当前排练仅识别分配的测试姓名与 8 位编号，不会核验真实学籍信息。' }}</p>
+      <form v-else-if="!snapshot || studentVerification" class="dock-body entry-form" novalidate @submit.prevent="activateAssisted">
+        <div class="entry-form-heading"><strong>{{ guestEntry && !studentVerification ? '游客参与' : '欢迎入场' }}</strong><span :style="{color: selectedColor}">✦</span></div>
+        <label>{{ guestEntry && !studentVerification ? '昵称' : '姓名' }}<input v-model="displayName" autocomplete="name" :maxlength="guestEntry && !studentVerification ? 20 : 40" :placeholder="guestEntry && !studentVerification ? '你的昵称' : '你的姓名'" /></label>
+        <label v-if="!guestEntry || studentVerification">8 位学号<input v-model="studentNumber" inputmode="numeric" autocomplete="off" maxlength="8" pattern="[0-9]{8}" placeholder="请输入 8 位学号" /></label>
+        <div class="entry-color"><label for="entry-star-color">选择星色 <span :style="{color:selectedColor}">✦</span></label><input id="entry-star-color" v-model.number="colorKelvin" type="range" :min="STAR_TEMPERATURE_MIN" :max="STAR_TEMPERATURE_MAX" :step="STAR_TEMPERATURE_STEP" :aria-valuetext="`${colorKelvin} 开尔文`"><div class="temperature-scale"><span>暖红</span><span>日光</span><span>冷蓝</span></div></div>
+        <button class="dock-primary" type="submit" :disabled="busy === 'activation'">{{ busy === 'activation' ? '正在进入…' : '确认星色并进入' }}</button>
+        <p class="entry-hint">{{ guestEntry && !studentVerification ? '游客可聊天和送礼，应援不计入节目排名。' : '星色本轮锁定；再次进入会恢复原星色。' }}</p>
+        <button v-if="!studentVerification" class="entry-switch" type="button" @click="guestEntry = !guestEntry; persistentError = ''">{{ guestEntry ? '姓名学号入场' : '游客参与' }}</button>
+        <button v-else class="entry-switch" type="button" @click="studentVerification = false">返回游客应援</button>
       </form>
 
       <div
@@ -1316,14 +1300,14 @@ onBeforeUnmount(() => {
 
       <template v-else>
         <div ref="mainDockBody" :key="viewRevealKey" class="dock-body admitted-panel page-reveal">
-          <p v-if="participant?.accountType === 'STAFF'" class="staff-entry-note">工作人员应援 · 礼物不计入节目排名</p>
+          <p v-if="participant?.accountType === 'GUEST'" class="staff-entry-note">游客应援 · 不计入节目排名 <button type="button" @click="studentVerification = true; guestEntry = false; displayName = ''; studentNumber = ''">核验学生身份</button></p>
           <template v-if="activeTab === 'scene'">
             <PersonalMemento v-if="runtime?.status === 'COMPLETED'" :participant="participant" :star-code="personalStarCode" :color="selectedColor" @open-archive="selectTab('archive')" @open-programs="selectTab('programs')" />
             <div v-else-if="runtime?.status === 'PAUSED'" class="terminal-copy">
               <strong>互动暂时停止</strong><p>恢复后会从当前现场环节继续。</p>
             </div>
             <div v-else-if="runtime?.status === 'READY'" class="terminal-copy">
-              <strong>{{ snapshot.aggregate.publicStarCount }} 颗星，已在这里相遇</strong><p>入场已完成，稍后一起启程。</p>
+              <strong>你的星色，已为今晚点亮</strong><p>入场已完成，稍后一起启程。</p>
             </div>
             <button
               v-else-if="runtime?.currentScene === 'ASSEMBLY' && actionAllowed(snapshot, 'START_STAR')"
@@ -3086,3 +3070,14 @@ textarea:focus-visible {
 </style>
 
 <style scoped src="./star-city-mobile.css"></style>
+
+<style scoped>
+.personal-neon-entry{position:absolute;inset:0}.entry-personal-light{position:absolute;left:50%;top:29%;transform:translateX(-50%);display:grid;justify-items:center;gap:12px;pointer-events:none;color:var(--personal-color);z-index:1}.entry-personal-light>span{font-size:74px;text-shadow:0 0 35px var(--personal-color)}.entry-personal-light>small{color:#ded9ec;font-size:12px;letter-spacing:.12em}
+.entry-form-heading{display:flex;align-items:center;justify-content:space-between;font-size:22px;font-weight:800}.entry-form-heading>span{font-size:30px}.entry-form .entry-color{display:grid;gap:2px}.entry-form input[type=range]{width:100%;min-height:44px;accent-color:var(--selected-color);background:var(--temperature-spectrum)}.entry-hint{font-size:11px;color:#c5bfd5;text-align:center;margin:0}.entry-switch{background:transparent;color:#d3c7ed;border:0;min-height:44px;font:inherit;font-size:13px}.entry-form .entry-color label{display:flex;justify-content:space-between}.staff-entry-note button{min-height:44px;border:1px solid #a898c355;background:#242234;color:#efebfa;border-radius:8px;font:inherit;font-size:12px;padding:6px 10px}
+.is-single-entry .v2-welcome__main{justify-content:flex-start;padding-top:8px}.is-single-entry .entry-copy h2{font-size:28px}.is-single-entry .entry-copy .kicker{display:none}.is-single-entry .entry-copy>p{font-size:12px;margin:4px 0}.is-single-entry .entry-form{gap:10px;padding:18px 22px}.is-single-entry .v2-welcome__dock{max-height:calc(var(--visual-height,100dvh) - 140px);overflow:auto}.is-single-entry .entry-form input:not([type=range]){min-height:44px}
+@media(max-height:720px){.is-single-entry .entry-form{gap:5px;padding:12px 18px}.is-single-entry .entry-copy>p{display:none}.is-single-entry .entry-form-heading{font-size:18px}.is-single-entry .v2-welcome__dock{max-height:calc(var(--visual-height,100dvh) - 100px)}}
+</style>
+
+<style scoped>
+.personal-neon-entry :deep(.city-panorama){background-size:auto 58%;background-position:15% 50px;background-repeat:no-repeat;opacity:.85}.personal-neon-entry :deep(.city-readability){background:linear-gradient(180deg,#201c3240,transparent 36%,#17172530 70%,#171725b3)}.is-single-entry .entry-personal-light{top:30%;gap:8px}.is-single-entry .entry-personal-light>span{font-size:52px}.entry-personal-light>small{font-family:var(--font-family-cjk)}
+</style>

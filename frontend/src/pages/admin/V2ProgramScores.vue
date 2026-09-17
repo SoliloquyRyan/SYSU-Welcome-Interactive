@@ -16,6 +16,7 @@ const revealed = computed(() => props.snapshot.stage?.mode === 'AWARD' && props.
 const writable = computed(() => props.canWrite && props.snapshot.roles.some(role => ['ALL', 'STAGE_CONTROLLER'].includes(role))
   && ['READY', 'RUNNING', 'PAUSED'].includes(props.snapshot.runtime.status) && !revealed.value)
 const draft = ref(null)
+const page=ref(0)
 const input = ref(null)
 const latest = computed(() => ranked.value.find(item => item.id === draft.value?.id))
 const stale = computed(() => draft.value && (!latest.value || (latest.value.heatRevision ?? 0) !== draft.value.revision
@@ -68,7 +69,7 @@ function save() {
         <div><BaseButton variant="secondary" type="button" :disabled="!canWrite" @click="cancel">返回</BaseButton><BaseButton type="submit" :disabled="!writable || invalid || stale || target === draft.original">确定</BaseButton></div>
       </form>
       <ol class="score-list" aria-label="节目动力值">
-        <li v-for="program in ranked" :key="program.id" :class="{ 'is-editing': draft?.id === program.id }">
+        <li v-for="program in ranked.slice(page*4,page*4+4)" :key="program.id" :class="{ 'is-editing': draft?.id === program.id }">
           <span class="score-order">{{ ranked.findIndex(item => item.heat === program.heat) + 1 }}</span>
           <div><strong>{{ program.title }}</strong><small>送礼 {{ program.rawHeat ?? program.heat }}<template v-if="program.heatAdjustment"> · 调整 {{ sign(program.heatAdjustment) }}</template></small></div>
           <b>{{ program.heat.toLocaleString('zh-CN') }}</b>
@@ -76,6 +77,7 @@ function save() {
         </li>
       </ol>
 
+      <nav class="score-paging"><BaseButton variant="secondary" :disabled="page===0" @click="page--">上一页</BaseButton><span>{{ page+1 }} / {{ Math.max(1,Math.ceil(ranked.length/4)) }}</span><BaseButton variant="secondary" :disabled="(page+1)*4>=ranked.length" @click="page++">下一页</BaseButton></nav>
     </details>
   </section>
 </template>
@@ -85,4 +87,8 @@ function save() {
 
 .program-scores{gap:14px;border-block:0;padding-block:4px 8px}.program-scores header{justify-content:space-between}.program-scores header>span{color:#b8d5ed}.score-podium{gap:10px}.score-podium li{background:linear-gradient(150deg,#14273a66,#07101e70);border-color:#91b9e429;border-radius:12px}.score-place{color:#bcdcf3}.score-note{padding:9px 12px;border-radius:8px;background:#b4cce909;color:#bdcee0}.score-details{border-top:1px solid #91b9e424;padding-top:4px}.score-list{margin-top:8px;scroll-padding:10px}.score-list li{padding:12px 4px;gap:12px}.score-list li.is-editing{background:#7db3e80e;border-radius:8px}.score-list strong{font-weight:500;line-height:1.5}.score-list b{font-variant-numeric:tabular-nums}.score-list :deep(.base-button--sm){min-height:38px;border-color:#91b9e426;background:#7da8d509}.score-editor{margin:10px 0 16px;padding:18px;background:#0b1c2dbc;border-color:#a4c9eb57}.score-editor input{max-width:100%;background:#030a1480;font-size:1.2rem;font-family:var(--font-family-data);border-radius:10px}.score-editor>div{justify-content:flex-end}.score-editor label{line-height:1.5}.score-editor p{line-height:1.6}
 @media(max-width:680px){.score-podium li{padding:12px 10px;gap:10px}.score-list li{grid-template-columns:18px minmax(0,1fr) auto;gap:8px}.score-list li>button{grid-column:3;grid-row:2}.score-list li>div{grid-row:span 2}.score-list li>b{grid-column:3;text-align:right}.score-list li>.score-order{grid-row:span 2}.score-editor{padding:14px}.score-editor>div>button{flex:1}}
+</style>
+
+<style scoped>
+.program-scores{min-height:0;flex:1;gap:6px}.score-podium{display:none}.score-details>summary{min-height:34px;font-size:12px}.score-list{max-height:none;overflow:hidden;display:grid;grid-template-columns:1fr 1fr;gap:6px}.score-list li{padding:6px;min-height:44px;font-size:12px}.score-note{font-size:11px;margin:0}.score-paging{display:flex;gap:14px;align-items:center;justify-content:center}.score-editor{position:fixed;z-index:47;top:20vh;left:15vw;right:15vw;padding:22px;background:#242d3a;box-shadow:0 0 0 100vmax #080d17c9;border:1px solid #7e95b4;border-radius:10px}
 </style>

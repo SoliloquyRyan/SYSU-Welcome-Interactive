@@ -1,3 +1,4 @@
+import {prepareProgram,executePrepared,waitRuntime,adminSnapshot} from './support/d109-console.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -16,11 +17,11 @@ async function prepare(admin: Page, demo: DemoTestStack) {
 async function start(admin: Page) {
   await admin.getByRole('button', { name: '开始活动', exact: true }).click()
   await admin.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
-  await admin.getByRole('button', { name: '02 节目应援', exact: true }).click()
+  await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button', { name: '02 节目应援', exact: true }).click()
 }
 async function select(admin: Page, id: string) {
-  await admin.getByLabel('当前节目', { exact: true }).selectOption(id)
-  await admin.getByRole('button', { name: '设为当前节目', exact: true }).click()
+  await prepareProgram(admin, id)
+  await executePrepared(admin)
 }
 async function admit(phone: Page, demo: DemoTestStack, index: number) {
   await phone.goto('/welcome?token=' + encodeURIComponent(demo.credentials.participants[index]!.inviteToken))
@@ -96,7 +97,7 @@ test('D106 keeps announcement pure, retains background fallbacks, and serves loc
   try {
     await prepare(admin, demo); await admit(phone, demo, 0)
     await phone.evaluate(() => document.fonts.ready)
-    const firstFonts = await phone.evaluate(() => performance.getEntriesByType('resource').filter(e => e.name.includes('.woff2')).map(e => ({ path: new URL(e.name).pathname, bytes: (e as PerformanceResourceTiming).decodedBodySize })))
+    const firstFonts = await phone.evaluate(() => performance.getEntriesByType('resource').filter(e => e.name.includes('.woff2') && !new URL(e.name).searchParams.has('import')).map(e => ({ path: new URL(e.name).pathname, bytes: (e as PerformanceResourceTiming).decodedBodySize })))
     expect(firstFonts.length).toBeGreaterThan(0)
     expect(firstFonts.every(f => f.path.includes('welcome-sans-sc'))).toBe(true)
     await start(admin); await select(admin, 'event2026-03')
@@ -154,7 +155,7 @@ test('D106 keeps announcement pure, retains background fallbacks, and serves loc
     const phoneFonts = await platformFonts(pc, phone, '.archive-owner')
     await fs.writeFile(path.join(out, 'platform-fonts.json'), JSON.stringify({ phoneFonts, titleFonts }, null, 2))
     expect(phoneFonts.some(f => f.isCustomFont && /Welcome Sans SC/.test(f.familyName))).toBe(true)
-    await fs.writeFile(path.join(out, 'font-network.json'), JSON.stringify({ firstFonts, titleFonts, phoneFonts, firstBytes: firstFonts.reduce((n, f) => n + f.bytes, 0), allFonts: await phone.evaluate(() => performance.getEntriesByType('resource').filter(e => e.name.includes('.woff2')).map(e => ({ path: new URL(e.name).pathname, bytes: (e as PerformanceResourceTiming).decodedBodySize }))) }, null, 2))
+    await fs.writeFile(path.join(out, 'font-network.json'), JSON.stringify({ firstFonts, titleFonts, phoneFonts, firstBytes: firstFonts.reduce((n, f) => n + f.bytes, 0), allFonts: await phone.evaluate(() => performance.getEntriesByType('resource').filter(e => e.name.includes('.woff2') && !new URL(e.name).searchParams.has('import')).map(e => ({ path: new URL(e.name).pathname, bytes: (e as PerformanceResourceTiming).decodedBodySize }))) }, null, 2))
     await admin.screenshot({ path: path.join(out, 'admin.png') })
     expect(errors).toEqual([])
   } catch (error) {
@@ -191,20 +192,27 @@ test('D106 confirms four gifts with locked colors, preserves phone controls, and
     await phone.emulateMedia({ reducedMotion: 'no-preference' })
     await phone.getByRole('textbox', { name: '弹幕', exact: true }).fill('保留正在输入的星光')
     await phone.getByRole('button', { name: '星色', exact: true }).click()
+    // Capture short-lived DOM at insertion, before HTTP and screenshot round trips.
+    for(const target of [screen,phone])await target.evaluate(()=>{
+      const observed:Record<string,{color:string;quantity:string;shipWidth:number}>=Object.create(null)
+      Object.assign(window,{d109ObservedGifts:observed})
+      new MutationObserver(()=>document.querySelectorAll<HTMLElement>('[data-gift-visual]').forEach(el=>{
+        observed[el.dataset.giftVisual!]={color:el.style.getPropertyValue('--gift-color'),quantity:el.dataset.giftQuantity!,shipWidth:el.querySelector('.gift-small-ship')?parseFloat(getComputedStyle(el.querySelector('.gift-small-ship')!).width):0}
+      })).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['style']})
+    })
     checkpoint = 'four gift effects'
     for (const [id, hold] of [['glimmer', 250], ['beacon', 420], ['orbit', 650], ['starship', 1000]] as const) {
       videoCues.push({ id, seconds: (Date.now() - videoStart) / 1000, duration: ({ glimmer: .8, beacon: 1.4, orbit: 1.6, starship: 2.4 })[id] })
       const sent = await gift(sender, 'gift-' + id)
       const effect = screen.locator(`[data-gift-visual="${id}"]`)
-      await expect(effect).toBeVisible()
-      await expect(effect).toHaveAttribute('data-gift-quantity', '1')
-      expect(await effect.evaluate(el => (el as HTMLElement).style.getPropertyValue('--gift-color'))).toBe(sent.before.participant.displayColor.toUpperCase())
-      await expect(phone.locator(`[data-gift-visual="${id}"]`)).toBeAttached()
+      const observed=(target:Page)=>target.evaluate(key=>(window as any).d109ObservedGifts[key],id)
+      await expect.poll(()=>observed(screen)).toMatchObject({quantity:'1',color:sent.before.participant.displayColor.toUpperCase()})
+      await expect.poll(()=>observed(phone)).toMatchObject({quantity:'1'})
       await expect(phone.getByRole('group', { name: '弹幕星色', exact: true })).toBeVisible()
       await expect(phone.getByRole('textbox', { name: '弹幕', exact: true })).toHaveValue('保留正在输入的星光')
       if (id === 'starship') {
-        expect(await effect.locator('.gift-small-ship').evaluate(el => el.getBoundingClientRect().width)).toBe(72)
-        expect(await phone.locator('.gift-small-ship').evaluate(el => el.getBoundingClientRect().width)).toBe(24)
+        expect((await observed(screen)).shipWidth).toBe(72)
+        expect((await observed(phone)).shipWidth).toBe(24)
       }
       await screen.waitForTimeout(hold)
       await screen.screenshot({ path: path.join(out, `gift-${id}.png`) })
@@ -229,7 +237,7 @@ test('D106 confirms four gifts with locked colors, preserves phone controls, and
     // This is the third batch in this program; the legacy showStarship flag is false.
     await pc.setOffline(true)
     await expect(phone.locator('[data-gift-visual]')).toHaveCount(0)
-    await admin.getByRole('button', { name: '暂停', exact: true }).click()
+    await admin.getByRole('button', { name: '全场暂停', exact: true }).click()
     await expect(screen.locator('[data-gift-visual]')).toHaveCount(0)
     await expect(phone.locator('[data-gift-visual]')).toHaveCount(0)
     await admin.getByRole('button', { name: '恢复运行', exact: true }).click()

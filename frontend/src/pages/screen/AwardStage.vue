@@ -81,4 +81,5 @@ h1.with-winners{font-size:3.3vw;letter-spacing:.1em}.ceremony-description{margin
 .award-winners strong,.award-winners.is-program-rows strong,.award-winners .long-entry strong{font-size:clamp(28px,2.12vw,44px);font-weight:700;line-height:1.4}
 .award-winners p,.award-winners.is-program-rows p,.award-winners .long-entry p{font-size:clamp(20px,1.6vw,32px);line-height:1.45;overflow-wrap:anywhere}
 .host-subtitle{font:500 36px/1.8 var(--font-family-ui);letter-spacing:.16em}
+.award-winners strong{font-family:var(--font-family-ui)}.award-winners.is-program-rows strong{font-family:var(--font-family-display)}
 </style>

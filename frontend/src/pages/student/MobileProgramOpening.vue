@@ -35,7 +35,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="mobile-program-opening" data-testid="mobile-program-opening" data-transition-style="galaxy-city-crossfade">
+  <div class="mobile-program-opening" data-testid="mobile-program-opening" data-transition-style="personal-neon-city-crossfade">
     <div class="opening-horizon-glow" aria-hidden="true"></div>
     <button type="button" class="opening-skip" aria-label="跳过开场动画" @click="finish">跳过</button>
   </div>

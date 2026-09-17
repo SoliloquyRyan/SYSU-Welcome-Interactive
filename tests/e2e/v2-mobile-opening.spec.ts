@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import {test,expect} from './support/v2-test.js'
 
-test('crossfades the retained phone galaxy into the preloaded city and settles after refresh',async({browser,demo},info)=>{
+test('crossfades the retained personal neon entry into the preloaded city and settles after refresh',async({browser,demo},info)=>{
   const ac=await browser.newContext({baseURL:demo.baseURL}),pc=await browser.newContext({baseURL:demo.baseURL,viewport:{width:390,height:844}})
   const admin=await ac.newPage(),phone=await pc.newPage(),out=path.resolve('output/playwright/d108/mobile-opening',info.project.name)
   await fs.mkdir(out,{recursive:true})
@@ -14,7 +14,7 @@ test('crossfades the retained phone galaxy into the preloaded city and settles a
     await expect(phone.locator('.v2-welcome')).not.toHaveClass(/is-color-confirming|is-orbit-handoff/)
     await admin.getByRole('button',{name:'开始活动',exact:true}).click();await admin.getByRole('dialog').getByRole('button',{name:'确定',exact:true}).click()
     await expect(phone.getByRole('button',{name:'启动我的星',exact:true})).toBeVisible()
-    await admin.getByRole('button',{name:'02 节目应援',exact:true}).click()
+    await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button',{name:'02 节目应援',exact:true}).click()
     await expect(phone.locator('.v2-welcome')).toHaveAttribute('data-program-opening','playing')
     await expect(phone.locator('.is-opening-galaxy')).toHaveCount(1)
     await expect(phone.locator('.is-opening-city')).toHaveCount(1)

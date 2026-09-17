@@ -20,7 +20,7 @@ const JournalSchema = z.object({
   version: z.literal(1),
   state: z.enum(['prepared', 'applied', 'rolled_back']),
   createdAt: z.string(),
-  schemaVersion: z.union([z.literal(14), z.literal(15), z.literal(16), z.literal(17), z.literal(18), z.literal(19), z.literal(20), z.literal(21), z.literal(22)]),
+  schemaVersion: z.union([z.literal(14), z.literal(15), z.literal(16), z.literal(17), z.literal(18), z.literal(19), z.literal(20), z.literal(21), z.literal(22), z.literal(23)]),
   beforeFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   afterFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   secretGuard: z.string().regex(/^[a-f0-9]{64}$/),
@@ -75,8 +75,8 @@ function assertUnused(database: SqliteDatabase): void {
   }
 }
 
-function schemaVersion(database: SqliteDatabase): 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 {
-  return Number(database.prepare("SELECT MAX(version) FROM _schema_migrations").pluck().get()) as 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22
+function schemaVersion(database: SqliteDatabase): 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 {
+  return Number(database.prepare("SELECT MAX(version) FROM _schema_migrations").pluck().get()) as 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23
 }
 
 function verify(database: SqliteDatabase, options: StarIdUpdateOptions, count: number): void {

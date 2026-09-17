@@ -17,6 +17,8 @@ const controllable = computed(() => writable.value && props.snapshot.runtime.sta
 const selected = ref('program-honors')
 const selectedAward = computed(() => awards.value.find(item => item.id === selected.value))
 const draft = ref(null)
+const editorDialog=ref(null)
+watch(draft,async value=>{await nextTick();if(value&&!editorDialog.value?.open)editorDialog.value?.showModal()})
 const heading = ref(null)
 const stale = computed(() => draft.value && (awards.value.find(item => item.id === draft.value.id)?.revision ?? 0) !== draft.value.revision)
 const parsed = computed(() => (draft.value?.text ?? '').split(/\r?\n/).map(s => s.trim()).filter(Boolean).map(line => {
@@ -52,7 +54,7 @@ function save(confirmed) {
       <div class="award-actions"><BaseButton variant="secondary" :disabled="!controllable || stage.mode === 'HOST'" @click="command('SET_STAGE_MODE', { mode: 'HOST' })">报幕／主题背景</BaseButton><BaseButton variant="secondary" :disabled="!controllable || !current || ['AWARD', 'SPEECH'].includes(current.kind) || stage.mode === 'PROGRAM'" @click="command('SET_STAGE_MODE', { mode: 'PROGRAM' })">返回节目</BaseButton></div>
     </header>
     <nav class="ceremony-shortcuts" aria-label="颁奖流程"><BaseButton v-for="item in snapshot.programs.filter(item => ['AWARD','SPEECH'].includes(item.kind) || item.title.replace(/[《》]/g, '') === '光年之外')" :key="item.id" variant="secondary" :aria-current="item.id === current?.id ? 'step' : undefined" :disabled="!controllable || item.id === current?.id" @click="emit('select', item.id)">{{ item.title }}</BaseButton></nav>
-    <details class="award-workspace" :open="current?.kind === 'AWARD' || Boolean(draft)">
+    <details class="award-workspace" open>
       <summary>奖项管理<span>{{ selectedAward?.title ?? '选择奖项' }}</span></summary>
       <div class="award-workspace-content">
     <div class="award-selection"><label for="award-choice">奖项</label><select id="award-choice" v-model="selected" :disabled="!canWrite">
@@ -67,7 +69,7 @@ function save(confirmed) {
       <BaseButton variant="secondary" :disabled="!controllable || !onStage || !stage.revealed" @click="command('HIDE_AWARD')">收起名单</BaseButton>
       <div v-if="stage.revealed" class="award-pagination"><BaseButton size="sm" variant="secondary" :disabled="!controllable || stage.page === 0" @click="command('SET_AWARD_PAGE', { page: stage.page - 1 })">上一页</BaseButton><span>{{ stage.page + 1 }} / {{ stage.totalPages }}</span><BaseButton size="sm" variant="secondary" :disabled="!controllable || stage.page + 1 >= stage.totalPages" @click="command('SET_AWARD_PAGE', { page: stage.page + 1 })">下一页</BaseButton></div>
     </div>
-    <section v-if="draft && draft.id === selected" class="award-editor" aria-label="名单编辑">
+    <dialog v-if="draft && draft.id === selected" ref="editorDialog" class="award-editor" aria-label="名单编辑" @cancel.prevent="draft=null">
       <h3 ref="heading" tabindex="-1">{{ draft.group === 'CAMPUS' ? draft.title : '节目奖项' }}</h3>
       <label v-if="draft.group === 'PROGRAM'">奖项名称<input v-model="draft.title" maxlength="80" :disabled="!writable"></label>
       <label>获奖名单<textarea v-model="draft.text" rows="8" :disabled="!writable" placeholder="每行：姓名｜作品或备注（可选）"></textarea></label>
@@ -76,7 +78,7 @@ function save(confirmed) {
       <p v-if="stale" role="alert">其他主控已更新此名单。请保留你的文字，返回后重新打开。</p>
       <p v-else-if="invalid" role="alert">请核对名称、人数及文字长度（姓名 60 字，备注 120 字）。</p>
       <div class="award-actions"><BaseButton variant="secondary" @click="draft = null">返回</BaseButton><BaseButton variant="secondary" :disabled="!writable || invalid || stale" @click="save(false)">保存草稿</BaseButton><BaseButton :disabled="!writable || invalid || stale || !parsed.length || draft.id === 'points-top20' && parsed.length !== 20" @click="save(true)">确定</BaseButton></div>
-    </section>
+    </dialog>
       </div>
     </details>
   </BaseCard>
@@ -89,3 +91,9 @@ function save(confirmed) {
 .award-workspace{border-top:1px solid var(--color-border-subtle);padding-top:4px;min-width:0}.award-workspace>summary{min-height:44px;align-content:center;cursor:pointer;font-size:.9rem;line-height:1.5}.award-workspace>summary>span{color:var(--color-text-secondary);font-size:.78rem;margin-left:12px}.award-workspace-content{display:grid;gap:16px;padding-top:10px}.award-selection{gap:10px}.award-selection>label{min-width:30px}.award-selection select{background:#07101eb3;border-radius:10px}.award-reveal-controls{padding-top:4px}.award-pagination{padding:4px 0;gap:10px}.award-pagination>span{min-width:44px;text-align:center;color:var(--color-text-secondary)}.award-editor{padding:18px;border:1px solid #91b9e432;border-radius:14px;background:#08132496}.award-editor h3{font-size:1rem;line-height:1.5}.award-editor textarea,.award-editor input{background:#050c178f;box-sizing:border-box}.award-preview{background:#030a1366;border:1px solid #91b9e41a;border-radius:10px}.award-preview li{padding:8px;border-bottom:1px solid #91b9e417}.award-note{padding-left:10px;border-left:2px solid #9bc6eb4d}
 @media(max-width:600px){.awards-console>header{gap:12px}.awards-console>header>.award-actions{width:100%;justify-content:flex-start}.ceremony-shortcuts{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ceremony-shortcuts>button{min-width:0;padding-inline:8px;line-height:1.4}.award-selection>label{flex-basis:100%}.award-selection>select{width:100%;flex-basis:100%;min-width:0}.award-selection>button{width:100%}.award-reveal-controls{display:grid;grid-template-columns:1fr 1fr}.award-reveal-controls>button:first-child{grid-column:1/-1}.award-pagination{grid-column:1/-1;justify-content:space-between;width:100%}.award-pagination>button{flex:1}.award-editor{padding:14px}.award-workspace>summary>span{display:inline-block;margin-left:8px;font-size:.72rem}}
 </style>
+
+<style scoped>
+.awards-console{display:flex;flex-direction:column;gap:8px}.awards-console>header,.ceremony-shortcuts{display:none}.award-workspace{flex:1;min-height:0;border:0;padding:0}.award-workspace>summary{display:none}.award-workspace-content{height:100%;display:flex;flex-direction:column;gap:8px;padding:0}.award-selection select{min-height:36px;padding:6px}.award-note{margin:0;font-size:12px}.award-reveal-controls{margin-top:auto}.award-editor{position:fixed;inset:5vh 6vw;z-index:46;box-shadow:0 0 0 100vmax #080d17c9;background:#232c38;display:flex;flex-direction:column;gap:8px;padding:18px;max-height:90dvh}.award-editor>label{flex:1;min-height:0;display:flex;flex-direction:column}.award-editor textarea{flex:1;min-height:90px;resize:none}.award-editor .award-preview{max-height:120px;flex:none;padding:4px}.award-editor .award-actions{flex:none;margin-top:auto}.award-editor h3,.award-editor p{margin:0}
+</style>
+
+<style scoped>dialog.award-editor{margin:0;width:auto;height:90dvh;color:inherit}dialog.award-editor::backdrop{background:#080d17b0}</style>

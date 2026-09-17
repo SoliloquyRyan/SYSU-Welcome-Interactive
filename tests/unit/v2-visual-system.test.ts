@@ -224,10 +224,10 @@ describe('V2 mobile visual system contracts', () => {
     expect(admin).toContain('data-visual-palette="orbital-signal-spectrum"')
     expect(admin).toContain('data-surface-role="operations"')
     expect(admin).toContain("NONE: '无活动投影'")
-    expect(admin).toContain('{{ presentationLabel }}')
+    expect(admin).toContain('归档并重置本轮')
     expect(admin).not.toContain('{{ presentation.type }}')
     expect(admin).toContain("protectedRuntime ? '现场后台登录' : '排练后台登录'")
-    expect(admin).toContain('<BaseCard v-if="!protectedRuntime"')
+    expect(admin).toContain('<BaseButton v-if="!protectedRuntime"')
     expect(app).toContain('import.meta.env.VITE_SITE_EDITION')
     expect(app).toContain("deploymentCopy(import.meta.env.VITE_SITE_NOTICE, '仅使用固定合成数据')")
     expect(formalBuild).toContain("VITE_DATA_PROFILE: 'PROTECTED'")
@@ -258,8 +258,8 @@ describe('V2 mobile visual system contracts', () => {
     const script = sfcBlock(page, 'script')
     const assisted = script.match(/function activateAssisted\(\)[\s\S]*?\n\}/u)?.[0] ?? ''
 
-    expect(page).toContain('<label>学生姓名<input')
-    expect(page).toContain('<label>8 位学号<input')
+    expect(page).toContain("'昵称' : '姓名'")
+    expect(page).toContain('8 位学号<input')
     expect(page).toContain('inputmode="numeric"')
     expect(page).toContain('maxlength="8"')
     expect(page).toContain('pattern="[0-9]{8}"')
@@ -268,7 +268,7 @@ describe('V2 mobile visual system contracts', () => {
     expect(assisted).toContain("void activate('ASSISTED_STUDENT'")
     expect(assisted).toContain('studentNumber: studentNumber.value')
     expect(assisted).not.toContain('studentNumber: `2026${studentNumber.value}`')
-    expect(page).toContain('输入学生姓名与 8 位学号')
+    expect(page).toContain('选择星色')
   })
 
   it('orders the named archive, omits admission status and exposes dismissible metric explanations', () => {

@@ -218,7 +218,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 22, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 23, issues: [] })
   })
 
   it('requires an explicit readiness override and audits the anonymous funnel', () => {
@@ -307,7 +307,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 22, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 23, issues: [] })
   })
 
   it('starts one public star once without retired starlight rewards', () => {
@@ -419,7 +419,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 22, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 23, issues: [] })
   })
 
   it('unlocks a gradient once, replays safely and rejects invalid or unaffordable styles without charging', () => {

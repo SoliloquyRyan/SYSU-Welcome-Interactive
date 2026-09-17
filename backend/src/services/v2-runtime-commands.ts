@@ -423,7 +423,7 @@ export function executeV2RuntimeCommand(
   } else {
     requireRole(actor, 'STAGE_CONTROLLER', '需要阶段控制权限。')
   }
-  if (request.command === 'RESET_DEMO') {
+  if (request.command === 'RESET_DEMO' || request.command === 'RESET_FORMAL_ROUND') {
     throw new V2RuntimeCommandError('SCENE_TRANSITION_INVALID', '该命令不属于 V2-04 运行时范围。', 409)
   }
   database.exec('BEGIN IMMEDIATE')

@@ -1,3 +1,4 @@
+import {prepareProgram,executePrepared,waitRuntime,adminSnapshot} from './support/d109-console.js'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import type { BrowserContext, Page, Response } from '@playwright/test'
@@ -38,12 +39,11 @@ async function loginAdmin(page: Page, username: string, password: string): Promi
 }
 
 async function waitForRuntime(page: Page, status: string, scene: string): Promise<void> {
-  await expect(page.locator('.runtime-facts')).toContainText(status)
-  await expect(page.locator('.runtime-facts')).toContainText(scene)
+  await waitRuntime(page,status,scene)
 }
 
 async function advance(page: Page): Promise<void> {
-  await confirmAction(page, '推进下一场景')
+  await confirmAction(page, '进入节目')
 }
 
 async function clickAdminCommand(page: Page, buttonName: string): Promise<void> {
@@ -157,7 +157,7 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     await expect(participantPage.getByRole('heading', { name: '为你的星选择颜色' })).toBeVisible()
     expect(new URL(participantPage.url()).searchParams.has('token')).toBe(false)
     await participantPage.getByRole('button', { name: '确认星色' }).click()
-    await expect(participantPage.getByText('1 颗星，已在这里相遇')).toBeVisible()
+    await expect(participantPage.getByText('你的星色，已为今晚点亮')).toBeVisible()
     await expect(screenPage.locator('.v2-count')).toHaveCount(0)
     await expect(screenPage.locator('.screen-arrival-count strong')).toHaveText('1')
     await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute(
@@ -182,7 +182,7 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
       demo.credentials.admin.username,
       demo.credentials.admin.password,
     )
-    await expect(adminPage.locator('.metrics')).toContainText('1')
+    expect((await adminSnapshot(adminPage)).funnel.admittedCount).toBe(1)
     await expectNoForbiddenText(
       [adminPage, screenPage],
       [credential.displayName, credential.studentNumber, credential.inviteToken],
@@ -200,7 +200,7 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     await participantPage.getByRole('button', { name: '启动我的星' }).click()
     await expect(participantPage.getByText('星星已启动')).toBeVisible()
 
-    await clickAdminCommand(adminPage, '暂停')
+    await clickAdminCommand(adminPage, '全场暂停')
     await waitForRuntime(adminPage, '已暂停', '01 星海集结')
     await expect(participantPage.getByText('现场已暂停')).toBeVisible()
     await expect(participantPage.getByRole('button', { name: '启动我的星' })).toHaveCount(0)
@@ -292,8 +292,8 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     })
     await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute('data-render-target-fps', '0')
 
-    await catalogPanel.getByLabel('当前节目', { exact: true }).selectOption('event2026-14')
-    await catalogPanel.getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await prepareProgram(adminPage, 'event2026-14')
+    await executePrepared(adminPage)
     await adminPage.getByLabel('选手人数',{exact:true}).fill('2')
     await confirmAction(adminPage,'确认选手并开放投票')
     await expect(screenPage.locator('.v2-vote-board article')).toHaveCount(2)
@@ -305,8 +305,8 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     await expect(participantPage.getByRole('button', { name: '送礼物', exact: true })).toHaveCount(0)
     await expect(participantPage.getByRole('dialog', { name: '送礼物', exact: true })).toHaveCount(0)
 
-    await catalogPanel.getByLabel('当前节目', { exact: true }).selectOption('event2026-01')
-    await catalogPanel.getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await prepareProgram(adminPage, 'event2026-01')
+    await executePrepared(adminPage)
     const selectedProgram = await catalogPanel.getByLabel('当前节目', { exact: true }).locator('option:checked').innerText()
     const selectedTitle = selectedProgram.split('·')[1]?.trim()
     expect(selectedTitle).toBeTruthy()
@@ -393,7 +393,7 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     await demo.restartBackend()
     await expect(adminPage.getByText('实时已连接',{exact:true})).toBeVisible()
     await waitForRuntime(adminPage,'运行中','02 节目应援')
-    await confirmAction(adminPage, '结束晚会并播放片尾')
+    await confirmAction(adminPage, '结束并播放片尾')
     // This follows a backend restart: a recovered COMPLETED snapshot must show
     // the poster without replaying missed shots. Fresh live motion has its own test.
     await expect(screenPage.locator('.v2-screen')).toHaveClass(/is-completed/u)
@@ -483,7 +483,7 @@ test('keeps static barrages readable and full motion working without GSAP under 
     await expect(phone.getByRole('button', { name: '启动我的星' })).toBeVisible()
     await advance(admin)
     await waitForRuntime(admin, '运行中', '02 节目应援')
-    await admin.locator('.catalog-panel').getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await executePrepared(admin)
     await expect(screen.locator('.v2-screen')).toHaveAttribute('data-scene-transition', 'idle')
     await cssScreen.goto('/screen')
     await expect(cssScreen.locator('.v2-screen')).toHaveClass(/scene-program_support/u)
@@ -586,14 +586,14 @@ test('settles interrupted transitions and animates rehearsal finale without chan
     await expect(screen.locator('.v2-screen')).toHaveClass(/is-gsap-ready/u)
     await loginAdmin(admin, demo.credentials.admin.username, demo.credentials.admin.password)
     await confirmAction(admin, '开始活动')
-    await admin.getByRole('button', { name: '02 节目应援', exact: true }).click()
+    await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button', { name: '02 节目应援', exact: true }).click()
     await expect(screen.locator('.v2-screen')).toHaveAttribute('data-scene-transition', 'ASSEMBLY->PROGRAM_SUPPORT')
-    await clickAdminCommand(admin, '暂停')
+    await clickAdminCommand(admin, '全场暂停')
     await expect(screen.locator('.v2-screen')).toHaveAttribute('data-scene-transition', 'idle')
     await expect(screen.locator('canvas.v2-galaxy')).toHaveAttribute('data-render-target-fps', '0')
     await clickAdminCommand(admin, '恢复运行')
     await expect(screen.locator('.v2-screen')).toHaveAttribute('data-scene-transition', 'idle')
-    await admin.getByRole('button', { name: '03 谢幕准备', exact: true }).click()
+    await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button', { name: '03 谢幕准备', exact: true }).click()
     await expect(screen.locator('.v2-screen')).toHaveAttribute('data-scene-transition', 'idle')
     await confirmAction(admin, '预览电影片尾')
     await expect(screen.getByRole('heading', { name: '今夜，因你们而闪耀' })).toBeVisible()
@@ -629,13 +629,13 @@ test('confirms direct completion once, supports cancellation and never requires 
     await screen.goto('/screen?motion=reduced')
     await admin.getByLabel('开始模式',{exact:true}).selectOption('LIVE')
     await confirmAction(admin,'开始活动');await advance(admin)
-    await expect(admin.getByRole('button',{name:'推进下一场景',exact:true})).toHaveCount(0)
-    await confirmAction(admin,'结束晚会并播放片尾','返回')
+    await expect(admin.getByRole('button',{name:'进入节目',exact:true})).toBeDisabled()
+    await confirmAction(admin,'结束并播放片尾','返回')
     await waitForRuntime(admin,'运行中','02 节目应援')
-    const message=await confirmAction(admin,'结束晚会并播放片尾')
+    const message=await confirmAction(admin,'结束并播放片尾')
     expect(message).not.toContain('协同点亮')
     await waitForRuntime(admin,'已完成','03 谢幕准备')
     await expect(screen.locator('.closing-credits')).toHaveAttribute('data-phase','poster')
-    await expect(admin.getByRole('button',{name:'结束晚会并播放片尾',exact:true})).toHaveCount(0)
+    await expect(admin.getByRole('button',{name:'结束并播放片尾',exact:true})).toBeDisabled()
   } finally {await Promise.allSettled([controller.close(),projection.close()])}
 })

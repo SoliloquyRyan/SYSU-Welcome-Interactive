@@ -8,15 +8,20 @@ import { catalogChanges, editableCatalog, eventProgramPreset, programKindLabels,
 const props = defineProps({ snapshot: { type: Object, required: true }, canWrite: Boolean, savedSignal: Number })
 const emit = defineEmits(['select', 'apply', 'prepare'])
 const selected = ref('')
+const page = ref(0)
+const pages = computed(() => Math.max(1,Math.ceil(programs.value.length/4)))
 const draft = ref(null)
 const baseCatalog = ref(null)
 const baseRevision = ref(0)
 const importError = ref('')
 const importBusy = ref(false)
 const editorHeading = ref(null)
+const editorDialog = ref(null)
+watch(draft, async value => { await nextTick(); if (value && !editorDialog.value?.open) editorDialog.value?.showModal() })
 const runtime = computed(() => props.snapshot.runtime)
 const current = computed(() => props.snapshot.currentProgram)
 const programs = computed(() => props.snapshot.programs)
+watch(pages, value => page.value=Math.min(page.value,value-1))
 const nextProgram = computed(() => programs.value.find(({ state }) => state === 'NEXT') ?? (!current.value ? programs.value[0] : null))
 const canControl = computed(() => props.canWrite && props.snapshot.roles.some((role) => ['ALL', 'STAGE_CONTROLLER'].includes(role)))
 const canEdit = computed(() => canControl.value && runtime.value.status === 'READY' && runtime.value.currentScene === null)
@@ -91,7 +96,7 @@ function apply() {
     <p v-if="runtime.status === 'READY'" class="catalog-note">开始前确认节目单。</p>
     <div class="program-cues" aria-label="现场编排">
       <div><small>当前项</small><strong>{{ current?.title ?? '尚未选择' }}</strong><span>{{ current ? programKindLabels[current.kind] : '进入节目应援后选择首项' }}</span></div>
-      <div><small>接下来</small><strong>{{ nextProgram?.title ?? '目录已到最后一项' }}</strong><span>{{ nextProgram ? `${programKindLabels[nextProgram.kind]} · ${nextProgram.durationLabel || '时长待定'}` : '确认最后节目结束后，再推进协同点亮' }}</span></div>
+      <div><small>接下来</small><strong>{{ nextProgram?.title ?? '目录已到最后一项' }}</strong><span>{{ nextProgram ? `${programKindLabels[nextProgram.kind]} · ${nextProgram.durationLabel || '时长待定'}` : '主持结束语后播放电影片尾' }}</span></div>
     </div>
     <div class="program-control">
       <label for="v2-current-program">当前节目</label>
@@ -104,8 +109,8 @@ function apply() {
     <p v-if="current && !current.giftsEnabled" class="interlude-notice" role="status">{{ current.title }} · 礼物已关闭</p>
     <details class="catalog-overview" open><summary>查看完整目录 · {{ programs.length }} 项</summary>
       <ol class="running-list">
-        <li v-for="program in programs" :key="program.id" :class="{ current: program.state === 'CURRENT', prepared: selected === program.id, interaction: program.kind !== 'PERFORMANCE' }">
-          <button type="button" class="rundown-item" :aria-pressed="selected === program.id" @click="selected = program.id">
+        <li v-for="program in programs.slice(page*4,page*4+4)" :key="program.id" :class="{ current: program.state === 'CURRENT', prepared: selected === program.id, interaction: program.kind !== 'PERFORMANCE' }">
+          <button type="button" class="rundown-item" :data-program-id="program.id" :aria-pressed="selected === program.id" @click="selected = program.id">
           <span v-if="program.kind === 'PERFORMANCE'">{{ program.displayCode }}</span>
           <div><strong>{{ program.title }}</strong><small v-if="program.kind === 'PERFORMANCE' && program.performers">{{ program.performers }}</small><small v-if="program.kind === 'PERFORMANCE'">{{ program.formatLabel || '形式待定' }} · {{ program.durationLabel || '时长待定' }}</small></div>
           <span class="program-status">{{ program.state === 'CURRENT' ? '正在进行' : selected === program.id ? '待执行' : program.state === 'NEXT' ? '下一项' : '' }}</span>
@@ -113,9 +118,10 @@ function apply() {
         </li>
       </ol>
     </details>
+    <nav class="catalog-pagination" aria-label="节目分页"><BaseButton variant="secondary" :disabled="page===0" @click="page--">上一页</BaseButton><span>{{ page+1 }} / {{ pages }}</span><BaseButton variant="secondary" :disabled="page+1>=pages" @click="page++">下一页</BaseButton></nav>
     <details v-if="runtime.status === 'READY'" class="catalog-import"><summary>从目录文件导入</summary><label>选择节目目录 JSON<input type="file" accept="application/json,.json" :disabled="!canEdit || importBusy" @change="importFile"></label><p>文件只进入预览；检查后点击“确认应用”才更新现场目录。</p></details>
     <p v-if="importError" role="alert" class="catalog-error">{{ importError }}</p>
-    <section v-if="draft" class="catalog-editor" aria-labelledby="catalog-editor-title">
+    <dialog v-if="draft" ref="editorDialog" class="catalog-editor" aria-labelledby="catalog-editor-title" @cancel.prevent="draft=null">
       <h3 id="catalog-editor-title" ref="editorHeading" tabindex="-1">节目目录预览</h3>
       <p>新增 {{ changes.added }} 项 · 调整 {{ changes.changed }} 项 · 从当前目录移出 {{ changes.retired }} 项。历史节目记录保留。</p>
       <details class="catalog-guidance"><summary>编排说明</summary><p>开场白 3 分钟、结束语 2 分钟由主持人控制；标注时长仅供导播参考。</p></details>
@@ -138,7 +144,7 @@ function apply() {
       <p v-if="stale" role="alert" class="catalog-error">其他主控已更新目录。此预览已过期；请保留需要的修改并重新打开最新目录。</p>
       <p v-else-if="validation.error" role="alert" class="catalog-error">{{ validation.error }}</p>
       <div class="catalog-actions"><BaseButton variant="secondary" :disabled="!canEdit || draft.items.length >= 64" @click="add">添加一项</BaseButton><BaseButton variant="secondary" :disabled="!canWrite" @click="draft = null">取消预览</BaseButton><BaseButton :disabled="!canEdit || stale || !validation.catalog" @click="apply">确认应用 {{ draft.items.length }} 项</BaseButton></div>
-    </section>
+    </dialog>
   </BaseCard>
 </template>
 
@@ -196,3 +202,10 @@ summary { cursor: pointer; min-height: 44px; display: list-item; align-content: 
 </style>
 
 <style scoped src="./obs-rundown.css"></style>
+
+<style scoped>
+.catalog-panel{display:flex;flex-direction:column;gap:8px}.catalog-heading h2{font-size:15px}.catalog-heading p{font-size:11px;margin:0}.program-cues,.program-control,.interlude-notice,.catalog-note{display:none}.catalog-overview{flex:1;min-height:0}.catalog-overview>summary{display:none}.running-list{margin:0;max-height:none;overflow:hidden;display:grid;grid-template-columns:1fr 1fr;gap:8px;height:100%;align-content:stretch}.running-list li,.running-list li.interaction{display:block;padding:0;border:1px solid #465467;border-radius:6px;margin:0;text-align:left;min-height:0}.rundown-item{height:100%;width:100%;padding:10px;display:flex;align-items:center;gap:10px}.rundown-item>div{flex:1;min-width:0}.rundown-item small{font-size:11px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.rundown-item strong{font-size:15px}.running-list li.prepared{border-color:#9fbfeb;background:#3b4b604f}.catalog-pagination{display:flex;justify-content:center;align-items:center;gap:20px;flex:none}.catalog-import{position:absolute;right:12px;bottom:12px;background:#292f38}.catalog-import>summary{min-height:32px;font-size:11px}.catalog-import[open]{z-index:4;max-width:350px;padding:12px;border:1px solid #61718a}.catalog-import p{font-size:11px}
+.catalog-editor{position:fixed;inset:5vh 3vw;z-index:45;display:flex;flex-direction:column;gap:8px;background:#232c38;border:1px solid #7e95b4;border-radius:10px;padding:18px;box-shadow:0 0 0 100vmax #080d17c9;max-height:90dvh}.catalog-editor .editor-list{flex:1;min-height:0;margin:0;overflow:auto}.catalog-editor .catalog-actions{flex:none}.catalog-editor>.catalog-guidance{display:none}.catalog-editor>p{font-size:12px}.catalog-editor>label{max-width:450px}.catalog-editor .editor-fields{grid-template-columns:repeat(3,minmax(90px,1fr))}
+</style>
+
+<style scoped>dialog.catalog-editor{margin:0;width:auto;height:90dvh;color:inherit}dialog.catalog-editor::backdrop{background:#080d17b0}</style>

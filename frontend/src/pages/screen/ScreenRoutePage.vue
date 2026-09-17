@@ -1,5 +1,6 @@
 <script setup>
 import '../../styles/screen-font.css'
+import coreTitleFont from '../../assets/fonts/fangxian-title.woff2?url'
 import { onMounted, ref } from 'vue'
 import ScreenPage from './ScreenPage.vue'
 import V2ScreenExperience from './V2ScreenExperience.vue'
@@ -10,6 +11,9 @@ const surface = ref('checking')
 const errorMessage = ref('')
 
 onMounted(async () => {
+  if (!document.querySelector('link[data-stage-font]')) {
+    const preload=document.createElement('link');preload.rel='preload';preload.as='font';preload.type='font/woff2';preload.crossOrigin='anonymous';preload.href=coreTitleFont;preload.dataset.stageFont='core';document.head.append(preload)
+  }
   try {
     const capability = await protocolCapabilityApi.discover()
     surface.value = isV2RuntimeActive(capability) ? 'v2' : 'v1'

@@ -6,7 +6,7 @@ import BaseButton from '../../components/ui/BaseButton.vue'
 import BaseCard from '../../components/ui/BaseCard.vue'
 import StatusPill from '../../components/ui/StatusPill.vue'
 import V2ProgramCatalog from './V2ProgramCatalog.vue'
-import PublicStagePreview from './PublicStagePreview.vue'
+import { programVisual } from '../../rendering/program-visuals'
 import { createAdminWorkflow } from './admin-workflow'
 import { watch } from 'vue'
 import V2AwardsConsole from './V2AwardsConsole.vue'
@@ -34,9 +34,9 @@ const protectedRuntime = import.meta.env.VITE_DATA_PROFILE === 'PROTECTED'
 
 const actionRequest = ref(null)
 let actionResolve = null
-function askAction(message, input = false) {
+function askAction(message, input = false, labels = {}) {
   actionResolve?.(false)
-  actionRequest.value = { message, input }
+  actionRequest.value = { message, input, ...labels }
   return new Promise(resolve => { actionResolve = resolve })
 }
 function answerAction(value) {
@@ -59,12 +59,16 @@ const errorMessage = ref('')
 const successMessage = ref('')
 const receiptMessage = ref('')
 const selectedProgramId = ref('')
+const activePanel = ref('programs')
+const barragePage = ref(0)
+const panelTabs = [{id:'programs',label:'节目'},{id:'interaction',label:'互动'},{id:'awards',label:'颁奖'},{id:'barrages',label:'弹幕'},{id:'manage',label:'管理'}]
 const catalogSavedSignal = ref(0)
 const awardSavedSignal = ref(0)
 const heatSavedSignal = ref(0)
 const buzzerPrompt = ref('准备抢答')
 const votePrompt = ref('谁是卧底 · 现场投票')
 const voteCandidateCount = ref(6)
+const candidatePage=ref(0)
 const voteLabels = ref(Array.from({ length: 12 }, (_, index) => `${index + 1}号选手`))
 const draftCandidates = computed(() => voteLabels.value.slice(0, Math.max(2, Math.min(12, Number(voteCandidateCount.value) || 2))).map((label, index) => label.trim() || `${index + 1}号选手`))
 const sessionGeneration = createAdminSessionGeneration()
@@ -82,7 +86,7 @@ const liveInteraction = computed(() => snapshot.value?.liveInteraction ?? { phas
 const buzzerCountdown = useBuzzerCountdown(liveInteraction, computed(() => snapshot.value?.generatedAt))
 const barrages = computed(() => snapshot.value?.publishedBarrages ?? [])
 const canWrite = computed(() => realtime.state.value === 'online' && !busy.value && !workflowBusy.value)
-const nextProgram = computed(() => snapshot.value?.programs.find(item => item.state === 'NEXT'))
+const nextProgram = computed(() => snapshot.value?.programs.find(item => item.state === 'NEXT') ?? (!currentProgram.value ? snapshot.value?.programs[0] : null))
 const preparedProgram = computed(() => snapshot.value?.programs.find(item => item.id === selectedProgramId.value))
 const canFinishInteraction = computed(() => canStageWrite.value && runtime.value?.status === 'RUNNING' && runtime.value?.currentScene === 'PROGRAM_SUPPORT'
   && presentation.value?.type === 'NONE' && ['BUZZER_LOCKED', 'VOTE_REVEALED'].includes(liveInteraction.value.phase) && Boolean(nextProgram.value))
@@ -92,6 +96,28 @@ const canStageWrite = computed(() => roleWrite('STAGE_CONTROLLER'))
 const canReviewWrite = computed(() => roleWrite('REVIEWER'))
 const canDemoWrite = computed(() => roleWrite('DEMO_ADMIN'))
 
+const canSelectProgram = computed(() => canStageWrite.value && runtime.value?.status === 'RUNNING' && runtime.value.currentScene === 'PROGRAM_SUPPORT' && presentation.value?.type === 'NONE' && liveInteraction.value.phase === 'IDLE')
+const resetReason = computed(() => !snapshot.value?.roles.includes('ALL') ? '需要主控管理权限' : runtime.value?.status === 'RUNNING' ? '先暂停活动，再归档重置' : !canWrite.value ? '等待连接或当前操作完成' : '归档后全部人员重新入场，保留名单和配置')
+const obsCue = computed(() => {
+  const item=preparedProgram.value ?? currentProgram.value
+  if (!item || item.kind!=='PERFORMANCE') return '完整主题背景；OBS 手动停止上一段媒体，并按主持口令切场。'
+  return programVisual(item).mode==='overlay' ? '透明叠层：在 OBS 准备节目视频／图片，按口令手动播放并执行网页节目。' : '完整节目背景：在 OBS 准备伴奏／现场音源，按口令手动开始。'
+})
+const accountSummary=computed(()=>['STUDENT','STAFF','GUEST'].map(kind=>snapshot.value?.accountCounts.find(item=>item.kind===kind)??{kind,total:0,admitted:0}))
+const barragePages=computed(()=>Math.max(1,Math.ceil(barrages.value.length/4)))
+watch(barragePages,pages=>barragePage.value=Math.min(barragePage.value,pages-1))
+let formalResetAttempt=null
+async function resetRound() {
+  if (!canWrite.value || !snapshot.value.roles.includes('ALL') || runtime.value.status==='RUNNING') return
+  const epoch=snapshot.value.resetEpoch
+  const answer=await askAction('先归档并校验本轮数据库，再清除入场、星色、送礼、弹幕和互动记录。保留名单、工作账号、节目与校园奖草稿；全部人员重新入场。\n请输入“重新开场”确认。',true,{title:'归档并重置本轮',inputLabel:'确认文字'})
+  if(answer!=='重新开场'){if(answer)errorMessage.value='确认文字不匹配，未执行重置。';return}
+  if(snapshot.value.resetEpoch!==epoch)return
+  formalResetAttempt??={...base('RESET_FORMAL_ROUND'),expectedRunRevision:runtime.value.runRevision,confirmation:'重新开场'}
+  const result=await runCommand(formalResetAttempt,'旧轮次已归档，新轮次等待开始。全部人员需重新入场。')
+  if(result?.ok){formalResetAttempt=null;activePanel.value='manage';await realtime.connect()}
+  else if(result?.error instanceof ApiError && result.error.status>=400 && result.error.status<500) formalResetAttempt=null
+}
 async function refresh(expectedGeneration = sessionGeneration.capture()) {
   try {
     const next = await v2AdminApi.snapshot()
@@ -231,7 +257,7 @@ async function runCommand(body, success, allowOverride = false, confirmedWarning
         catch (overrideError) { if (sessionGeneration.isCurrent(ownGeneration)) errorMessage.value = publicErrorMessage(overrideError) }
       }
     } else errorMessage.value = publicErrorMessage(error)
-    return { ok: false }
+    return { ok: false, error }
   } finally { if (sessionGeneration.isCurrent(ownGeneration)) busy.value = '' }
 }
 
@@ -465,44 +491,28 @@ void boot()
     </BaseCard>
 
     <template v-else-if="snapshot">
-      <BaseCard padding="md" class="runtime-card">
-        <div class="runtime-facts">
-          <div><span>模式</span><strong>{{ runtime.mode === 'LIVE' ? '现场' : '排练' }}</strong></div>
-          <div :data-status="runtime.status"><span>状态</span><strong>{{ statusLabels[runtime.status] }}</strong></div>
-          <div><span>当前场景</span><strong>{{ runtime.currentScene ? sceneLabels[runtime.currentScene] : '尚未开始' }}</strong></div>
-          <div :data-presentation="presentation.type"><span>活动投影</span><strong>{{ presentationLabel }}</strong></div>
-        </div>
-        <div class="control-actions">
-          <template v-if="runtime.status === 'READY'">
-            <label class="start-mode-label">开始模式<select v-model="startMode" aria-label="开始模式" :disabled="!canStageWrite"><option value="REHEARSAL">排练</option><option value="LIVE">现场</option></select></label>
-            <BaseButton :disabled="!canStageWrite" @click="start">开始活动</BaseButton>
-            <details class="mode-only"><summary>仅切换模式</summary><BaseButton variant="secondary" :disabled="!canStageWrite" @click="setMode(runtime.mode === 'LIVE' ? 'REHEARSAL' : 'LIVE')">切换为{{ runtime.mode === 'LIVE' ? '排练' : '现场' }}</BaseButton></details>
-          </template>
-          <template v-if="runtime.status === 'RUNNING'">
-            <BaseButton variant="secondary" :disabled="!canStageWrite" @click="pause">暂停</BaseButton>
-            <BaseButton v-if="runtime.mode === 'LIVE' && runtime.currentScene === 'ASSEMBLY'" :disabled="!canStageWrite" @click="advance">推进下一场景</BaseButton>
-            <BaseButton v-if="runtime.mode === 'REHEARSAL'" v-for="scene in Object.keys(sceneLabels)" :key="scene" variant="secondary" :disabled="!canStageWrite || scene === runtime.currentScene" @click="setScene(scene)">{{ sceneLabels[scene] }}</BaseButton>
-            <BaseButton v-if="runtime.mode === 'REHEARSAL' && ['PROGRAM_SUPPORT','COOPERATIVE_LIGHT'].includes(runtime.currentScene) && presentation.type === 'NONE'" :disabled="!canStageWrite" @click="previewFinale">预览电影片尾</BaseButton>
-            <BaseButton v-if="runtime.mode === 'LIVE' && ['PROGRAM_SUPPORT', 'COOPERATIVE_LIGHT'].includes(runtime.currentScene)" variant="danger" :disabled="!canStageWrite" @click="complete">结束晚会并播放片尾</BaseButton>
-          </template>
-          <BaseButton v-if="runtime.status === 'PAUSED'" :disabled="!canStageWrite" @click="resume">恢复运行</BaseButton>
-          <BaseButton v-if="presentation.type !== 'NONE' && runtime.status !== 'COMPLETED'" variant="secondary" :disabled="!canWrite" @click="clearPresentation">清除当前投影</BaseButton>
-        </div>
-      </BaseCard>
-
-      <div class="obs-workspace">
-      <V2ProgramCatalog class="obs-rundown" :snapshot="snapshot" :can-write="canWrite" :saved-signal="catalogSavedSignal"
-        @prepare="selectedProgramId = $event" @select="selectProgram" @apply="applyProgramCatalog" />
-      <div class="obs-preview">
-        <PublicStagePreview />
-        <section class="cue-sheet" aria-label="当前与下一项">
-          <div class="cue-current"><small><i></i> 正在进行</small><h2>{{ currentProgram?.title || (runtime.currentScene ? sceneLabels[runtime.currentScene].slice(3) : '等待开场') }}</h2><p>{{ currentProgram?.performers || '一起点亮，属于我们的星河' }}</p></div>
-          <div><small>下一项</small><strong>{{ nextProgram?.title || '当前阶段完成后推进场景' }}</strong></div>
-          <p v-if="preparedProgram && preparedProgram.id !== currentProgram?.id" class="cue-prepared">待执行：{{ preparedProgram.title }} · 选择后点击“设为当前节目”</p>
-        </section>
-      </div>
-      <aside class="obs-controls" aria-label="当前环节操作">
-      <section v-if="!currentInteractionCode && liveInteraction.phase === 'IDLE'" class="context-summary"><h2>当前环节</h2><p>{{ currentProgram?.title || '星海集结' }}</p><span>{{ currentProgram?.giftsEnabled ? '礼物与现场聊天已就绪' : '按流程执行节目与舞台操作' }}</span></section>
+      <section class="fixed-runtime" aria-label="运行控制">
+        <StatusPill>{{ statusLabels[runtime.status] }}</StatusPill><span>第 {{ snapshot.resetEpoch }} 轮</span>
+        <select v-model="startMode" aria-label="开始模式" :disabled="!canStageWrite || runtime.status!=='READY'"><option value="LIVE">现场</option><option value="REHEARSAL">排练</option></select>
+        <BaseButton :disabled="!canStageWrite || runtime.status!=='READY'" title="待开始时可用" @click="start">开始活动</BaseButton>
+        <BaseButton variant="secondary" :disabled="!canStageWrite || !['RUNNING','PAUSED'].includes(runtime.status)" @click="runtime.status==='PAUSED' ? resume() : pause()">{{ runtime.status==='PAUSED' ? '恢复运行' : '全场暂停' }}</BaseButton>
+        <BaseButton variant="secondary" :disabled="!canStageWrite || runtime.status!=='RUNNING' || runtime.currentScene!=='ASSEMBLY'" title="星海集结结束后进入节目" @click="runtime.mode==='LIVE' ? advance() : setScene('PROGRAM_SUPPORT')">进入节目</BaseButton>
+      </section>
+      <section class="fixed-cue" aria-label="当前与下一项">
+        <div><small>正在进行 · 服务器已确认</small><h2 :title="currentProgram?.title">{{ currentProgram?.title || (runtime.currentScene ? sceneLabels[runtime.currentScene].slice(3) : '等待开场') }}</h2><span>{{ snapshot.stage?.mode==='HOST' ? '报幕／主题背景' : currentProgram?.durationLabel || '按主持口令推进' }}</span></div>
+        <div><small>待执行</small><strong>{{ preparedProgram?.title || '请在节目页选择' }}</strong><small>下一项 · {{ nextProgram?.title || '主持结束语 → 电影片尾' }}</small></div><p>{{ obsCue }}</p>
+      </section>
+      <nav class="fixed-stage-actions" aria-label="常用舞台操作">
+        <BaseButton variant="secondary" :disabled="!canSelectProgram || snapshot.stage?.mode==='HOST'" title="互动先收尾；报幕暂停送礼" @click="ceremonyCommand({command:'SET_STAGE_MODE',expectedStageRevision:snapshot.stage.revision,mode:'HOST'})">报幕／主题背景</BaseButton>
+        <BaseButton variant="secondary" :disabled="!canSelectProgram || !currentProgram || ['AWARD','SPEECH'].includes(currentProgram.kind) || snapshot.stage?.mode==='PROGRAM'" @click="ceremonyCommand({command:'SET_STAGE_MODE',expectedStageRevision:snapshot.stage.revision,mode:'PROGRAM'})">返回节目</BaseButton>
+        <BaseButton :disabled="!canSelectProgram || !preparedProgram || preparedProgram.id===currentProgram?.id" @click="setProgram">执行选中项</BaseButton>
+        <BaseButton variant="secondary" :disabled="!canSelectProgram || !nextProgram" title="开放中的互动须先完成" @click="selectProgram(nextProgram.id)">下一项</BaseButton>
+        <BaseButton variant="danger" :disabled="!canStageWrite || runtime.mode!=='LIVE' || runtime.status!=='RUNNING' || !['PROGRAM_SUPPORT','COOPERATIVE_LIGHT'].includes(runtime.currentScene) || liveInteraction.phase!=='IDLE'" title="主持结束语后确认，活动将锁定为只读" @click="complete">结束并播放片尾</BaseButton>
+      </nav>
+      <nav class="console-tabs" aria-label="控台工作区"><button v-for="tab in panelTabs" :key="tab.id" type="button" :aria-pressed="activePanel===tab.id" @click="activePanel=tab.id">{{ tab.label }}</button></nav>
+      <div class="console-workspace">
+        <V2ProgramCatalog v-show="activePanel==='programs'" :snapshot="snapshot" :can-write="canWrite" :saved-signal="catalogSavedSignal" @prepare="selectedProgramId=$event" @select="selectProgram" @apply="applyProgramCatalog" />
+        <section v-show="activePanel==='interaction'" class="interaction-tab"><section v-if="!currentInteractionCode && liveInteraction.phase === 'IDLE'" class="context-summary"><h2>当前环节</h2><p>{{ currentProgram?.title || '星海集结' }}</p><span>{{ currentProgram?.giftsEnabled ? '礼物与现场聊天已就绪' : '按流程执行节目与舞台操作' }}</span></section>
 
       <BaseCard v-if="currentInteractionCode || liveInteraction.phase !== 'IDLE'" padding="md" class="live-control-card" :data-interaction="currentInteractionCode || 'NONE'">
         <div class="panel-heading">
@@ -532,9 +542,10 @@ void boot()
           <div><h3 id="audience-heading">谁是卧底 · 选手与投票</h3><p>设置 2～12 位现场选手，确认后开放观众投票。</p></div>
           <fieldset :disabled="!canStageWrite || liveInteraction.phase !== 'IDLE'" class="vote-candidate-editor">
             <label>选手人数<input v-model.number="voteCandidateCount" type="number" min="2" max="12"></label>
-            <label v-for="(_, i) in draftCandidates" :key="i">选手 {{ i + 1 }}<input v-model="voteLabels[i]" maxlength="40" :placeholder="`${i + 1}号选手`"></label>
+            <label v-for="(_, i) in draftCandidates.slice(candidatePage*6,candidatePage*6+6)" :key="i+candidatePage*6">选手 {{ i+candidatePage*6+1 }}<input v-model="voteLabels[i+candidatePage*6]" maxlength="40" :placeholder="`${i+candidatePage*6+1}号选手`"></label>
             <label>投票题目<input v-model="votePrompt" maxlength="120"></label>
           </fieldset>
+          <nav v-if="draftCandidates.length>6" class="candidate-paging"><BaseButton variant="secondary" :disabled="candidatePage===0" @click="candidatePage=0">1–6</BaseButton><BaseButton variant="secondary" :disabled="candidatePage===1" @click="candidatePage=1">7–12</BaseButton></nav>
           <div class="control-actions">
             <BaseButton v-if="liveInteraction.phase === 'IDLE'" :disabled="!canStageWrite || runtime.status !== 'RUNNING' || presentation.type !== 'NONE'" @click="openAudienceVote">确认选手并开放投票</BaseButton>
             <BaseButton v-if="liveInteraction.phase === 'VOTE_OPEN'" :disabled="!canStageWrite" @click="revealAudienceVote">关闭投票并揭晓</BaseButton>
@@ -552,32 +563,9 @@ void boot()
       </BaseCard>
 
       <BaseButton v-if="['BUZZER_LOCKED', 'VOTE_REVEALED'].includes(liveInteraction.phase) && nextProgram" :disabled="!canFinishInteraction" @click="finishInteractionAndNext">收起互动并进入下一项</BaseButton>
-      <V2AwardsConsole :snapshot="snapshot" :can-write="canWrite" :saved-signal="awardSavedSignal" :heat-saved-signal="heatSavedSignal" @command="ceremonyCommand" @select="selectProgram" />
-      </aside>
-      </div>
-      <details class="attendance-overview"><summary><strong>现场进度</strong><span>已入场 {{ snapshot.funnel.admittedCount }} · {{ snapshot.readinessWarnings.length ? `${snapshot.readinessWarnings.length} 项待确认` : '准备就绪' }}</span></summary>
-        <div class="v2-grid">
-        <BaseCard padding="md">
-          <h2>入场进度</h2>
-          <dl class="metrics">
-            <div><dt>已激活</dt><dd>{{ snapshot.funnel.activatedCount }}</dd></div>
-            <div><dt>已选星色</dt><dd>{{ snapshot.funnel.publicStarCount }}</dd></div>
-            <div><dt>已入场</dt><dd>{{ snapshot.funnel.admittedCount }}</dd></div>
-            <div><dt>待完成入场</dt><dd>{{ snapshot.funnel.onboardingPendingCount }}</dd></div>
-            <div><dt>恒星已启动</dt><dd>{{ snapshot.funnel.starStartedCount }}</dd></div>
-          </dl>
-        </BaseCard>
-        <BaseCard padding="md">
-          <h2>推进前检查</h2>
-          <p v-if="!snapshot.readinessWarnings.length" class="quiet">准备就绪。</p>
-          <ul v-else class="warning-list"><li v-for="warning in snapshot.readinessWarnings" :key="warning">{{ warningLabels[warning] }}</li></ul>
-
-        </BaseCard>
-      </div>
-      </details>
-
-
-      <BaseCard padding="md" class="moderation-panel">
+      </section>
+        <V2AwardsConsole v-show="activePanel==='awards'" :snapshot="snapshot" :can-write="canWrite" :saved-signal="awardSavedSignal" :heat-saved-signal="heatSavedSignal" @command="ceremonyCommand" @select="selectProgram" />
+        <section v-show="activePanel==='barrages'"><BaseCard padding="md" class="moderation-panel">
         <div class="panel-heading">
           <div>
             <h2>弹幕管理</h2>
@@ -595,7 +583,7 @@ void boot()
         <p v-if="snapshot.interaction.barragePaused" class="pause-notice" role="status">新弹幕已暂停。</p>
         <p v-if="!barrages.length" class="quiet">当前没有公开弹幕。</p>
         <ul v-else class="barrage-list">
-          <li v-for="item in barrages" :key="item.barrageId">
+          <li v-for="item in barrages.slice(barragePage*4,barragePage*4+4)" :key="item.barrageId">
             <div><p><strong>{{ item.publicStarId || '星号待同步' }}</strong> · {{ item.text }}</p><small>{{ new Date(item.publishedAt).toLocaleTimeString('zh-CN') }}</small></div>
             <div class="candidate-actions">
               <BaseButton variant="secondary" :disabled="!canReviewWrite" @click="removeBarrage(item)">撤下</BaseButton>
@@ -603,13 +591,19 @@ void boot()
             </div>
           </li>
         </ul>
-      </BaseCard>
-      <BaseCard v-if="!protectedRuntime" padding="md" class="danger-card">
-        <details class="maintenance-details"><summary>排练数据管理</summary>
-          <p class="quiet">重置将清空本轮合成运行记录并创建新场次，无法撤销。正式名单不能在此重置。</p>
-          <BaseButton variant="danger" :disabled="!canDemoWrite" @click="resetDemo">重置合成 Demo</BaseButton>
-        </details>
-      </BaseCard>
+      <nav class="list-pagination"><BaseButton :disabled="barragePage===0" @click="barragePage--">上一页</BaseButton><span>{{ barragePage+1 }} / {{ barragePages }}</span><BaseButton :disabled="barragePage+1>=barragePages" @click="barragePage++">下一页</BaseButton></nav></BaseCard>
+      </section>
+        <section v-show="activePanel==='manage'" class="manage-tab">
+          <h2>现场与数据管理</h2><div class="account-counts"><div v-for="item in accountSummary" :key="item.kind"><span>{{ {STUDENT:'学生',STAFF:'工作人员',GUEST:'游客'}[item.kind] }}</span><strong>{{ item.admitted }} <small>/ {{ item.kind==='GUEST' ? 94 : item.total }}</small></strong><small>已入场</small></div></div>
+          <p>已入场 {{ snapshot.funnel.admittedCount }} · 待选色 {{ snapshot.funnel.onboardingPendingCount }}</p>
+          <div class="control-actions"><BaseButton variant="secondary" :disabled="!canStageWrite || runtime.mode!=='REHEARSAL' || runtime.status!=='RUNNING' || presentation.type!=='NONE'" @click="previewFinale">预览电影片尾</BaseButton><BaseButton variant="secondary" :disabled="!canWrite || presentation.type==='NONE' || runtime.status==='COMPLETED'" @click="clearPresentation">收起预览</BaseButton><BaseButton v-for="scene in Object.keys(sceneLabels)" :key="scene" variant="secondary" :disabled="!canStageWrite || runtime.mode!=='REHEARSAL' || runtime.status!=='RUNNING' || scene===runtime.currentScene" @click="setScene(scene)">{{ sceneLabels[scene] }}</BaseButton></div>
+          <p class="quiet">网页与 OBS 分别手动控制。排练工具只在排练模式可用。</p>
+          <p v-for="warning in snapshot.readinessWarnings" :key="warning" class="quiet">{{ warningLabels[warning] }}</p>
+          <details v-if="snapshot.roundArchives?.length"><summary>最近归档记录</summary><p v-for="item in snapshot.roundArchives.slice(0,3)" :key="item.sourceEpoch">第 {{ item.sourceEpoch }} 轮 · {{ new Date(item.at).toLocaleString('zh-CN') }} · 校验 {{ item.sha256.slice(0,12) }}</p></details>
+          <BaseButton v-if="!protectedRuntime" variant="secondary" :disabled="!canDemoWrite" @click="resetDemo">重置合成 Demo</BaseButton>
+        </section>
+      </div>
+      <footer class="console-footer"><span role="status" :title="errorMessage || successMessage || resetReason">{{ errorMessage || realtime.lastError.value || successMessage || resetReason }}</span><BaseButton variant="danger" :disabled="!canWrite || !snapshot.roles.includes('ALL') || runtime.status==='RUNNING'" :title="resetReason" @click="resetRound">归档并重置本轮</BaseButton></footer>
     </template>
     <div v-if="snapshot && workflowProgress" class="workflow-receipt" :class="{ 'is-failed': workflowProgress.ok === false }" role="status">
       <strong>{{ workflowProgress.ok === true ? '操作已完成' : workflowProgress.ok === false ? '操作已停止，请核对现场状态' : '正在执行：' + workflowProgress.current }}</strong>
@@ -1174,3 +1168,5 @@ void boot()
 </style>
 
 <style scoped src="./obs-console.css"></style>
+
+<style scoped src="./half-screen-console.css"></style>

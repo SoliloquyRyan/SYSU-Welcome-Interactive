@@ -6,6 +6,7 @@ import AmbientField from './components/visual/AmbientField.vue'
 const route = useRoute()
 const isDevelopment = computed(() => import.meta.env.DEV)
 const isScreen = computed(() => route.name === 'screen')
+const isAdmin = computed(() => route.name === 'admin')
 const isWelcome = computed(() => route.name === 'welcome')
 
 function deploymentCopy(value, fallback) {
@@ -22,9 +23,9 @@ const siteScope = deploymentCopy(
 
 <template>
   <div class="app-shell" :class="`route-${route.name ?? 'unknown'}`">
-    <AmbientField :variant="route.name ?? 'unknown'" />
+    <AmbientField v-if="!isAdmin" :variant="route.name ?? 'unknown'" />
 
-    <header v-if="!isScreen && !isWelcome" class="site-header">
+    <header v-if="!isScreen && !isWelcome && !isAdmin" class="site-header">
       <div>
         <p class="site-kicker">SYSU · 智能工程学院迎新晚会</p>
         <p class="site-title">互动系统 · {{ siteEdition }}</p>
@@ -41,9 +42,13 @@ const siteScope = deploymentCopy(
       <RouterView />
     </main>
 
-    <footer v-if="!isScreen && !isWelcome" class="site-footer">
+    <footer v-if="!isScreen && !isWelcome && !isAdmin" class="site-footer">
       <span>{{ siteNotice }}</span>
       <span>{{ siteScope }}</span>
     </footer>
   </div>
 </template>
+
+<style>
+#app .app-shell.route-admin:has(.v2-admin){min-height:100dvh;height:100dvh;padding:0;overflow:hidden}#app .app-shell.route-admin:has(.v2-admin)>.page-content{margin:0;padding:0;max-width:none;width:100%;height:100dvh}
+</style>

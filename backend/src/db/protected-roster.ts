@@ -207,6 +207,7 @@ export function importProtectedRoster(
         generatedAt,
         participant.accountType,
       )
+      database.prepare('UPDATE synthetic_identities SET account_kind = ? WHERE id = ?').run(participant.accountType, participant.id)
       insertInvitation.run(
         `invitation-${randomBytes(12).toString('hex')}`,
         participant.id,

@@ -35,6 +35,29 @@ def main():
     target = ROOT / 'frontend/src/assets/fonts/fangxian-title.woff2'
     font.flavor = 'woff2'
     font.save(target)
+    def unicode_ranges(points):
+        spans = []
+        for n in sorted(points):
+            if spans and spans[-1][1] + 1 == n: spans[-1][1] = n
+            else: spans.append([n, n])
+        return ','.join(f'U+{a:X}' if a == b else f'U+{a:X}-{b:X}' for a,b in spans)
+    all_points = set(TTFont(args.source).getBestCmap())
+    core_points = set(font.getBestCmap())
+    remaining = sorted(all_points - core_points)
+    records = []
+    faces = ['/* D-109 Fangxian core plus disjoint local ranges. */']
+    def record(file, points):
+        records.append({'file': file.name, 'bytes': file.stat().st_size, 'sha256': hashlib.sha256(file.read_bytes()).hexdigest(), 'unicodeRange': unicode_ranges(points)})
+        faces.append("@font-face{font-family:'Fangxian';src:url('../assets/fonts/" + file.name + "') format('woff2');font-style:normal;font-weight:300;font-display:swap;unicode-range:" + unicode_ranges(points) + ";}")
+    record(target, core_points)
+    for index in range(0, len(remaining), 384):
+        part = TTFont(args.source, recalcTimestamp=False)
+        builder = subset.Subsetter(options=options)
+        builder.populate(unicodes=remaining[index:index+384]); builder.subset(part)
+        part.flavor = 'woff2'
+        output = target.parent / f'fangxian-{index//384:03}.woff2'
+        part.save(output); record(output,set(part.getBestCmap()))
+    (ROOT / 'frontend/src/styles/fangxian-ranges.css').write_text('\n'.join(faces)+'\n',encoding='utf8')
     manifest = {
         'source': args.source.name,
         'sourceBytes': len(original),
@@ -42,11 +65,12 @@ def main():
         'family': font['name'].getDebugName(1),
         'style': font['name'].getDebugName(2),
         'fsType': font['OS/2'].fsType,
-        'usage': 'User-supplied font for local D-106 review; no separate web redistribution license supplied.',
+        'usage': 'User-supplied font; D-109 title ranges. Source metadata retained.',
         'metadataPreserved': True,
         'file': target.name, 'bytes': target.stat().st_size,
         'sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
         'codepoints': sorted(font.getBestCmap()),
+        'coveredCodepoints': len(all_points), 'ranges': records, 'totalBytes': sum(item['bytes'] for item in records),
     }
     target.with_suffix('.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(json.dumps({k: v for k, v in manifest.items() if k != 'codepoints'}, ensure_ascii=True))

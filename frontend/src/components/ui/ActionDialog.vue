@@ -18,9 +18,9 @@ function confirm() {
 <template>
   <dialog ref="dialog" class="action-dialog" aria-labelledby="action-dialog-title" aria-describedby="action-dialog-message" @cancel.prevent="emit('answer', false)">
     <form @submit.prevent="confirm">
-      <h2 id="action-dialog-title">{{ request?.input ? '填写原因' : '确认操作' }}</h2>
+      <h2 id="action-dialog-title">{{ request?.title || (request?.input ? '填写原因' : '确认操作') }}</h2>
       <p id="action-dialog-message">{{ request?.message }}</p>
-      <label v-if="request?.input">原因<textarea v-model="value" maxlength="500" required rows="3"></textarea></label>
+      <label v-if="request?.input">{{ request?.inputLabel || '原因' }}<textarea v-model="value" maxlength="500" required rows="3"></textarea></label>
       <div><button type="button" autofocus @click="emit('answer', false)">返回</button><button class="is-primary" type="submit" :disabled="request?.input && !value.trim()">确定</button></div>
     </form>
   </dialog>

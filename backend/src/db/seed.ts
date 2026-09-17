@@ -305,6 +305,8 @@ export function fingerprintProtectedDirectoryDatabase(
   database: SqliteDatabase,
 ): string {
   const hasRole = (database.pragma('table_info(synthetic_identities)') as Array<{name: string}>).some(column => column.name === 'account_type')
+  const hasGuestRole = (database.pragma('table_info(synthetic_identities)') as Array<{name: string}>).some(column => column.name === 'account_kind')
+  const fixedRoster = hasGuestRole ? "WHERE account_kind != 'GUEST'" : ''
   const staff = hasRole ? database.prepare("SELECT id FROM synthetic_identities WHERE account_type = 'STAFF' ORDER BY seed_index").pluck().all() : []
   const identities = database
     .prepare(
@@ -312,7 +314,7 @@ export function fingerprintProtectedDirectoryDatabase(
               student_number_digest AS studentNumberDigest,
               public_star_id AS publicStarId, visual_seed AS visualSeed,
               enabled
-       FROM synthetic_identities
+       FROM synthetic_identities ${fixedRoster}
        ORDER BY seed_index`,
     )
     .all()
@@ -1110,10 +1112,12 @@ export function verifyDemoSeed(
          FROM app_state WHERE id = 1`,
       )
       .get() as { seedVersion: string | null; fingerprint: string | null }
+    const hasGuestRole = (database.pragma('table_info(synthetic_identities)') as Array<{name: string}>).some(column => column.name === 'account_kind')
+    const rosterOnly = hasGuestRole ? "WHERE account_kind != 'GUEST'" : ''
     const counts = database
       .prepare(
         `SELECT
-           (SELECT COUNT(*) FROM synthetic_identities) AS identities,
+           (SELECT COUNT(*) FROM synthetic_identities ${rosterOnly}) AS identities,
            (SELECT COUNT(*) FROM invitation_tokens) AS invitations,
            (SELECT COUNT(*) FROM program_catalog) AS programs,
            (SELECT COUNT(*) FROM gift_catalog) AS gifts,
@@ -1154,7 +1158,7 @@ export function verifyDemoSeed(
                 student_number_digest AS studentNumberDigest,
                 public_star_id AS publicStarId, visual_seed AS visualSeed,
                 enabled
-         FROM synthetic_identities`,
+         FROM synthetic_identities ${rosterOnly}`,
       )
       .all() as Array<{
       id: string
@@ -1359,11 +1363,13 @@ export function verifyProtectedRoster(
           cutoverAt: string | null
         }
       | undefined
+    const hasGuestRole = (database.pragma('table_info(synthetic_identities)') as Array<{name: string}>).some(column => column.name === 'account_kind')
+    const rosterOnly = hasGuestRole ? "account_kind != 'GUEST'" : '1 = 1'
     const counts = database
       .prepare(
         `SELECT
-           (SELECT COUNT(*) FROM synthetic_identities) AS identities,
-           (SELECT COUNT(*) FROM synthetic_identities WHERE enabled = 1) AS enabledIdentities,
+           (SELECT COUNT(*) FROM synthetic_identities WHERE ${rosterOnly}) AS identities,
+           (SELECT COUNT(*) FROM synthetic_identities WHERE enabled = 1 AND ${rosterOnly}) AS enabledIdentities,
            (SELECT COUNT(*) FROM invitation_tokens) AS invitations,
            (SELECT COUNT(*) FROM invitation_tokens WHERE status = 'ACTIVE') AS activeInvitations,
            (SELECT COUNT(*) FROM program_catalog) AS programs,

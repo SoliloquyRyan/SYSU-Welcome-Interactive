@@ -1,3 +1,4 @@
+import {prepareProgram,executePrepared,waitRuntime,adminSnapshot} from './support/d109-console.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -22,9 +23,9 @@ test('D106 keeps maximum catalog text inside the screen and loads real local tit
     expect(response.status()).toBe(200)
     await admin.getByRole('button',{name:'开始活动',exact:true}).click()
     await admin.getByRole('dialog',{name:'确认操作',exact:true}).getByRole('button',{name:'确定',exact:true}).click()
-    await admin.getByRole('button',{name:'02 节目应援',exact:true}).click()
-    await admin.getByLabel('当前节目',{exact:true}).selectOption('event2026-03')
-    await admin.getByRole('button',{name:'设为当前节目',exact:true}).click()
+    await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button',{name:'02 节目应援',exact:true}).click()
+    await prepareProgram(admin, 'event2026-03')
+    await executePrepared(admin)
     await screen.goto('/screen?media=overlay&motion=reduced')
     const title=screen.locator('.program-stage-title')
     await expect(title).toHaveAttribute('data-long-title','true')
@@ -36,8 +37,8 @@ test('D106 keeps maximum catalog text inside the screen and loads real local tit
     const fonts:any[]=[]
     for(const [id,family] of [['event2026-03','FZZH-FangXianTiS'],['event2026-04','Orbitron'],['event2026-08','Orbitron']]){
       if(id !== 'event2026-03') {
-        await admin.getByLabel('当前节目',{exact:true}).selectOption(id!)
-        await admin.getByRole('button',{name:'设为当前节目',exact:true}).click()
+        await prepareProgram(admin, id!)
+        await executePrepared(admin)
       }
       await expect(title).toHaveAttribute('data-program-id',id!)
       await screen.evaluate(()=>document.fonts.ready)

@@ -146,13 +146,36 @@ describe('D-108 protected entry, staff and independent candidates', () => {
     expect(verifyV2Foundation(database,{...options,throughSchemaVersion:21}).ready).toBe(true)
     expect(facts()).toEqual(before)
     const result=await upgradeV2EventEntryFrom21To22(database,{...options,backupPath:path.join(directory,'before21-retry.sqlite')})
-    expect(result).toMatchObject({previousSchemaVersion:21,schemaVersion:22,participantCount:2})
+    expect(result).toMatchObject({previousSchemaVersion:21,schemaVersion:23,participantCount:2})
     expect(facts()).toEqual(before)
     expect(database.pragma('foreign_key_check')).toEqual([])
     expect(database.prepare('SELECT score_eligible FROM v2_gift_transactions').pluck().all()).toEqual([1,1])
     expect(verifyV2Foundation(database,options).ready).toBe(true)
   })
 
+
+  it('reserves 306 roster places and admits 94 independent guests without scoring or voting privileges', () => {
+    const records=Array.from({length:306},(_,i)=>({displayName:`合成身份${i+1}`,studentNumber:String(26000001+i),...(i>=256?{accountType:'STAFF'}:{})}))
+    create(records)
+    const guests=Array.from({length:94},(_,i)=>activateV2Participant(database,readCredentialContext(secret),{protocolVersion:'2',resetEpoch:1,idempotencyKey:key(),method:'GUEST',displayName:`合成来宾${i}`,colorTemperatureKelvin:6500},NOW).session.identityId)
+    expect(()=>activateV2Participant(database,readCredentialContext(secret),{protocolVersion:'2',resetEpoch:1,idempotencyKey:key(),method:'GUEST',displayName:'超额来宾',colorTemperatureKelvin:6500},NOW)).toThrow(/名额已满/)
+    for(const record of records){const id=login(record).session.identityId;participant(id,'LOCK_COLOR',{colorTemperatureKelvin:6500})}
+    expect(readV2ScreenSnapshot(database,NOW).publicStars).toHaveLength(400)
+    expect(verifyIdentityDirectory(database,{manifestPath:secret,participantCount:306}).ready).toBe(true)
+    start();const id=guests[0]!
+    participant(id,'SEND_GIFT',{programId:'event2026-01',giftId:'gift-glimmer',quantity:2})
+    expect(state().currentProgram!.heat).toBe(0)
+    expect(database.prepare('SELECT score_eligible FROM v2_gift_transactions').pluck().all()).toEqual([0,0])
+    expect(readV2ParticipantSnapshot(database,id,NOW).participant.powerBalance).toBeLessThan(100)
+    participant(id,'POST_BARRAGE',{text:'今晚真精彩'})
+    const segments=state().programs.filter(p=>p.kind==='INTERLUDE')
+    control('SET_PROGRAM',{programId:segments[0]!.id});control('OPEN_BUZZER',{segmentCode:'A',prompt:'合成问题'})
+    expect(()=>participant(id,'BUZZ_IN',{},new Date(+NOW+4000))).toThrow()
+    control('CLOSE_LIVE_INTERACTION');control('SET_PROGRAM',{programId:segments[1]!.id})
+    control('OPEN_AUDIENCE_VOTE',{prompt:'谁是卧底',candidates:['1号选手','2号选手']})
+    expect(()=>participant(id,'CAST_AUDIENCE_VOTE',{candidateId:state().liveInteraction.voteCandidates[0]!.candidateId})).toThrow()
+    expect(verifyV2Foundation(database,{migrationsPath:MIGRATIONS,manifestPath:secret,participantCount:306}).ready).toBe(true)
+  },60000)
   it('admits 400 stable stars, keeps 256 + 50 independent identities, and rejects capacity overflow', () => {
     const records = Array.from({length:400}, (_,i) => ({displayName:`合成身份${i+1}`,studentNumber:String(26000001+i), ...(i>=256 && i<306 ? {accountType:'STAFF'} : {})}))
     expect(ProtectedRosterInputSchema.safeParse({schemaVersion:1,sourceSha256:'b'.repeat(64),records:[...records, {displayName:'超额合成',studentNumber:'27000000'}]}).success).toBe(false)

@@ -1,3 +1,4 @@
+import {prepareProgram,executePrepared,waitRuntime,adminSnapshot} from './support/d109-console.js'
 import { expect, test } from './support/v2-test.js'
 
 test('previews a stable show catalog and keeps interludes separate from program gifts after restart', async ({ browser, demo }, testInfo) => {
@@ -32,7 +33,7 @@ test('previews a stable show catalog and keeps interludes separate from program 
     await panel.getByRole('button', { name: '移出第 26 项', exact: true }).click()
     await expect(panel.locator('.editor-list li')).toHaveCount(25)
     await panel.getByRole('button', { name: '取消预览' }).click()
-    await expect(panel.locator('.catalog-overview summary')).toContainText('3 项')
+    expect((await adminSnapshot(admin)).programs).toHaveLength(3)
     await panel.getByRole('button', { name: '载入本场节目单' }).click()
     await panel.getByLabel('第 1 项名称', { exact: true }).fill('lovesik girls（彩排）')
     await panel.getByLabel('第 1 项表演者', { exact: true }).fill('彩排甲、彩排乙')
@@ -42,7 +43,7 @@ test('previews a stable show catalog and keeps interludes separate from program 
     checkpoint = 'apply-preset'
     await panel.getByRole('button', { name: '确认应用 25 项', exact: true }).click()
     await expect(panel.locator('.catalog-editor')).toHaveCount(0)
-    await expect(panel.locator('.catalog-overview summary')).toContainText('25 项')
+    expect((await adminSnapshot(admin)).programs).toHaveLength(25)
 
     checkpoint = 'concurrent-editor-conflict'
     await other.goto('/admin')
@@ -62,11 +63,11 @@ test('previews a stable show catalog and keeps interludes separate from program 
     checkpoint = 'start-and-select-program'
     await admin.getByRole('button', { name: '开始活动', exact: true }).click()
     await admin.getByRole('dialog').getByRole('button',{name:'确定',exact:true}).click()
-    await admin.getByRole('button', { name: '02 节目应援', exact: true }).click()
+    await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button', { name: '02 节目应援', exact: true }).click()
     await expect(panel.getByRole('button', { name: '编辑当前目录' })).toHaveCount(0)
     await expect(panel.locator('.catalog-editor')).toHaveCount(0)
-    await panel.getByLabel('当前节目', { exact: true }).selectOption('event2026-01')
-    await panel.getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await prepareProgram(admin, 'event2026-01')
+    await executePrepared(admin)
     await expect(phone.locator('#view-title')).toContainText('lovesik girls')
     await expect(phone.getByText('彩排甲、彩排乙', { exact: true })).toBeVisible()
     checkpoint = 'send-first-gift'
@@ -77,14 +78,14 @@ test('previews a stable show catalog and keeps interludes separate from program 
     await expect(phone.getByRole('button', { name: '送礼物', exact: true })).toContainText('余额 99')
     await expect(phone.getByRole('dialog')).toHaveCount(0)
     checkpoint = 'interlude-gift-block'
-    await panel.getByLabel('当前节目', { exact: true }).selectOption('event2026-07')
-    await panel.getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await prepareProgram(admin, 'event2026-07')
+    await executePrepared(admin)
     await expect(phone.getByRole('heading', { name: '互动环节一 · 歌名 decoder', exact: true })).toBeVisible()
     await expect(phone.locator('#view-title')).toContainText('互动环节一')
     await expect(phone.getByRole('button', { name: '送礼物', exact:true })).toHaveCount(0)
-    await panel.getByLabel('当前节目', { exact: true }).selectOption('event2026-21')
-    await panel.getByRole('button', { name: '设为当前节目', exact: true }).click()
-    await expect(panel.locator('.interlude-notice')).toContainText('互动环节三')
+    await prepareProgram(admin, 'event2026-21')
+    await executePrepared(admin)
+    await expect(admin.locator('.fixed-cue h2')).toContainText('互动环节三')
     await phone.getByRole('button', { name: '节目单', exact: true }).click()
     await expect(phone.locator('.program-list li')).toHaveCount(25)
     for (const viewport of [{ width: 390, height: 844 }, { width: 320, height: 568 }]) {
@@ -96,8 +97,8 @@ test('previews a stable show catalog and keeps interludes separate from program 
     await phone.reload()
     await expect(phone.locator('#view-title')).toContainText('互动环节三')
     await admin.reload()
-    await expect(admin.locator('.program-cues')).toContainText('节目颁奖')
-    await expect(admin.locator('.catalog-overview summary')).toContainText('25 项')
+    await expect(admin.locator('.fixed-cue')).toContainText('节目颁奖')
+    expect((await adminSnapshot(admin)).programs).toHaveLength(25)
     expect(errors).toEqual([])
   } catch (error) {
     testInfo.annotations.push({ type: 'failure-checkpoint', description: checkpoint })

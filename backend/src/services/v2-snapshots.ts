@@ -288,6 +288,9 @@ function readAdminSnapshot(
     generatedAt: now.toISOString(), runtime: runtimeTuple(row),
     presentation: presentation(database, row), presentationRevision: row.presentationRevision,
     rewardRuleVersion: row.rewardRuleVersion, publicSeq: row.publicSeq, adminSeq: row.adminSeq,
+    accountCounts: database.prepare(`SELECT i.account_kind AS kind, COUNT(*) AS total, SUM(CASE WHEN p.onboarding_state='ADMITTED' THEN 1 ELSE 0 END) AS admitted
+      FROM synthetic_identities i LEFT JOIN v2_participant_states p ON p.identity_id=i.id AND p.reset_epoch=? GROUP BY i.account_kind`).all(row.resetEpoch),
+    roundArchives: roles.includes('ALL') ? database.prepare('SELECT source_epoch AS sourceEpoch, target_epoch AS targetEpoch, archive_sha256 AS sha256, created_at AS at FROM v2_round_archives ORDER BY source_epoch DESC LIMIT 10').all() : [],
     roles, aggregateRevision: row.adminAggregateRevision, funnel: adminFunnel,
     readinessWarnings: warnings, interaction: interaction(database, row.resetEpoch),
     publishedBarrages: publishedBarrages(database, row.resetEpoch, true),

@@ -680,7 +680,7 @@ export const V2RewardSummaryItemSchema = z
 
 export const V2ParticipantProjectionSchema = z
   .object({
-    accountType: z.enum(['STUDENT', 'STAFF']).default('STUDENT'),
+    accountType: z.enum(['STUDENT', 'STAFF', 'GUEST']).default('STUDENT'),
     participantRevision: V2RevisionSchema,
     onboardingState: V2OnboardingStateSchema,
     displayName: z.string().trim().min(1).max(40),
@@ -843,10 +843,10 @@ function expectedAllowedActions(input: {
     ) {
       if (input.stage?.mode !== 'HOST' && (!input.currentProgram || input.currentProgram.kind === 'PERFORMANCE' && input.currentProgram.giftsEnabled !== false)) actions.push('SEND_GIFT')
       actions.push('POST_BARRAGE')
-      if (participant.accountType !== 'STAFF' && input.liveInteraction?.segmentCode === 'A' && input.liveInteraction?.phase === 'BUZZER_OPEN' && !input.liveInteraction.participation.hasBuzzed) {
+      if (participant.accountType === 'STUDENT' && input.liveInteraction?.segmentCode === 'A' && input.liveInteraction?.phase === 'BUZZER_OPEN' && !input.liveInteraction.participation.hasBuzzed) {
         actions.push('BUZZ_IN')
       }
-      if (participant.accountType !== 'STAFF' && input.liveInteraction?.phase === 'VOTE_OPEN' && !input.liveInteraction.participation.hasVoted) {
+      if (participant.accountType === 'STUDENT' && input.liveInteraction?.phase === 'VOTE_OPEN' && !input.liveInteraction.participation.hasVoted) {
         actions.push('CAST_AUDIENCE_VOTE')
       }
     }
@@ -1205,6 +1205,8 @@ export const V2AdminSnapshotSchema = z
       .default({ revision: 0, label: '初始节目目录' }),
     aggregateRevision: V2RevisionSchema,
     funnel: V2AdminFunnelSchema,
+    accountCounts: z.array(z.object({kind: z.enum(['STUDENT', 'STAFF', 'GUEST']), total: z.number().int().nonnegative(), admitted: z.number().int().nonnegative()}).strict()).default([]),
+    roundArchives: z.array(z.object({sourceEpoch: z.number().int(), targetEpoch: z.number().int(), sha256: z.string().length(64), at: z.string()}).strict()).default([]),
     readinessWarnings: z.array(V2ReadinessWarningSchema).max(3),
     interaction: V2ScreenInteractionStateSchema,
     publishedBarrages: z.array(V2AdminBarrageSchema).max(8),
@@ -1259,6 +1261,7 @@ export const V2ActivateParticipantRequestSchema = z.discriminatedUnion(
     z
       .object({
         ...v2WriteBase,
+        colorTemperatureKelvin: z.number().int().min(2400).max(12000).optional(),
         method: z.literal('INVITATION_TOKEN'),
         token: z.string().min(32).max(128),
       })
@@ -1266,6 +1269,7 @@ export const V2ActivateParticipantRequestSchema = z.discriminatedUnion(
     z
       .object({
         ...v2WriteBase,
+        colorTemperatureKelvin: z.number().int().min(2400).max(12000).optional(),
         method: z.literal('ASSISTED_SYNTHETIC'),
         displayName: z.string().trim().min(1).max(40),
         studentNumber: z.string().regex(/^\d{8,20}$/),
@@ -1274,11 +1278,18 @@ export const V2ActivateParticipantRequestSchema = z.discriminatedUnion(
     z
       .object({
         ...v2WriteBase,
+        colorTemperatureKelvin: z.number().int().min(2400).max(12000).optional(),
         method: z.literal('ASSISTED_STUDENT'),
         displayName: z.string().trim().min(1).max(40),
         studentNumber: z.string().regex(/^\d{8,20}$/),
       })
       .strict(),
+    z.object({
+      ...v2WriteBase,
+      method: z.literal('GUEST'),
+      displayName: z.string().trim().min(1).max(20),
+      colorTemperatureKelvin: z.number().int().min(2400).max(12000),
+    }).strict(),
   ],
 )
 
@@ -1287,6 +1298,7 @@ export const V2ActivateParticipantResponseSchema = z
     status: z.literal('ok'),
     protocolVersion: V2ProtocolVersionSchema,
     activationCreated: z.boolean(),
+    admissionCreated: z.boolean().optional(),
     snapshot: V2ParticipantSnapshotSchema,
   })
   .strict()
@@ -1396,6 +1408,7 @@ export const V2_ADMIN_COMMANDS = [
   'BLOCK_BARRAGE_SOURCE',
   'CLEAR_BARRAGES',
   'RESET_DEMO',
+  'RESET_FORMAL_ROUND',
 ] as const
 
 const runtimeCommandBase = {
@@ -1621,6 +1634,12 @@ export const V2AdminCommandSchema = z.discriminatedUnion('command', [
       confirmed: z.literal(true),
     })
     .strict(),
+  z.object({
+    ...v2WriteBase,
+    command: z.literal('RESET_FORMAL_ROUND'),
+    expectedRunRevision: V2RevisionSchema,
+    confirmation: z.literal('重新开场'),
+  }).strict(),
   z
     .object({
       ...v2WriteBase,

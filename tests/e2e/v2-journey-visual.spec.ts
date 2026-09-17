@@ -18,7 +18,7 @@ import { expect, test } from './support/v2-test.js'
  * docs/D037_FIELD_ACCEPTANCE.md.
  */
 
-test('plays the normal-motion first journey into the color stage without layout shift', async ({
+test('plays one personal entry meteor and restores without crowd stars or replay', async ({
   browser,
   demo,
 }, testInfo) => {
@@ -55,41 +55,21 @@ test('plays the normal-motion first journey into the color stage without layout 
     const token = demo.credentials.participant.inviteToken
     await page.goto(`/welcome?token=${encodeURIComponent(token)}`)
 
-    const heading = page.getByRole('heading', { name: /找到属于/u })
-    await expect(heading).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByTestId('personal-journey-stage')).toBeVisible()
-    await expect(page.getByTestId('personal-journey-stage')).toHaveAttribute(
-      'data-background-system',
-      'orbital-signal-reset',
-    )
-
-    // Address bar must be scrubbed before the journey starts.
+    await expect(page.locator('.personal-neon-entry')).toBeVisible()
+    await expect(page.getByTestId('personal-journey-stage')).toHaveCount(0)
     expect(new URL(page.url()).searchParams.has('token')).toBe(false)
-
-    const startedAt = Date.now()
-    const capturePhases = [800, 2000, 3500, 5000]
-    for (const delay of capturePhases) {
-      const remaining = startedAt + delay - Date.now()
-      if (remaining > 0) await page.waitForTimeout(remaining)
-      await page.screenshot({
-        path: `${screenshots}/journey-${delay}ms.png`,
-        fullPage: false,
-      })
-    }
-
-    // Handoff: color controls must become operable without a reload.
-    const confirmColor = page.getByRole('button', { name: '确认星色' })
-    await expect(confirmColor).toBeEnabled({ timeout: 6_000 })
-    const journeyDuration = Date.now() - startedAt
-    expect(journeyDuration).toBeGreaterThan(2_500)
-    expect(journeyDuration).toBeLessThan(9_000)
-
+    const startedAt=Date.now(),confirmColor=page.getByRole('button',{name:'确认星色',exact:true})
+    await expect(confirmColor).toBeEnabled()
     await expect(page.getByTestId('persistent-color-controls')).toBeVisible()
-    await page.screenshot({
-      path: `${screenshots}/color-stage.png`,
-      fullPage: false,
-    })
-
+    await confirmColor.click()
+    await expect(page.getByTestId('personal-entry-meteor')).toBeVisible()
+    await page.waitForTimeout(450)
+    await page.screenshot({path:`${screenshots}/entry-meteor.png`})
+    await expect(page.getByTestId('personal-entry-meteor')).toHaveCount(0)
+    const journeyDuration=Date.now()-startedAt
+    expect(journeyDuration).toBeLessThan(4500)
+    await page.reload();await expect(page.getByText('你的星色，已为今晚点亮')).toBeVisible()
+    await expect(page.getByTestId('personal-entry-meteor')).toHaveCount(0)
     // No horizontal overflow at the target viewport.
     const overflow = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,

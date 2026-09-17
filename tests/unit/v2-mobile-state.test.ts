@@ -439,67 +439,16 @@ describe('V2-08 mobile state and motion gates', () => {
     expect(template).not.toContain('跳过动画')
   })
 
-  it('uses the shared production journey renderer for the D-030 personal-star sequence', () => {
-    const page = fs.readFileSync(
-      path.join(ROOT, 'frontend/src/pages/student/V2WelcomeExperience.vue'), 'utf8',
-    )
-    const stage = fs.readFileSync(
-      path.join(ROOT, 'frontend/src/pages/student/PersonalJourneyStage.vue'), 'utf8',
-    )
-    const renderer = fs.readFileSync(
-      path.join(ROOT, 'frontend/src/pages/student/personal-journey-renderer.js'), 'utf8',
-    )
-    const timeline = fs.readFileSync(
-      path.join(ROOT, 'frontend/src/pages/student/personal-journey-timeline.js'), 'utf8',
-    )
-    const activationFlow = page.match(
-      /async function acceptActivation[\s\S]*?\r?\n\}\r?\n\r?\nasync function activate/u,
-    )?.[0] ?? ''
-    expect(activationFlow.indexOf("cinematic.value = 'discovery-pending'"))
-      .toBeLessThan(activationFlow.indexOf('await waitForStableDocumentVisibility()'))
-    expect(activationFlow.indexOf('await waitForStableDocumentVisibility()'))
-      .toBeLessThan(activationFlow.indexOf("cinematic.value = 'discovering'"))
-    expect(activationFlow).toContain('await nextTick()')
-    expect(activationFlow).toContain(
-      'await waitForJourneyPhase(PERSONAL_JOURNEY_PHASES.DISCOVERY, DISCOVERY_CINEMATIC_DURATION_MS)',
-    )
-    expect(activationFlow.indexOf('realtimeConnection = realtime.connect()'))
-      .toBeLessThan(activationFlow.indexOf('if (shouldPlayDiscovery({'))
-
-    const activationEntry = page.match(
-      /async function activate\(method, fields\)[\s\S]*?const activationSession/u,
-    )?.[0] ?? ''
-    expect(activationEntry).toContain("if (busy.value === 'activation') return")
-
-    const journeyWait = page.match(
-      /function waitForJourneyPhase[\s\S]*?\r?\n\}\r?\n\r?\nasync function acceptActivation/u,
-    )?.[0] ?? ''
-    expect(journeyWait).toContain('journeyStage.value?.waitForPhase(phase)')
-    expect(journeyWait).toContain('duration + 450')
-
-    const template = page.match(/<template>([\s\S]*?)<\/template>/u)?.[1] ?? ''
-    expect(template.match(/<PersonalJourneyStage/gu)).toHaveLength(1)
-    expect(template.match(/data-testid="persistent-color-controls"/gu)).toHaveLength(1)
-    expect(template.match(/participant\?\.onboardingState === 'NEEDS_COLOR'/gu)?.length).toBeGreaterThanOrEqual(2)
-    expect(template).toContain(':inert="discoveryActive ? true : undefined"')
-    expect(template).toContain("connectionMessage && participant?.onboardingState !== 'NEEDS_COLOR'")
-    expect(template).toContain('{{ colorConnectionMessage }}')
-    expect(template).not.toContain('selected-star')
-    expect(template).not.toContain('cinematic__flight')
-    // The approved procedural galaxy retired the old bitmap. Keep checking
-    // the shared journey, privacy and completion contracts below.
-    expect(stage).toContain('data-background-system="orbital-signal-reset"')
-    // D-105: phone uses the same admitted audience, without decorative stars.
-    expect(stage).toContain('publicStars: props.publicStars')
-    expect(stage).toContain('audienceOnly: true')
-    expect(stage).toContain('renderer?.waitForPhase(phase)')
-    expect(renderer).toContain('drawDiscoveryMotes')
-    expect(renderer).toContain('drawOrbitDust(context, width, height, frame, false)')
-    expect(renderer).toContain('drawHeroStar')
-    expect(renderer).toContain('drawOrbitDust(context, width, height, frame, true)')
-    expect(timeline).toContain('farStars: 150')
-    expect(timeline).toContain('discoveryMotes: 78')
-    expect(timeline).toContain('orbitDust: 156')
+  it('uses a personal neon entry with a bounded meteor and preserves legacy colour completion', () => {
+    const page=fs.readFileSync(path.join(ROOT,'frontend/src/pages/student/V2WelcomeExperience.vue'),'utf8')
+    const meteor=fs.readFileSync(path.join(ROOT,'frontend/src/components/PersonalEntryMeteor.vue'),'utf8')
+    expect(page).not.toContain('<PersonalJourneyStage')
+    expect(page).toContain('class="personal-neon-entry"')
+    expect(page).toContain(':stars="[]"')
+    expect(page).toContain('response.admissionCreated && !reducedMotion.value && !document.hidden')
+    expect(meteor).toContain("document.addEventListener('visibilitychange', visibility)")
+    expect(meteor).toContain('clearTimeout(timer)')
+    expect(page).toContain('data-testid="persistent-color-controls"')
   })
 
   it('uses the approved local college wordmark as an accessible official-site link', () => {

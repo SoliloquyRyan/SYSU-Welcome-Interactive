@@ -2,7 +2,7 @@ import { isIP } from 'node:net'
 
 import type { FastifyRequest } from 'fastify'
 
-export type LoginKind = 'participant-activation' | 'admin-login'
+export type LoginKind = 'participant-activation' | 'admin-login' | 'guest-entry'
 
 export interface LoginRateLimitDecision {
   allowed: boolean

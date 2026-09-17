@@ -183,7 +183,7 @@ describe('D-097 authoritative programme ranking and adjustments', () => {
     await expect(upgradeV2ProgramRankingFrom20To21(database,{...options(),beforeCommit:()=>{throw new Error('injected')}})).rejects.toMatchObject({code:'V2_UPGRADE_ROLLED_BACK'})
     expect(retained()).toEqual(before); expect(verifyV2Foundation(database,{...verificationOptions(),throughSchemaVersion:20}).ready).toBe(true)
     const result=await upgradeV2ProgramRankingFrom20To21(database,{...options(),backupPath:path.join(directory,'successful-ranking-backup.sqlite')})
-    expect(result).toMatchObject({previousSchemaVersion:20,schemaVersion:22,resetEpoch:1});expect(retained()).toEqual(before)
+    expect(result).toMatchObject({previousSchemaVersion:20,schemaVersion:23,resetEpoch:1});expect(retained()).toEqual(before)
     const backup=openDatabase(result.backupPath);try{expect(verifyV2Foundation(backup,{...verificationOptions(),throughSchemaVersion:20}).ready).toBe(true)}finally{backup.close()}
     expect(verifyV2Foundation(database,verificationOptions()).issues).toEqual([])
   })

@@ -207,7 +207,7 @@ describe('D-096 awards, stage and recipient privacy', () => {
     const retained = () => ['v2_runtime_state','v2_gift_transactions','synthetic_identities','v2_participant_states','v2_domain_events'].map(table => retainedV21Facts(database.prepare('SELECT * FROM '+table).all()))
     const before = retained(); const identities = identityDigest()
     const result = await upgradeV2AwardsFrom19To20(database, options())
-    expect(result).toMatchObject({previousSchemaVersion:19,schemaVersion: 22,resetEpoch:1})
+    expect(result).toMatchObject({previousSchemaVersion:19,schemaVersion: 23,resetEpoch:1})
     expect(retained()).toEqual(before); expect(identityDigest()).toBe(identities)
     expect(snapshot().awards).toHaveLength(7)
     const backup = openDatabase(result.backupPath)

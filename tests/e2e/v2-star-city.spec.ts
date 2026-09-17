@@ -1,3 +1,4 @@
+import {prepareProgram,executePrepared,waitRuntime,adminSnapshot} from './support/d109-console.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { Page } from '@playwright/test'
@@ -49,16 +50,16 @@ test('reviews the star city surfaces, OBS fallback, and partial combined-operati
     await admin.getByLabel('开始模式', { exact: true }).selectOption('LIVE')
     const startIndex = commands.length
     await confirm(admin, '开始活动')
-    await expect(admin.locator('.runtime-facts')).toContainText('运行中')
+    await waitRuntime(admin,'运行中')
     expect(commands.slice(startIndex)).toEqual(['SET_MODE', 'START'])
     await expect(admin.locator('.workflow-receipt')).toContainText('操作已完成')
     await screen.goto('/screen?motion=reduced')
     await shot(screen, '01-assembly')
     checkpoint = 'program setup'
-    await confirm(admin, '推进下一场景')
-    await expect(admin.locator('.runtime-facts')).toContainText('02 节目应援')
-    await admin.getByLabel('当前节目', { exact: true }).selectOption('event2026-01')
-    await admin.getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await confirm(admin, '进入节目')
+    await waitRuntime(admin,'02 节目应援')
+    await prepareProgram(admin, 'event2026-01')
+    await executePrepared(admin)
     await expect(screen.locator('.v2-screen > .v2-program-stage[data-background-system="mist-star-city"]')).toBeVisible()
     await expect(screen.locator('.ceremony-stage')).toHaveCount(0)
     await expect(phones[0]!.getByRole('textbox', { name: '弹幕', exact: true })).toBeEnabled()
@@ -93,10 +94,10 @@ test('reviews the star city surfaces, OBS fallback, and partial combined-operati
     const alpha = await screen.locator('.star-city-atmosphere').evaluate(el => { const canvas = el as HTMLCanvasElement; return canvas.getContext('2d')!.getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data[3] })
     expect(alpha).toBe(0)
 
-    await admin.getByLabel('当前节目', { exact: true }).selectOption('event2026-14')
+    await prepareProgram(admin, 'event2026-14')
     checkpoint = 'manual candidate preparation'
-    await expect(admin.locator('.cue-current')).toContainText('lovesik girls')
-    await admin.getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await expect(admin.locator('.fixed-cue h2')).toContainText('lovesik girls')
+    await executePrepared(admin)
     await admin.getByLabel('选手人数',{exact:true}).fill('2')
     let failVote = true
     await admin.route('**/api/v2/admin/commands', async route => {

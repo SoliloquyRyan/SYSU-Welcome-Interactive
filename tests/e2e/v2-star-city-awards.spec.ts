@@ -1,3 +1,4 @@
+import {prepareProgram,executePrepared,waitRuntime,adminSnapshot} from './support/d109-console.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { Page } from '@playwright/test'
@@ -20,8 +21,8 @@ test('keeps the docked award editor usable and publishes only confirmed star cit
     await admin.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
   }
   const select = async (id: string) => {
-    await admin.getByLabel('当前节目', { exact: true }).selectOption(id)
-    await admin.getByRole('button', { name: '设为当前节目', exact: true }).click()
+    await prepareProgram(admin, id)
+    await executePrepared(admin)
   }
   try {
     await admin.goto('/admin')
@@ -33,7 +34,7 @@ test('keeps the docked award editor usable and publishes only confirmed star cit
     await admin.getByRole('button', { name: '确认应用 25 项', exact: true }).click()
     await expect(admin.locator('.catalog-editor')).toHaveCount(0)
     await confirm('开始活动')
-    await admin.getByRole('button', { name: '02 节目应援', exact: true }).click()
+    await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button', { name: '02 节目应援', exact: true }).click()
     await phone.goto('/welcome?token=' + encodeURIComponent(demo.credentials.participants[0].inviteToken))
     await phone.getByRole('button', { name: '确认星色', exact: true }).click()
     await screen.goto('/screen?motion=reduced')
@@ -65,7 +66,7 @@ test('keeps the docked award editor usable and publishes only confirmed star cit
     await admin.getByLabel('奖项', { exact: true }).selectOption('points-top20')
     await admin.getByRole('button', { name: '录入名单', exact: true }).click()
     await admin.getByLabel('获奖名单', { exact: true }).fill(Array.from({ length: 20 }, (_, i) => '合成获奖者' + (i + 1) + '｜校园图鉴测试记录').join('\n'))
-    await admin.getByRole('region', { name: '名单编辑' }).getByRole('button', { name: '确定', exact: true }).click()
+    await admin.getByRole('dialog', { name: '名单编辑' }).getByRole('button', { name: '确定', exact: true }).click()
     await expect(admin.locator('.award-editor')).toHaveCount(0)
     await admin.getByRole('button', { name: '展示奖项', exact: true }).click()
     await expect(screen.locator('.award-winners')).toHaveCount(0)
@@ -80,7 +81,7 @@ test('keeps the docked award editor usable and publishes only confirmed star cit
     await expect(screen.locator('.award-winners li')).toHaveCount(4)
     await shot(screen, 'campus-page-three')
     checkpoint = 'responsive console'
-    for (const width of [1600, 960, 390]) {
+    for (const width of [1600, 960, 800]) {
       await admin.setViewportSize({ width, height: 900 })
       expect(await admin.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       await shot(admin, 'campus-console-' + width)

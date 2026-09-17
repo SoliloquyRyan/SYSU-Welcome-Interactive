@@ -1,3 +1,4 @@
+import {prepareProgram,executePrepared,waitRuntime,adminSnapshot} from './support/d109-console.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -15,11 +16,11 @@ async function prepare(admin: Page, credentials: { username: string; password: s
   await admin.getByRole('button', { name: '确认应用 25 项', exact: true }).click()
   await admin.getByRole('button', { name: '开始活动', exact: true }).click()
   await admin.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
-  await admin.getByRole('button', { name: '02 节目应援', exact: true }).click()
+  await admin.getByRole('button',{name:'管理',exact:true}).click(); await admin.getByRole('button', { name: '02 节目应援', exact: true }).click()
 }
 async function select(admin: Page, id: string) {
-  await admin.getByLabel('当前节目', { exact: true }).selectOption(id)
-  await admin.getByRole('button', { name: '设为当前节目', exact: true }).click()
+  await prepareProgram(admin, id)
+  await executePrepared(admin)
 }
 
 test('D106 restores one admitted star per person and all nineteen program presentations', async ({ browser, demo }, info) => {
@@ -169,7 +170,7 @@ test('D106 resets controlled envelope modulation on silence, pause, program chan
     await pulse(); await expect.poll(audio).toBeGreaterThan(.3)
     await stop(); await expect.poll(audio, { timeout: 2500 }).toBe(0)
     await pulse(); await expect.poll(audio).toBeGreaterThan(.3)
-    await admin.getByRole('button', { name: '暂停', exact: true }).click(); await expect.poll(audio).toBe(0)
+    await admin.getByRole('button', { name: '全场暂停', exact: true }).click(); await expect.poll(audio).toBe(0)
     await stop(); await admin.getByRole('button', { name: '恢复运行', exact: true }).click(); expect(await audio()).toBe(0)
     await pulse(); await expect.poll(audio).toBeGreaterThan(.3); await stop()
     await select(admin, 'event2026-01'); await expect(screen.locator('.program-stage-background')).toHaveCount(0); await expect.poll(audio).toBe(0)
