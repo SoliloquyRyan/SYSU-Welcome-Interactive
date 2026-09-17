@@ -294,39 +294,12 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
 
     await catalogPanel.getByLabel('当前节目', { exact: true }).selectOption('event2026-14')
     await catalogPanel.getByRole('button', { name: '设为当前节目', exact: true }).click()
-    await clickAdminCommand(adminPage, '开启观众抽取')
-    await expect(participantPage.getByRole('region', { name: '正在抽取上台观众' })).toBeVisible()
-    await expect(screenPage.getByRole('heading', { name: '上台观众抽取' })).toBeVisible()
-    // Start observing before the command: the controller's HTTP round-trip can
-    // finish after a short rolling animation on a busy machine.
-    await screenPage.locator('.v2-raffle').evaluate((element, code) => {
-      type Frame = { rolling: boolean; historyVisible: boolean; winnerVisible: boolean }
-      const state = window as typeof window & { observedRaffleFrames?: Frame[] }
-      state.observedRaffleFrames = []
-      const observer = new MutationObserver(() => {
-        const frame = {
-          rolling: element.classList.contains('is-rolling'),
-          historyVisible: Boolean(element.querySelector('.v2-raffle__history')),
-          winnerVisible: (element as HTMLElement).innerText.includes(code),
-        }
-        state.observedRaffleFrames!.push(frame)
-        if (element.classList.contains('is-revealed')) observer.disconnect()
-      })
-      observer.observe(element, { attributes: true, childList: true, characterData: true, subtree: true })
-    }, credential.publicStarId)
-    await clickAdminCommand(adminPage, '抽取一位')
-    await expect.poll(() => screenPage.evaluate(() => (window as typeof window & {
-      observedRaffleFrames?: Array<{ rolling: boolean; historyVisible: boolean; winnerVisible: boolean }>
-    }).observedRaffleFrames?.some(frame => frame.rolling))).toBe(true)
-    const rollingFrames = await screenPage.evaluate(() => (window as typeof window & {
-      observedRaffleFrames?: Array<{ rolling: boolean; historyVisible: boolean; winnerVisible: boolean }>
-    }).observedRaffleFrames!.filter(frame => frame.rolling))
-    for (const frame of rollingFrames) expect(frame).toEqual({ rolling: true, historyVisible: false, winnerVisible: false })
-    await expect(screenPage.locator('.v2-raffle__code')).toHaveText(credential.publicStarId)
-    await expect(adminPage.locator('.winner-list')).toContainText(credential.displayName)
-    await expect(adminPage.locator('.winner-list')).toContainText(credential.publicStarId)
-    await clickAdminCommand(adminPage, '完成抽取')
-    await expect(screenPage.locator('.v2-raffle')).toHaveCount(0)
+    await adminPage.getByLabel('选手人数',{exact:true}).fill('2')
+    await confirmAction(adminPage,'确认选手并开放投票')
+    await expect(screenPage.locator('.v2-vote-board article')).toHaveCount(2)
+    await expect(participantPage.getByLabel('1号选手',{exact:true})).toBeVisible()
+    await confirmAction(adminPage,'关闭投票并揭晓')
+    await clickAdminCommand(adminPage,'收起本轮结果')
 
     // Interaction B stays outside the formal program gift accounting.
     await expect(participantPage.getByRole('button', { name: '送礼物', exact: true })).toHaveCount(0)
@@ -417,21 +390,10 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     await flyingBarrage.waitFor({ state: 'detached', timeout: 15_000 })
     await expect(screenPage.locator('.v2-barrage-stream')).toHaveCount(0)
 
-    await advance(adminPage)
-    await waitForRuntime(adminPage, '运行中', '03 协同点亮')
-    await expect(screenPage.getByRole('progressbar', { name: '协同点亮进度' })).toHaveAttribute('aria-valuenow', '0')
-    await participantPage.getByRole('button', { name: '参与全场点亮' }).click()
-    await expect(participantPage.getByText('点亮已完成')).toBeVisible()
-    await expect(screenPage.getByRole('progressbar', { name: '协同点亮进度' })).toHaveAttribute('aria-valuenow', '1')
-    await expect(screenPage.locator('canvas.v2-galaxy')).toHaveAttribute('data-cooperative-count', '1')
-
     await demo.restartBackend()
-    await expect(screenPage.getByRole('heading', { name: '协同点亮' })).toBeVisible()
-    await expect(participantPage.getByText('点亮已完成')).toBeVisible()
-    await expect(adminPage.getByText('实时已连接', { exact: true })).toBeVisible()
-    await expect(screenPage.getByRole('progressbar', { name: '协同点亮进度' })).toHaveAttribute('aria-valuenow', '1')
-
-    await confirmAction(adminPage, '结束并锁定终章')
+    await expect(adminPage.getByText('实时已连接',{exact:true})).toBeVisible()
+    await waitForRuntime(adminPage,'运行中','02 节目应援')
+    await confirmAction(adminPage, '结束晚会并播放片尾')
     // This follows a backend restart: a recovered COMPLETED snapshot must show
     // the poster without replaying missed shots. Fresh live motion has its own test.
     await expect(screenPage.locator('.v2-screen')).toHaveClass(/is-completed/u)
@@ -440,22 +402,20 @@ test('runs the v2 welcome, screen and admin surfaces through one authoritative l
     await expect(participantPage.getByText('本场活动已结束', { exact: true })).toBeVisible()
     const memento = participantPage.getByRole('region', { name: '今夜的个人纪念' })
     await expect(memento).toContainText(credential.displayName)
-    await expect(memento.getByRole('listitem')).toHaveText(['抵达星河', '启动恒星', '送出应援', '留下欢呼', '一起点亮'])
+    await expect(memento.getByRole('listitem')).toHaveText(['抵达星河', '启动恒星', '送出应援', '留下欢呼'])
     await expect(participantPage.locator('.dock-toast')).toHaveCount(0)
     await participantPage.screenshot({ path: capturePath('output/playwright/mobile-20260906/memento-complete.png') })
-    await waitForRuntime(adminPage, '已完成', '03 协同点亮')
+    await waitForRuntime(adminPage, '已完成', '03 谢幕准备')
     await expectNoForbiddenText(
       [screenPage],
       [credential.publicStarId, credential.displayName, credential.studentNumber, credential.inviteToken],
     )
-    const skipCredits = screenPage.getByRole('button', { name: '跳过片尾' })
-    if (await skipCredits.isVisible()) await skipCredits.click()
-    await expect(screenPage.locator('.v2-finale__copy h1')).toHaveCSS('opacity', '1')
-    await expect(screenPage.locator('.closing-credits__metrics div').last()).toContainText('1')
+    await screenPage.reload()
+    await expect(screenPage.locator('.closing-credits__poster h1')).toHaveCSS('opacity', '1')
     await screenPage.screenshot({path: capturePath('output/overnight-20260907/screen-finale.png')})
     await screenPage.screenshot({ path: capturePath(`output/playwright/screen-motion-20260906/${test.info().project.name}-finale-settled.png`) })
     await screenPage.reload()
-    await expect(screenPage.locator('.v2-finale__copy h1')).toHaveCSS('opacity', '1')
+    await expect(screenPage.locator('.closing-credits__poster h1')).toHaveCSS('opacity', '1')
     expect(await screenPage.locator('.v2-finale').evaluate((element: HTMLElement) => element.style.opacity)).toBe('')
 
     const screenPrivacy = await screenPage.evaluate(() => ({
@@ -598,6 +558,7 @@ test('keeps static barrages readable and full motion working without GSAP under 
       const { default: router } = await import(modulePath)
       await router.push('/welcome')
     })
+    expect(pageErrors).toEqual([])
     await expect(screen.locator('html')).not.toHaveClass(/v2-stage-motion-full/u)
     expect(pageErrors).toEqual([])
   } catch (error) {
@@ -632,16 +593,16 @@ test('settles interrupted transitions and animates rehearsal finale without chan
     await expect(screen.locator('canvas.v2-galaxy')).toHaveAttribute('data-render-target-fps', '0')
     await clickAdminCommand(admin, '恢复运行')
     await expect(screen.locator('.v2-screen')).toHaveAttribute('data-scene-transition', 'idle')
-    await admin.getByRole('button', { name: '03 协同点亮', exact: true }).click()
+    await admin.getByRole('button', { name: '03 谢幕准备', exact: true }).click()
     await expect(screen.locator('.v2-screen')).toHaveAttribute('data-scene-transition', 'idle')
-    await clickAdminCommand(admin, '预览终章')
-    await expect(screen.getByRole('heading', { name: '把今夜，写进星河' })).toBeVisible()
+    await confirmAction(admin, '预览电影片尾')
+    await expect(screen.getByRole('heading', { name: '今夜，因你们而闪耀' })).toBeVisible()
     await expect(screen.locator('.closing-credits')).toHaveAttribute('data-phase', 'intro')
     await screen.evaluate(() => {
       Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
       document.dispatchEvent(new Event('visibilitychange'))
     })
-    await expect(screen.locator('.v2-finale__copy h1')).toHaveCSS('opacity', '1')
+    await expect(screen.locator('.closing-credits__poster h1')).toHaveCSS('opacity', '1')
     await expect(screen.locator('.closing-credits')).toHaveAttribute('data-phase', 'poster')
     expect(await screen.locator('.closing-credits').evaluate(element => element.getAnimations({ subtree: true }).length)).toBe(0)
     await screen.evaluate(() => {
@@ -650,112 +611,31 @@ test('settles interrupted transitions and animates rehearsal finale without chan
     })
     expect(await screen.locator('.v2-finale').evaluate((element: HTMLElement) => element.style.opacity)).toBe('')
     await screen.reload()
-    await expect(screen.getByRole('heading', { name: '愿我们在更远的星海重逢' })).toBeVisible()
+    await expect(screen.locator('.closing-credits__poster h1')).toContainText('与未来相逢')
     expect(await screen.locator('.v2-finale').evaluate((element: HTMLElement) => element.style.opacity)).toBe('')
-    await waitForRuntime(admin, '运行中', '03 协同点亮')
+    await waitForRuntime(admin, '运行中', '03 谢幕准备')
     expect(pageErrors).toEqual([])
   } finally {
     await Promise.allSettled(contexts.map((context) => context.close()))
   }
 })
 
-test('queues rapid raffle draws, restores static feedback and confirms incomplete completion once', async ({ browser, demo }) => {
-  const contexts: BrowserContext[] = []
+test('confirms direct completion once, supports cancellation and never requires cooperative participation', async ({browser,demo}) => {
+  const controller=await browser.newContext({baseURL:demo.baseURL})
+  const projection=await browser.newContext({baseURL:demo.baseURL,reducedMotion:'reduce'})
+  const admin=await controller.newPage(), screen=await projection.newPage()
   try {
-    const controller = await browser.newContext({ baseURL: demo.baseURL })
-    const projection = await browser.newContext({ baseURL: demo.baseURL, viewport: { width: 1920, height: 1080 }, reducedMotion: 'reduce' })
-    contexts.push(controller, projection)
-    const admin = await controller.newPage()
-    const screen = await projection.newPage()
-    const pageErrors: string[] = []
-    screen.on('pageerror', (error) => pageErrors.push(error.message))
-    const dialogs: string[] = []
-    const recordedAction = async (buttonName: string, answer = '确定') => {
-      dialogs.push(await confirmAction(admin, buttonName, answer))
-    }
-    await screen.goto('/screen?motion=system')
-    await loginAdmin(admin, demo.credentials.admin.username, demo.credentials.admin.password)
-    const catalogPanel = admin.locator('.catalog-panel')
-    await catalogPanel.getByRole('button', { name: '载入本场节目单', exact: true }).click()
-    await catalogPanel.getByRole('button', { name: '确认应用 25 项', exact: true }).click()
-    await admin.getByLabel('开始模式', { exact: true }).selectOption('LIVE')
-    await recordedAction('开始活动')
-    await waitForRuntime(admin, '运行中', '01 星海集结')
-    const phones: Page[] = []
-    for (const credential of demo.credentials.participants.slice(0, 3)) {
-      const context = await browser.newContext({ baseURL: demo.baseURL, reducedMotion: 'reduce', viewport: { width: 390, height: 844 } })
-      contexts.push(context)
-      const phone = await context.newPage()
-      phones.push(phone)
-      await phone.goto(`/welcome?token=${encodeURIComponent(credential.inviteToken)}`)
-      await phone.getByRole('button', { name: '确认星色' }).click()
-      await expect(phone.getByRole('button', { name: '启动我的星' })).toBeVisible()
-    }
-    // None has START_STAR; its readiness warning belongs in the same dialog.
-    await expect(admin.locator('.warning-list')).toContainText('尚未启动恒星')
-    const beforeAdvance = dialogs.length
-    await recordedAction('推进下一场景')
-    await waitForRuntime(admin, '运行中', '02 节目应援')
-    expect(dialogs.length - beforeAdvance).toBe(1)
-    expect(dialogs.at(-1)).toContain('尚未启动恒星')
-    await screen.emulateMedia({ reducedMotion: 'no-preference' })
-    await catalogPanel.getByLabel('当前节目', { exact: true }).selectOption('event2026-14')
-    await catalogPanel.getByRole('button', { name: '设为当前节目', exact: true }).click()
-    await clickAdminCommand(admin, '开启观众抽取')
-    await clickAdminCommand(admin, '抽取一位')
-    await expect(admin.locator('.winner-list code')).toHaveCount(1)
-    const first = await admin.locator('.winner-list code').first().innerText()
-    await clickAdminCommand(admin, '抽取一位')
-    await expect(admin.locator('.winner-list code')).toHaveCount(2)
-    const second = await admin.locator('.winner-list code').first().innerText()
-    expect(first).not.toBe(second)
-    await expect(screen.locator('.v2-raffle')).toHaveClass(/is-rolling/u)
-    await expect(screen.locator('.v2-raffle__history')).toHaveCount(0)
-    await expectNoForbiddenText([screen], [first, second])
-    await expect(screen.locator('.v2-raffle__code')).toHaveText(first)
-    await expect(screen.locator('.v2-raffle__history')).toContainText(first)
-    await expect(screen.locator('.v2-raffle__history')).not.toContainText(second)
-    await expect(screen.locator('.v2-raffle__code')).toHaveText(second)
-    await expect(screen.locator('.v2-raffle__history li')).toHaveCount(2)
-    // Interrupt a third result by reloading: restore all persisted winners once.
-    await clickAdminCommand(admin, '抽取一位')
-    await expect(screen.locator('.v2-raffle')).toHaveClass(/is-rolling/u)
-    await screen.reload()
-    await expect(screen.locator('.v2-raffle')).toHaveClass(/is-revealed/u)
-    await expect(screen.locator('.v2-raffle')).not.toHaveClass(/is-live-reveal/u)
-    expect(await screen.locator('.v2-raffle__code').evaluate((element) => getComputedStyle(element).animationName)).toBe('none')
-    await expect(screen.locator('.v2-raffle__history li')).toHaveCount(3)
-    await clickAdminCommand(admin, '完成抽取')
-    await screen.emulateMedia({ reducedMotion: 'reduce' })
-    await recordedAction('推进下一场景')
-    await waitForRuntime(admin, '运行中', '03 协同点亮')
-    const progress = screen.getByRole('progressbar', { name: '协同点亮进度' })
-    const canvas = screen.locator('canvas.v2-galaxy')
-    await expect(progress).toHaveAttribute('aria-valuenow', '0')
-    await expect(progress).toHaveAttribute('aria-valuemax', '3')
-    const pixels = () => canvas.evaluate((element: HTMLCanvasElement) => element.toDataURL())
-    const beforePixels = await pixels()
-    await phones[0]!.getByRole('button', { name: '参与全场点亮' }).click()
-    await expect(progress).toHaveAttribute('aria-valuenow', '1')
-    await expect(canvas).toHaveAttribute('data-cooperative-count', '1')
-    await expect.poll(pixels).not.toBe(beforePixels)
-    const afterPixels = await pixels()
-    await screen.waitForTimeout(300)
-    expect(await pixels()).toBe(afterPixels)
-    await screen.reload()
-    await expect(progress).toHaveAttribute('aria-valuenow', '1')
-    await expect(canvas).toHaveAttribute('data-cooperative-feedback', 'static')
-    await expect(admin.locator('.warning-list')).toContainText('尚未完成协同点亮')
-    const beforeComplete = dialogs.length
-    await recordedAction('结束并锁定终章', '返回')
-    await waitForRuntime(admin, '运行中', '03 协同点亮')
-    expect(dialogs.length - beforeComplete).toBe(1)
-    await recordedAction('结束并锁定终章')
-    await waitForRuntime(admin, '已完成', '03 协同点亮')
-    expect(dialogs.length - beforeComplete).toBe(2)
-    expect(dialogs.at(-1)).toContain('尚未完成协同点亮')
-    expect(pageErrors).toEqual([])
-  } finally {
-    await Promise.allSettled(contexts.map((context) => context.close()))
-  }
+    await loginAdmin(admin,demo.credentials.admin.username,demo.credentials.admin.password)
+    await screen.goto('/screen?motion=reduced')
+    await admin.getByLabel('开始模式',{exact:true}).selectOption('LIVE')
+    await confirmAction(admin,'开始活动');await advance(admin)
+    await expect(admin.getByRole('button',{name:'推进下一场景',exact:true})).toHaveCount(0)
+    await confirmAction(admin,'结束晚会并播放片尾','返回')
+    await waitForRuntime(admin,'运行中','02 节目应援')
+    const message=await confirmAction(admin,'结束晚会并播放片尾')
+    expect(message).not.toContain('协同点亮')
+    await waitForRuntime(admin,'已完成','03 谢幕准备')
+    await expect(screen.locator('.closing-credits')).toHaveAttribute('data-phase','poster')
+    await expect(admin.getByRole('button',{name:'结束晚会并播放片尾',exact:true})).toHaveCount(0)
+  } finally {await Promise.allSettled([controller.close(),projection.close()])}
 })

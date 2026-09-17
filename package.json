@@ -59,6 +59,7 @@
     "db:formal:restore": "tsx backend/src/cli/formal-restore.ts",
     "docs:check": "node scripts/check-docs.mjs",
     "deploy:check": "node --check scripts/dev.mjs && node --check scripts/dev-formal.mjs && node --check scripts/dev-rehearsal.mjs && node --check scripts/formal-runtime.mjs && node --check scripts/start-formal.mjs && node --check tests/smoke/run-formal-production-smoke.mjs && node --check tests/smoke/run-rehearsal-first-run-smoke.mjs && node scripts/check-deployment.mjs",
+    "db:v2:event-upgrade": "tsx backend/src/cli/event-entry-upgrade.ts",
     "db:v2:ranking-upgrade": "tsx backend/src/cli/program-ranking-upgrade.ts",
     "db:v2:awards-upgrade": "tsx backend/src/cli/awards-upgrade.ts"
   },

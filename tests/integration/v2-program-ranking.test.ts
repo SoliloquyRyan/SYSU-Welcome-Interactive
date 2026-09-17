@@ -1,3 +1,4 @@
+import { retainedV21Facts } from '../helpers/retained-v21-facts.js'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -55,7 +56,7 @@ describe('D-097 authoritative programme ranking and adjustments', () => {
   }
   function rawCatalog() { return database.prepare('SELECT * FROM v2_program_catalog ORDER BY id').all() }
   function identityDigest() {
-    return createHash('sha256').update(JSON.stringify(database.prepare('SELECT * FROM synthetic_identities ORDER BY id').all()))
+    return createHash('sha256').update(JSON.stringify(retainedV21Facts(database.prepare('SELECT * FROM synthetic_identities ORDER BY id').all())))
       .update(fs.readFileSync(secretPath)).digest('hex')
   }
   function participant() {
@@ -177,12 +178,12 @@ describe('D-097 authoritative programme ranking and adjustments', () => {
     legacy.exec('DETACH DATABASE source_fixture');legacy.pragma('foreign_keys = ON'); original.close();database=legacy
     expect(verifyV2Foundation(database,{...verificationOptions(),throughSchemaVersion:20}).issues).toEqual([])
     expect(verifyV2Foundation(database,verificationOptions()).ready).toBe(false)
-    const retained=()=>['v2_runtime_state','v2_gift_transactions','synthetic_identities','v2_participant_states','v2_awards','v2_domain_events','v2_program_catalog'].map(t=>database.prepare('SELECT * FROM '+t).all())
+    const retained=()=>['v2_runtime_state','v2_gift_transactions','synthetic_identities','v2_participant_states','v2_awards','v2_domain_events','v2_program_catalog'].map(t=>retainedV21Facts(database.prepare('SELECT * FROM '+t).all()))
     const before=retained()
     await expect(upgradeV2ProgramRankingFrom20To21(database,{...options(),beforeCommit:()=>{throw new Error('injected')}})).rejects.toMatchObject({code:'V2_UPGRADE_ROLLED_BACK'})
     expect(retained()).toEqual(before); expect(verifyV2Foundation(database,{...verificationOptions(),throughSchemaVersion:20}).ready).toBe(true)
     const result=await upgradeV2ProgramRankingFrom20To21(database,{...options(),backupPath:path.join(directory,'successful-ranking-backup.sqlite')})
-    expect(result).toMatchObject({previousSchemaVersion:20,schemaVersion:21,resetEpoch:1});expect(retained()).toEqual(before)
+    expect(result).toMatchObject({previousSchemaVersion:20,schemaVersion:22,resetEpoch:1});expect(retained()).toEqual(before)
     const backup=openDatabase(result.backupPath);try{expect(verifyV2Foundation(backup,{...verificationOptions(),throughSchemaVersion:20}).ready).toBe(true)}finally{backup.close()}
     expect(verifyV2Foundation(database,verificationOptions()).issues).toEqual([])
   })

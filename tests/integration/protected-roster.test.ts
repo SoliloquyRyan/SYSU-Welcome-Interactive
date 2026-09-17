@@ -69,7 +69,7 @@ describe('D-054 protected roster import', () => {
   it('creates a verified protected v2 directory without putting student IDs in URLs', () => {
     const result = importRoster()
 
-    expect(result).toMatchObject({ participantCount: 2, schemaVersion: 21 })
+    expect(result).toMatchObject({ participantCount: 2, schemaVersion: 22 })
     expect(database.prepare('SELECT public_star_id FROM synthetic_identities ORDER BY seed_index').pluck().all())
       .toEqual(['C-0001', 'C-0002'])
     expect(readProtocolRuntime(database)).toMatchObject({
@@ -94,7 +94,7 @@ describe('D-054 protected roster import', () => {
       }),
     ).toMatchObject({
       ready: true,
-      schemaVersion: 21,
+      schemaVersion: 22,
       participantCount: 2,
       resetEpoch: 1,
       issues: [],
@@ -104,9 +104,10 @@ describe('D-054 protected roster import', () => {
     expect(secretText).not.toContain('测试甲')
     expect(secretText).not.toContain('26000001')
     const nfcMap = fs.readFileSync(nfcMapPath, 'utf8')
-    expect(nfcMap).toContain('https://welcome.example.edu.cn/welcome?token=')
+    expect(nfcMap).toContain('https://welcome.example.edu.cn/welcome')
     expect(nfcMap).not.toContain('token=26000001')
-    expect(nfcMap.match(/welcome\?token=/g)).toHaveLength(2)
+    expect(nfcMap.match(/https:\/\/welcome.example.edu.cn\/welcome/g)).toHaveLength(2)
+    expect(nfcMap).not.toContain('?token=')
     expect(
       verifyProtectedNfcMap(database, {
         runtimeSecretPath: secretPath,
@@ -114,6 +115,21 @@ describe('D-054 protected roster import', () => {
         expectedOrigin: 'https://welcome.example.edu.cn',
       }),
     ).toEqual({ participantCount: 2 })
+  })
+
+  it('verifies the shared deployed subpath while rejecting a foreign origin or entry path', () => {
+    importRoster()
+    const mapping = fs.readFileSync(nfcMapPath, 'utf8').replaceAll('/welcome,', '/welcomeparty/welcome,')
+      .replaceAll('edu.cn/welcome', 'edu.cn/welcomeparty/welcome')
+    const verify = () => verifyProtectedNfcMap(database, {
+      runtimeSecretPath: secretPath, nfcMapPath, expectedOrigin: 'https://welcome.example.edu.cn',
+    })
+    fs.writeFileSync(nfcMapPath, mapping)
+    expect(verify()).toEqual({ participantCount: 2 })
+    fs.writeFileSync(nfcMapPath, mapping.replaceAll('welcome.example.edu.cn', 'wrong.example.edu.cn'))
+    expect(verify).toThrow(/invalid formal invitation URL/)
+    fs.writeFileSync(nfcMapPath, mapping.replaceAll('/welcomeparty/welcome', '/other/welcome'))
+    expect(verify).toThrow(/invalid formal invitation URL/)
   })
 
   it('rejects an NFC map that no longer matches the protected directory', () => {
@@ -134,7 +150,7 @@ describe('D-054 protected roster import', () => {
 
     fs.writeFileSync(
       nfcMapPath,
-      mapping.replace('/welcome?token=', '/welcome?token=A'),
+      mapping.replace('edu.cn/welcome', 'edu.cn/welcome?token=A'),
       'utf8',
     )
 

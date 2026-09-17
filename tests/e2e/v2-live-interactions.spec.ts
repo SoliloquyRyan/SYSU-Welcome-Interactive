@@ -13,7 +13,7 @@ async function loginAdmin(page: Page, username: string, password: string) {
 }
 
 async function command(page: Page, name: string) {
-  if (name === '揭晓投票结果') {
+  if (['关闭投票并揭晓', '确认选手并开放投票', '预览电影片尾'].includes(name)) {
     await page.getByRole('button', { name, exact: true }).click()
     const response = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v2/admin/commands' && response.request().method() === 'POST')
     await page.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
@@ -27,10 +27,10 @@ async function command(page: Page, name: string) {
   expect(response.ok(), `${name} should succeed`).toBe(true)
 }
 
-test('runs A/C-style buzzer, B draw and vote, gift batches, star color barrages and the full closing ledger', async ({ browser, demo }, testInfo) => {
+test('runs A buzzer, offline C, independent B voting and confirmed gift feedback', async ({ browser, demo }, testInfo) => {
   test.setTimeout(150_000)
   let checkpoint = 'login-and-admission'
-  const directory = path.resolve('output/playwright/d105-regression/interactions')
+  const directory = path.resolve('output/playwright/d108/interactions')
   await fs.mkdir(directory, { recursive: true })
   const adminContext = await browser.newContext({ baseURL: demo.baseURL })
   const screenContext = await browser.newContext({ baseURL: demo.baseURL, viewport: { width: 1920, height: 1080 }, reducedMotion: 'reduce' })
@@ -74,31 +74,23 @@ test('runs A/C-style buzzer, B draw and vote, gift batches, star color barrages 
     await screen.screenshot({ path: path.join(directory, 'interaction-a-buzzer-1920.png') })
     await command(admin, '关闭本轮互动')
 
-    checkpoint = 'interaction-c-buzzer'
+    checkpoint = 'interaction-c-offline'
     await catalog.getByLabel('当前节目', { exact: true }).selectOption('event2026-21')
     await catalog.getByRole('button', { name: '设为当前节目', exact: true }).click()
-    await command(admin, '开始抢答')
-    await expect(phoneB.getByRole('button', { name: '准备抢答', exact: true })).toBeDisabled()
-    await expect(phoneB.getByLabel('抢答倒计时', { exact: true })).toBeVisible()
-    await phoneB.getByRole('button', { name: '立即抢答', exact: true }).click()
-    const thirdRoundStar = demo.credentials.participants[1].publicStarId
-    await expect(screen.locator('.v2-buzzer-winner')).toHaveText(thirdRoundStar)
-    await expect(admin.locator('.buzzer-result')).toContainText(thirdRoundStar)
-    await expect(phoneA.getByText('本轮已结束', { exact: true })).toBeVisible()
-    await screen.screenshot({ path: path.join(directory, 'interaction-c-buzzer-1920.png') })
-    await command(admin, '关闭本轮互动')
+    await expect(admin.getByRole('heading', {name:'谁是最“人” · 线下互动'})).toBeVisible()
+    await expect(admin.getByRole('button', {name:'开始抢答',exact:true})).toHaveCount(0)
+    await expect(phoneA.getByRole('button', {name:'立即抢答',exact:true})).toHaveCount(0)
+    await screen.screenshot({ path: path.join(directory, 'interaction-c-offline-1920.png') })
 
-    checkpoint = 'interaction-b-draw-and-vote'
+    checkpoint = 'interaction-b-manual-vote'
     await catalog.getByLabel('当前节目', { exact: true }).selectOption('event2026-14')
     await catalog.getByRole('button', { name: '设为当前节目', exact: true }).click()
-    await command(admin, '开启观众抽取')
-    await command(admin, '抽取一位')
-    await expect(admin.locator('.winner-list code')).toHaveCount(1)
-    await command(admin, '抽取一位')
-    await expect(admin.locator('.winner-list code')).toHaveCount(2)
-    const candidates = await admin.locator('.winner-list code').allTextContents()
-    await command(admin, '完成抽取')
-    await command(admin, '开放观众投票')
+    await admin.getByLabel('选手人数', {exact:true}).fill('2')
+    await admin.getByLabel('选手 1', {exact:true}).fill('一号 · 星光')
+    await admin.getByLabel('选手 2', {exact:true}).fill('二号 · 月色')
+    const candidates = ['一号 · 星光','二号 · 月色']
+    await command(admin, '确认选手并开放投票')
+    await expect(admin.getByLabel('选手 1',{exact:true})).toBeDisabled()
 
     await phoneA.getByLabel(candidates[0]!, { exact: true }).check()
     await phoneA.locator('.live-interaction-card').getByRole('button', { name: '确定', exact: true }).click()
@@ -108,10 +100,10 @@ test('runs A/C-style buzzer, B draw and vote, gift batches, star color barrages 
     await expect(screen.locator('.v2-vote-board article > strong')).toHaveText(['—', '—'])
     await expect(admin.locator('.admin-vote-board')).toContainText('已收到 2 票')
     await screen.screenshot({ path: path.join(directory, 'interaction-b-vote-hidden-1920.png') })
-    await command(admin, '揭晓投票结果')
+    await command(admin, '关闭投票并揭晓')
     await expect(screen.getByText('本轮结果已经揭晓', { exact: true })).toBeVisible()
     await expect(screen.locator('.v2-vote-board article > strong')).toHaveText(['1', '1'])
-    await command(admin, '关闭本轮互动')
+    await command(admin, '收起本轮结果')
 
     checkpoint = 'gift-batch-and-personal-barrage'
     await catalog.getByLabel('当前节目', { exact: true }).selectOption('event2026-01')
@@ -172,21 +164,20 @@ test('runs A/C-style buzzer, B draw and vote, gift batches, star color barrages 
 
     checkpoint = 'closing-ledger'
     await screen.goto('/screen?motion=reduced')
-    await admin.getByRole('button', { name: '03 协同点亮', exact: true }).click()
-    await command(admin, '预览终章')
+    await admin.getByRole('button', { name: '03 谢幕准备', exact: true }).click()
+    await command(admin, '预览电影片尾')
     await expect(screen.locator('.closing-credits')).toHaveAttribute('data-phase', 'poster')
-    await screen.getByRole('button', { name: '弹幕与礼物回顾', exact: true }).click()
+    await screen.getByRole('button', { name: '互动纪念', exact: true }).click()
     const recap = screen.locator('.closing-credits__community')
-    await expect(recap).toContainText('微光×55 礼物值')
-    await expect(recap).toContainText('星舰×240 礼物值')
-    await expect(recap).toContainText('2条弹幕·7份礼物·45礼物值')
+    await expect(recap).toContainText('微光× 5')
+    await expect(recap).toContainText('星舰× 2')
     await expect(recap).toContainText(personalBarrage)
     await expect(recap).toContainText(premiumBarrage)
     await screen.screenshot({ path: path.join(directory, 'closing-community-ledger-1920.png') })
-    await screen.getByRole('button', { name: '返回', exact: true }).click()
-    await screen.getByRole('button', { name: '节目与动力值', exact: true }).click()
-    await expect(screen.locator('.closing-credits__directory-heading')).toContainText('19 个正式节目')
-    await expect(screen.locator('.closing-credits__grid article')).toHaveCount(6)
+    await screen.getByRole('button', { name: '回到终章', exact: true }).click()
+    await screen.getByRole('button', { name: '节目致谢', exact: true }).click()
+    await expect(screen.locator('.closing-credits__directory-heading')).toContainText('今夜节目致谢')
+    await expect(screen.locator('.closing-credits__grid article')).toHaveCount(4)
     expect(errors).toEqual([])
   } catch (error) {
     testInfo.annotations.push({ type: 'failure-checkpoint', description: checkpoint })

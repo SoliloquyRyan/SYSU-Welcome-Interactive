@@ -1,3 +1,4 @@
+import { retainedV21Facts } from '../helpers/retained-v21-facts.js'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -55,7 +56,7 @@ describe('D-096 awards, stage and recipient privacy', () => {
   }
   function rawCatalog() { return database.prepare('SELECT * FROM v2_program_catalog ORDER BY id').all() }
   function identityDigest() {
-    return createHash('sha256').update(JSON.stringify(database.prepare('SELECT * FROM synthetic_identities ORDER BY id').all()))
+    return createHash('sha256').update(JSON.stringify(retainedV21Facts(database.prepare('SELECT * FROM synthetic_identities ORDER BY id').all())))
       .update(fs.readFileSync(secretPath)).digest('hex')
   }
   function participant() {
@@ -144,7 +145,7 @@ describe('D-096 awards, stage and recipient privacy', () => {
     expect(() => save('photography', [{ name: '甲'.repeat(61), detail: '' }], true)).toThrow()
     expect(() => save('photography', [{ name: '合成获奖者', detail: '乙'.repeat(121) }], true)).toThrow()
     expect(snapshot().awards!.find(award => award.id === 'photography')).toEqual(before)
-    expect(before!.entries).toEqual(entries)
+    expect(before!.entries).toEqual(entries.map((entry, index) => ({ ...entry, rank: index + 1 })))
   })
 
   it('uses four entries per page for long award text without truncating any recipient', () => {
@@ -153,7 +154,7 @@ describe('D-096 awards, stage and recipient privacy', () => {
     startProgramStage(); apply(request('SET_PROGRAM', {programId:'ceremony-campus-awards'})); ceremony('SELECT_AWARD', {awardId:'photography'}); ceremony('REVEAL_AWARD')
     expect(snapshot().stage).toMatchObject({totalPages:3,page:0})
     expect(snapshot().stage!.award!.entries).toHaveLength(4)
-    ceremony('SET_AWARD_PAGE',{page:2}); expect(snapshot().stage!.award!.entries).toEqual(entries.slice(8))
+    ceremony('SET_AWARD_PAGE',{page:2}); expect(snapshot().stage!.award!.entries).toEqual(entries.slice(8).map((entry, index) => ({ ...entry, rank: index + 9 })))
   })
 
   it('rejects stale writes and reviewer control and replays an identical reveal without double advancing', () => {
@@ -203,10 +204,10 @@ describe('D-096 awards, stage and recipient privacy', () => {
     const rows = database.prepare('SELECT id FROM v2_program_catalog WHERE enabled=1 ORDER BY sort_order').pluck().all() as string[]
     rows.forEach((id,i)=>database.prepare('UPDATE v2_program_catalog SET sort_order=? WHERE id=?').run(i+1,id))
     expect(verifyV2Foundation(database, { ...verificationOptions(), throughSchemaVersion:19 }).issues).toEqual([])
-    const retained = () => ['v2_runtime_state','v2_gift_transactions','synthetic_identities','v2_participant_states','v2_domain_events'].map(table => database.prepare('SELECT * FROM '+table).all())
+    const retained = () => ['v2_runtime_state','v2_gift_transactions','synthetic_identities','v2_participant_states','v2_domain_events'].map(table => retainedV21Facts(database.prepare('SELECT * FROM '+table).all()))
     const before = retained(); const identities = identityDigest()
     const result = await upgradeV2AwardsFrom19To20(database, options())
-    expect(result).toMatchObject({previousSchemaVersion:19,schemaVersion: 21,resetEpoch:1})
+    expect(result).toMatchObject({previousSchemaVersion:19,schemaVersion: 22,resetEpoch:1})
     expect(retained()).toEqual(before); expect(identityDigest()).toBe(identities)
     expect(snapshot().awards).toHaveLength(7)
     const backup = openDatabase(result.backupPath)

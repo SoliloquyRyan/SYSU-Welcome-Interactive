@@ -19,7 +19,7 @@ function unit(seed, shift) {
 const TAU = Math.PI * 2
 const DEFAULT_TRANSITION_MS = 1800
 export const FORMAL_VISUAL_REFERENCE_COUNT = 220
-export const TECHNICAL_STAR_CAPACITY = 300
+export const TECHNICAL_STAR_CAPACITY = 400
 export const DECORATIVE_STAR_COUNT = 420
 export const STAR_ARRIVAL_MS = 1550
 export const ACTIVE_RENDER_TARGET_FPS = 60

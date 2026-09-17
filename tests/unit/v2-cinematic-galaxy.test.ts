@@ -90,12 +90,12 @@ describe('approved cinematic galaxy in a live event', () => {
     expect(Object.keys(one)).not.toContain('studentNumber')
   })
 
-  it('creates no participant stars for an empty snapshot and caps real stars at 300', () => {
+  it('creates no participant stars for an empty snapshot and caps real stars at 400', () => {
     const empty = makePublicStars([])
     expect(empty).toHaveLength(420)
     expect(empty.every((star: { decorative: boolean; publicStarId?: string }) => star.decorative && star.publicStarId === undefined)).toBe(true)
-    const full = makePublicStars(Array.from({ length: 330 }, (_, i) => ({ ...first, publicStarId: `test-${i}`, formationSlot: i })))
-    expect(full.filter((star: { decorative: boolean }) => !star.decorative)).toHaveLength(300)
+    const full = makePublicStars(Array.from({ length: 430 }, (_, i) => ({ ...first, publicStarId: `test-${i}`, formationSlot: i })))
+    expect(full.filter((star: { decorative: boolean }) => !star.decorative)).toHaveLength(400)
   })
 
   it('lands a new arrival on the same projected star after its 1550 ms flight', () => {

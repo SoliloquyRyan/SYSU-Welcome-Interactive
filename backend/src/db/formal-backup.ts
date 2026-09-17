@@ -30,7 +30,7 @@ export const FormalBackupManifestSchema = z
     schemaVersion: z.literal(1),
     kind: z.literal('SYSU_WELCOME_PROTECTED_BACKUP'),
     createdAt: z.string().datetime({ offset: true }),
-    participantCount: z.number().int().min(1).max(300),
+    participantCount: z.number().int().min(1).max(400),
     files: z
       .object({
         database: BackupFileSchema.extend({ filename: z.literal(DATABASE_FILENAME) }),

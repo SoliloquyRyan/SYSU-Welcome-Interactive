@@ -186,14 +186,14 @@ export const V2RafflePublicStateSchema = z
   .object({
     displayActive: z.boolean(),
     raffleRevision: V2RevisionSchema,
-    eligibleCount: z.number().int().nonnegative().max(300),
-    remainingCount: z.number().int().nonnegative().max(300),
-    winners: z.array(V2RaffleWinnerPublicSchema).max(300),
+    eligibleCount: z.number().int().nonnegative().max(400),
+    remainingCount: z.number().int().nonnegative().max(400),
+    winners: z.array(V2RaffleWinnerPublicSchema).max(400),
   })
   .strict()
 
 export const V2RaffleAdminStateSchema = V2RafflePublicStateSchema.omit({ winners: true })
-  .extend({ winners: z.array(V2RaffleWinnerAdminSchema).max(300) })
+  .extend({ winners: z.array(V2RaffleWinnerAdminSchema).max(400) })
   .strict()
 
 export const V2LiveInteractionPhaseSchema = z.enum([
@@ -209,9 +209,12 @@ const V2LiveInteractionPersonSchema = z.object({
   displayColor: V2DisplayColorSchema.nullable(),
 }).strict()
 
-export const V2LiveVoteCandidateSchema = V2LiveInteractionPersonSchema.extend({
-  voteCount: z.number().int().nonnegative().max(300).nullable(),
-}).strict()
+export const V2LiveVoteCandidateSchema = z.union([
+  z.object({ candidateId: V2EntityIdSchema, displayLabel: z.string().trim().min(1).max(40),
+    voteCount: z.number().int().nonnegative().max(400).nullable() }).strict(),
+  // Stored events from schema 21 remain readable without binding new candidates to people.
+  V2LiveInteractionPersonSchema.extend({ voteCount: z.number().int().nonnegative().max(400).nullable() }).strict(),
+])
 
 export const V2LiveInteractionPublicStateSchema = z.object({
   revision: V2RevisionSchema,
@@ -220,19 +223,19 @@ export const V2LiveInteractionPublicStateSchema = z.object({
   roundNumber: z.number().int().nonnegative(),
   prompt: z.string().trim().max(120),
   opensAt: V2IsoDateTimeSchema.nullable().optional(),
-  buzzCount: z.number().int().nonnegative().max(300),
+  buzzCount: z.number().int().nonnegative().max(400),
   leader: V2LiveInteractionPersonSchema.nullable(),
   voteCandidates: z.array(V2LiveVoteCandidateSchema).max(12),
-  totalVotes: z.number().int().nonnegative().max(300),
+  totalVotes: z.number().int().nonnegative().max(400),
   resultsVisible: z.boolean(),
 }).strict()
 
 export const V2LiveInteractionParticipantStateSchema = V2LiveInteractionPublicStateSchema.extend({
   participation: z.object({
     hasBuzzed: z.boolean(),
-    buzzPosition: z.number().int().positive().max(300).nullable(),
+    buzzPosition: z.number().int().positive().max(400).nullable(),
     hasVoted: z.boolean(),
-    votedFor: V2PublicStarIdSchema.nullable(),
+    votedFor: V2EntityIdSchema.nullable(),
   }).strict(),
 }).strict()
 
@@ -292,7 +295,7 @@ export const V2PublicAggregateSchema = z
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.activatedCount > 300) {
+    if (value.activatedCount > 400) {
       context.addIssue({ code: 'custom', path: ['activatedCount'], message: 'activatedCount exceeds capacity' })
     }
     if (value.publicStarCount > value.activatedCount) {
@@ -404,7 +407,7 @@ export const V2AdminFunnelSchema = z
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.activatedCount > 300) {
+    if (value.activatedCount > 400) {
       context.addIssue({ code: 'custom', path: ['activatedCount'], message: 'activatedCount exceeds capacity' })
     }
     for (const [field, count] of [
@@ -677,6 +680,7 @@ export const V2RewardSummaryItemSchema = z
 
 export const V2ParticipantProjectionSchema = z
   .object({
+    accountType: z.enum(['STUDENT', 'STAFF']).default('STUDENT'),
     participantRevision: V2RevisionSchema,
     onboardingState: V2OnboardingStateSchema,
     displayName: z.string().trim().min(1).max(40),
@@ -815,6 +819,7 @@ function expectedAllowedActions(input: {
   participant: z.infer<typeof V2ParticipantProjectionSchema>
   currentProgram?: { kind: 'PERFORMANCE' | 'INTERLUDE' | 'DEFERRED' | 'AWARD' | 'SPEECH'; giftsEnabled?: boolean } | null
   liveInteraction?: z.infer<typeof V2LiveInteractionParticipantStateSchema>
+  stage?: z.infer<typeof V2StageSchema> | undefined
 }): V2AllowedAction[] {
   const { runtime, participant } = input
   if (runtime.status === 'PAUSED' || runtime.status === 'COMPLETED') return []
@@ -836,21 +841,15 @@ function expectedAllowedActions(input: {
       participant.admittedScene === 'ASSEMBLY' ||
       participant.admittedScene === 'PROGRAM_SUPPORT'
     ) {
-      if (!input.currentProgram || input.currentProgram.kind === 'PERFORMANCE' && input.currentProgram.giftsEnabled !== false) actions.push('SEND_GIFT')
+      if (input.stage?.mode !== 'HOST' && (!input.currentProgram || input.currentProgram.kind === 'PERFORMANCE' && input.currentProgram.giftsEnabled !== false)) actions.push('SEND_GIFT')
       actions.push('POST_BARRAGE')
-      if (input.liveInteraction?.phase === 'BUZZER_OPEN' && !input.liveInteraction.participation.hasBuzzed) {
+      if (participant.accountType !== 'STAFF' && input.liveInteraction?.segmentCode === 'A' && input.liveInteraction?.phase === 'BUZZER_OPEN' && !input.liveInteraction.participation.hasBuzzed) {
         actions.push('BUZZ_IN')
       }
-      if (input.liveInteraction?.phase === 'VOTE_OPEN' && !input.liveInteraction.participation.hasVoted) {
+      if (participant.accountType !== 'STAFF' && input.liveInteraction?.phase === 'VOTE_OPEN' && !input.liveInteraction.participation.hasVoted) {
         actions.push('CAST_AUDIENCE_VOTE')
       }
     }
-  }
-  if (
-    runtime.currentScene === 'COOPERATIVE_LIGHT' &&
-    participant.cooperativeLightAt === null
-  ) {
-    actions.push('COOPERATIVE_LIGHT')
   }
   return actions
 }
@@ -1077,7 +1076,7 @@ export const V2ScreenSnapshotSchema = z
     stage: V2StageSchema.optional(),
     awards: z.array(V2AwardSummarySchema).max(32).optional(),
     programs: V2ProgramScheduleSchema.default([]),
-    publicStars: z.array(V2PublicStarSchema).max(300),
+    publicStars: z.array(V2PublicStarSchema).max(400),
     aggregateRevision: V2RevisionSchema,
     aggregate: V2PublicAggregateSchema,
     currentProgram: V2ProgramProjectionSchema.nullable(),
@@ -1101,7 +1100,7 @@ export const V2ParticipantSnapshotSchema = z
     participantSeq: V2StreamSequenceSchema,
     participantStreamId: z.string().regex(/^participant:[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/),
     participant: V2ParticipantProjectionSchema,
-    publicStars: z.array(V2PublicStarSchema).max(300),
+    publicStars: z.array(V2PublicStarSchema).max(400),
     aggregateRevision: V2RevisionSchema,
     aggregate: V2PublicAggregateSchema,
     currentProgram: V2ProgramProjectionSchema.nullable(),
@@ -1211,7 +1210,7 @@ export const V2AdminSnapshotSchema = z
     publishedBarrages: z.array(V2AdminBarrageSchema).max(8),
     raffle: V2RaffleAdminStateSchema,
     liveInteraction: V2LiveInteractionPublicStateSchema,
-    capsuleCandidates: z.array(V2AdminCapsuleCandidateSchema).max(300),
+    capsuleCandidates: z.array(V2AdminCapsuleCandidateSchema).max(400),
     lastControlReceipt: z
       .object({
         command: z.string().min(1).max(64),
@@ -1352,7 +1351,7 @@ export const V2ParticipantCommandSchema = z.discriminatedUnion('command', [
   z.object({
     ...participantCommandBase,
     command: z.literal('CAST_AUDIENCE_VOTE'),
-    candidateStarId: V2PublicStarIdSchema,
+    candidateId: V2EntityIdSchema,
   }).strict(),
   z
     .object({
@@ -1522,6 +1521,7 @@ export const V2AdminCommandSchema = z.discriminatedUnion('command', [
   z.object({
     ...v2WriteBase,
     command: z.literal('OPEN_AUDIENCE_VOTE'),
+    candidates: z.array(z.string().trim().min(1).max(40)).min(2).max(12),
     expectedInteractionRevision: V2RevisionSchema,
     prompt: z.string().trim().min(1).max(120),
     confirmed: z.literal(true),
@@ -1646,6 +1646,7 @@ export const V2ParticipantCommandResponseSchema = z
     runtime: V2RuntimeTupleSchema,
     presentation: V2PresentationSchema,
     presentationRevision: V2RevisionSchema,
+    stage: V2StageSchema.optional(),
     currentProgram: V2ProgramProjectionSchema.nullable(),
     liveInteraction: V2LiveInteractionParticipantStateSchema,
     participant: V2ParticipantProjectionSchema,

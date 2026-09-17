@@ -73,7 +73,7 @@ export function applyV2CeremonyCommand(database: SqliteDatabase, request: Return
     if (request.confirmed && !request.entries.length) fail('SCENE_ACTION_INVALID', '请先录入获奖名单。')
     if (request.awardId === 'points-top20' && (request.entries.length > 20 || request.confirmed && request.entries.length !== 20)) fail('SCENE_ACTION_INVALID', '积分榜确认时须有 20 名获奖者，按排名顺序录入。')
     const entries = request.entries.map((entry, index) => ({ name: entry.name, detail: entry.detail,
-      ...(request.awardId === 'points-top20' ? { rank: index + 1 } : {}) }))
+      ...(['points-top20', 'photography', 'creativity'].includes(request.awardId) ? { rank: entry.rank ?? index + 1 } : {}) }))
     database.prepare(`INSERT INTO v2_awards(id, group_code, title, description, sort_order, entries_json, confirmed, revision)
       VALUES (?, ?, ?, '', (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM v2_awards), ?, ?, 1)
       ON CONFLICT(id) DO UPDATE SET title = excluded.title, entries_json = excluded.entries_json,

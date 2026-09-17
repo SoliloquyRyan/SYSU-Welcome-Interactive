@@ -81,6 +81,7 @@ function readyRuntime(runRevision = 0) {
 
 function needsColorParticipant() {
   return {
+    accountType: 'STUDENT',
     participantRevision: 1,
     onboardingState: 'NEEDS_COLOR' as const,
     displayName: '林同学（合成001）',
@@ -750,7 +751,7 @@ describe('protocol v2 shared contract', () => {
         ...snapshot,
         aggregate: {
           ...snapshot.aggregate,
-          activatedCount: 301,
+          activatedCount: 401,
         },
       }),
     ).toThrow()

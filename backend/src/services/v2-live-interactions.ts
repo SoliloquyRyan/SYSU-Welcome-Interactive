@@ -60,7 +60,7 @@ export function readV2LiveInteraction(
         WHERE reset_epoch = ? AND round_number = ?`).pluck().get(resetEpoch, state.roundNumber))
     : 0
   const revealVotes = state.phase === 'VOTE_REVEALED' || options.showHiddenResults === true
-  const candidates = state.phase.startsWith('VOTE')
+  const legacyCandidates = state.phase.startsWith('VOTE')
     ? database.prepare(`SELECT slot.public_star_id AS publicStarId,
           star.display_color AS displayColor,
           CASE WHEN ? THEN COUNT(vote.id) ELSE NULL END AS voteCount
@@ -78,10 +78,24 @@ export function readV2LiveInteraction(
           voteCount: number | null
         }>
     : []
+  const hasManualTables = Boolean(database.prepare("SELECT 1 FROM sqlite_schema WHERE name = 'v2_manual_vote_candidates'").get())
+  const manualCandidates = hasManualTables && state.phase.startsWith('VOTE')
+    ? database.prepare(`SELECT candidate.candidate_id AS candidateId, candidate.display_label AS displayLabel,
+        CASE WHEN ? THEN COUNT(vote.id) ELSE NULL END AS voteCount
+      FROM v2_manual_vote_candidates candidate LEFT JOIN v2_manual_audience_votes vote
+        ON vote.reset_epoch = candidate.reset_epoch AND vote.round_number = candidate.round_number
+        AND vote.candidate_id = candidate.candidate_id
+      WHERE candidate.reset_epoch = ? AND candidate.round_number = ?
+      GROUP BY candidate.candidate_id ORDER BY candidate.sort_order`)
+      .all(revealVotes ? 1 : 0, resetEpoch, state.roundNumber) as Array<{candidateId: string; displayLabel: string; voteCount: number | null}>
+    : []
+  const isManual = manualCandidates.length > 0
+  const candidates = isManual ? manualCandidates : legacyCandidates.map(candidate => ({
+    candidateId: candidate.publicStarId, displayLabel: candidate.publicStarId, voteCount: candidate.voteCount,
+  }))
   const totalVotes = state.phase.startsWith('VOTE')
-    ? Number(database.prepare(`SELECT COUNT(*) FROM v2_audience_votes
-        WHERE reset_epoch = ? AND round_number = ?`).pluck().get(resetEpoch, state.roundNumber))
-    : 0
+    ? Number(database.prepare(`SELECT COUNT(*) FROM ${isManual ? 'v2_manual_audience_votes' : 'v2_audience_votes'}
+        WHERE reset_epoch = ? AND round_number = ?`).pluck().get(resetEpoch, state.roundNumber)) : 0
   const base = {
     revision: state.revision,
     segmentCode: state.segmentCode,
@@ -109,7 +123,9 @@ export function readV2LiveInteraction(
   const buzz = database.prepare(`SELECT response_sequence AS responseSequence
     FROM v2_buzzer_entries WHERE reset_epoch = ? AND round_number = ? AND identity_id = ?`)
     .get(resetEpoch, state.roundNumber, options.identityId) as { responseSequence: number } | undefined
-  const vote = database.prepare(`SELECT slot.public_star_id AS publicStarId
+  const vote = isManual ? database.prepare(`SELECT candidate_id AS publicStarId FROM v2_manual_audience_votes
+    WHERE reset_epoch = ? AND round_number = ? AND identity_id = ?`).get(resetEpoch, state.roundNumber, options.identityId) as {publicStarId: string} | undefined
+    : database.prepare(`SELECT slot.public_star_id AS publicStarId
     FROM v2_audience_votes audience_vote
     JOIN v2_identity_slots slot ON slot.identity_id = audience_vote.candidate_identity_id
     WHERE audience_vote.reset_epoch = ? AND audience_vote.round_number = ?

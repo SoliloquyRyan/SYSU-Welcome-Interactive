@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 
-defineEmits(['open-archive'])
+defineEmits(['open-archive', 'open-programs'])
 
 const props = defineProps({
   participant: { type: Object, required: true },
@@ -16,7 +16,6 @@ const memories = computed(() => [
   [props.participant.started, '启动恒星'],
   [props.participant.firstGiftRewardedAt, '送出应援'],
   [props.participant.firstBarrageRewardedAt, '留下欢呼'],
-  [props.participant.cooperativeLightAt, '一起点亮'],
 ].filter(([confirmed]) => Boolean(confirmed)).map(([, label]) => label))
 </script>
 
@@ -32,8 +31,8 @@ const memories = computed(() => [
       <li v-for="memory in memories" :key="memory">{{ memory }}</li>
     </ol>
     <p v-else class="personal-memento__empty">你尚未完成入场，档案仍可查看。</p>
-    <p class="personal-memento__farewell">把今夜的光，带向更远的地方。</p>
-    <div class="personal-memento__footer"><span><span>本场活动已结束</span> · 记录已保存</span><button type="button" @click="$emit('open-archive')">查看个人档案 <span aria-hidden="true">↗</span></button></div>
+    <h2>以星光作序，<br>与未来相逢</h2><p class="personal-memento__farewell">愿你带着今晚的热爱，走向属于自己的辽阔。</p>
+    <div class="personal-memento__footer"><span><span>本场活动已结束</span> · 记录已保存</span><button type="button" @click="$emit('open-archive')">查看个人档案 <span aria-hidden="true">↗</span></button><button type="button" @click="$emit('open-programs')">节目致谢</button></div>
   </section>
 </template>
 
@@ -73,4 +72,5 @@ const memories = computed(() => [
 .personal-memento__footer{gap:10px;padding-top:14px}
 .personal-memento__footer button{padding:0 12px;border:1px solid rgba(173,205,233,.2);border-radius:12px;background:rgba(39,65,87,.2)}
 .personal-memento__identity strong{line-height:1.5}
+.personal-memento h2{font:700 28px/1.55 var(--font-family-ui);margin:28px 0 16px}.personal-memento__signature{width:26px;height:26px;clip-path:polygon(50% 0,60% 37%,100% 50%,60% 63%,50% 100%,40% 63%,0 50%,40% 37%)}
 </style>

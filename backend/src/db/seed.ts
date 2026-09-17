@@ -98,7 +98,7 @@ export const ProtectedRuntimeSecretSchema = z
     seedVersion: z.literal(PROTECTED_ROSTER_SEED_VERSION),
     generatedAt: z.string().datetime({ offset: true }),
     sourceSha256: z.string().regex(/^[a-f0-9]{64}$/),
-    participantCount: z.number().int().min(1).max(300),
+    participantCount: z.number().int().min(1).max(400),
     directoryFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     credentialPepper: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
     admin: z
@@ -304,6 +304,8 @@ function stableValue(value: unknown): unknown {
 export function fingerprintProtectedDirectoryDatabase(
   database: SqliteDatabase,
 ): string {
+  const hasRole = (database.pragma('table_info(synthetic_identities)') as Array<{name: string}>).some(column => column.name === 'account_type')
+  const staff = hasRole ? database.prepare("SELECT id FROM synthetic_identities WHERE account_type = 'STAFF' ORDER BY seed_index").pluck().all() : []
   const identities = database
     .prepare(
       `SELECT id, seed_index AS seedIndex, display_name AS displayName,
@@ -354,6 +356,7 @@ export function fingerprintProtectedDirectoryDatabase(
 
   return sha256(JSON.stringify(stableValue({
     identities,
+    ...(staff.length ? { staff } : {}),
     invitations,
     programs,
     gifts,

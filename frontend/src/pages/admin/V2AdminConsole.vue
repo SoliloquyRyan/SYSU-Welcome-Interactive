@@ -16,7 +16,7 @@ import { adminSnapshotCanReplace, createAdminSessionGeneration } from './v2-admi
 import { interactionLabel } from '../../services/interaction-label'
 
 const sceneLabels = {
-  ASSEMBLY: '01 星海集结', PROGRAM_SUPPORT: '02 节目应援', COOPERATIVE_LIGHT: '03 协同点亮',
+  ASSEMBLY: '01 星海集结', PROGRAM_SUPPORT: '02 节目应援', COOPERATIVE_LIGHT: '03 谢幕准备',
 }
 const warningLabels = {
   ONBOARDING_PENDING: '仍有人尚未完成个人入场',
@@ -54,7 +54,7 @@ const busy = ref('')
 const workflowBusy = ref('')
 const workflowProgress = ref(null)
 const workflow = createAdminWorkflow()
-const startMode = ref('REHEARSAL')
+const startMode = ref(protectedRuntime ? 'LIVE' : 'REHEARSAL')
 const errorMessage = ref('')
 const successMessage = ref('')
 const receiptMessage = ref('')
@@ -64,6 +64,9 @@ const awardSavedSignal = ref(0)
 const heatSavedSignal = ref(0)
 const buzzerPrompt = ref('准备抢答')
 const votePrompt = ref('谁是卧底 · 现场投票')
+const voteCandidateCount = ref(6)
+const voteLabels = ref(Array.from({ length: 12 }, (_, index) => `${index + 1}号选手`))
+const draftCandidates = computed(() => voteLabels.value.slice(0, Math.max(2, Math.min(12, Number(voteCandidateCount.value) || 2))).map((label, index) => label.trim() || `${index + 1}号选手`))
 const sessionGeneration = createAdminSessionGeneration()
 
 const runtime = computed(() => snapshot.value?.runtime)
@@ -266,26 +269,6 @@ async function runWorkflow(name, steps) {
   } finally { workflowBusy.value = '' }
 }
 
-async function finishRaffleAndVote() {
-  if (!canStageWrite.value || presentation.value.type !== 'RAFFLE' || liveInteraction.value.phase !== 'IDLE') return
-  const winners = raffle.value?.winners ?? []
-  if (winners.length < 2 || winners.length > 12) return
-  const programId = currentProgram.value?.id, epoch = snapshot.value.resetEpoch, prompt = votePrompt.value.trim() || '谁是卧底 · 现场投票'
-  const signature = winners.map(item => item.raffleDrawId).join(',')
-  if (!await askAction('完成抽取并开放“' + prompt + '”？候选星号：' + winners.map(item => item.publicStarId).join('、') + '。')) return
-  if (!canStageWrite.value || snapshot.value.resetEpoch !== epoch) return
-  const same = s => s.runtime.status === 'RUNNING' && s.runtime.currentScene === 'PROGRAM_SUPPORT' && s.currentProgram?.id === programId
-    && (s.raffle?.winners ?? []).map(item => item.raffleDrawId).join(',') === signature
-  await runWorkflow('抽取转投票', [
-    { label: '收起抽取画面', canRun: s => same(s) && s.presentation.type === 'RAFFLE' && s.liveInteraction.phase === 'IDLE',
-      build: s => ({ ...base('CLOSE_RAFFLE'), expectedRunRevision: s.runtime.runRevision, expectedPresentationRevision: s.presentationRevision, confirmed: true }),
-      matches: s => same(s) && s.presentation.type === 'NONE' },
-    { label: '开放观众投票', canRun: s => same(s) && s.presentation.type === 'NONE' && s.liveInteraction.phase === 'IDLE',
-      build: s => ({ ...base('OPEN_AUDIENCE_VOTE'), expectedInteractionRevision: s.interaction.interactionRevision, prompt, confirmed: true }),
-      matches: s => same(s) && s.liveInteraction.phase === 'VOTE_OPEN' },
-  ])
-}
-
 async function finishInteractionAndNext() {
   if (!canFinishInteraction.value) return
   const source = currentProgram.value.id, target = nextProgram.value.id, title = nextProgram.value.title, epoch = snapshot.value.resetEpoch
@@ -346,29 +329,29 @@ async function confirmProgress(command, message, success) {
   return runCommand(body, success, true, warnings)
 }
 function advance() {
-  const next = snapshot.value.programs.find(({ state }) => state === 'NEXT')
-  const message = runtime.value.currentScene === 'PROGRAM_SUPPORT'
-    ? `确认结束节目应援并进入协同点亮？进入后不能回到节目。${next ? `目录中接下来还有“${next.title}”，如需换节目请使用“切换到下一项”。` : ''}`
-    : '确认结束星海集结并进入节目应援？'
-  return confirmProgress('ADVANCE', message, '已推进到下一场景。')
+  if (runtime.value.currentScene !== 'ASSEMBLY') return
+  return confirmProgress('ADVANCE', '确认结束星海集结并进入节目应援？', '已进入节目应援。')
 }
 function pause() { return runCommand({ ...base('PAUSE'), expectedRunRevision: runtime.value.runRevision, expectedPresentationRevision: snapshot.value.presentationRevision, confirmed: true }, '全场已暂停。') }
 function resume() { return runCommand({ ...base('RESUME'), expectedRunRevision: runtime.value.runRevision, confirmed: true }, '全场已恢复。') }
-function previewFinale() { return runCommand({ ...base('PREVIEW_FINALE'), expectedRunRevision: runtime.value.runRevision, expectedPresentationRevision: snapshot.value.presentationRevision, confirmed: true }, '终章预览已打开。') }
+async function previewFinale() {
+  if (!canStageWrite.value || runtime.value.mode !== 'REHEARSAL' || presentation.value.type !== 'NONE') return
+  if (!await askAction('预览约 165 秒电影片尾？排练结束后仍可返回节目。')) return
+  const steps = []
+  if (runtime.value.currentScene !== 'COOPERATIVE_LIGHT') steps.push({ label: '进入谢幕准备',
+    canRun: s => s.runtime.mode === 'REHEARSAL' && s.runtime.status === 'RUNNING' && s.presentation.type === 'NONE',
+    build: s => ({ ...base('SET_SCENE'), expectedRunRevision: s.runtime.runRevision, expectedPresentationRevision: s.presentationRevision, targetScene: 'COOPERATIVE_LIGHT', confirmed: true }),
+    matches: s => s.runtime.currentScene === 'COOPERATIVE_LIGHT' })
+  steps.push({ label: '播放片尾预览', canRun: s => s.runtime.mode === 'REHEARSAL' && s.runtime.status === 'RUNNING' && s.runtime.currentScene === 'COOPERATIVE_LIGHT' && s.presentation.type === 'NONE',
+    build: s => ({ ...base('PREVIEW_FINALE'), expectedRunRevision: s.runtime.runRevision, expectedPresentationRevision: s.presentationRevision, confirmed: true }),
+    matches: s => s.presentation.type === 'FINALE_PREVIEW' })
+  return runWorkflow('片尾预览', steps)
+}
+
 function complete() {
-  return confirmProgress('COMPLETE', '这是不可逆操作。确认结束活动并锁定终章？', '活动已完成并锁定终章。')
+  return confirmProgress('COMPLETE', '确认结束晚会并播放约 165 秒片尾？结束后立即停止送礼、弹幕与投票，并锁定为只读。', '活动已完成并锁定终章。')
 }
 function clearPresentation() { return runCommand({ ...base('CLEAR_PRESENTATION'), expectedRunRevision: runtime.value.runRevision, expectedPresentationRevision: snapshot.value.presentationRevision, confirmed: true }, '活动投影已清除。') }
-function raffleCommand(command, success) {
-  return runCommand({ ...base(command), expectedRunRevision: runtime.value.runRevision, expectedPresentationRevision: snapshot.value.presentationRevision, confirmed: true }, success)
-}
-function openRaffle() { return raffleCommand('OPEN_RAFFLE', '上台观众抽取大屏已开启。') }
-function drawRaffle() { return raffleCommand('DRAW_RAFFLE', '已抽出一位上台观众，大屏将按顺序揭晓。') }
-function closeRaffle() { return raffleCommand('CLOSE_RAFFLE', '观众抽取大屏已关闭，候选记录已保留。') }
-async function clearRaffle() {
-  if (!await askAction('确认清空本轮全部上台观众记录？此操作仅用于排练。')) return
-  return raffleCommand('CLEAR_RAFFLE', '排练观众抽取记录已清空。')
-}
 function liveCommand(command, payload, success) {
   return runCommand({
     ...base(command),
@@ -378,15 +361,20 @@ function liveCommand(command, payload, success) {
   }, success)
 }
 function openBuzzer() {
-  if (!['A', 'C'].includes(currentInteractionCode.value)) return
+  if (currentInteractionCode.value !== 'A') return
   const defaultPrompt = currentInteractionCode.value === 'A' ? '歌名 decoder · 立即抢答' : '谁是最“人” · 立即抢答'
   return liveCommand('OPEN_BUZZER', {
     segmentCode: currentInteractionCode.value,
     prompt: buzzerPrompt.value.trim() || defaultPrompt,
   }, `${interactionLabel(currentInteractionCode.value)}抢答已开放。`)
 }
-function openAudienceVote() {
-  return liveCommand('OPEN_AUDIENCE_VOTE', { prompt: votePrompt.value.trim() || '谁是卧底 · 现场投票' }, '互动环节二 的观众投票已开放。')
+async function openAudienceVote() {
+  if (!canStageWrite.value || liveInteraction.value.phase !== 'IDLE') return
+  const candidates = [...draftCandidates.value], prompt = votePrompt.value.trim() || '谁是卧底 · 现场投票'
+  const epoch = snapshot.value.resetEpoch, revision = snapshot.value.interaction.interactionRevision
+  if (!await askAction(`开放“${prompt}”？选手：${candidates.join('、')}。开放后本轮选手不可修改。`)) return
+  if (!canStageWrite.value || snapshot.value.resetEpoch !== epoch || snapshot.value.interaction.interactionRevision !== revision) return
+  return liveCommand('OPEN_AUDIENCE_VOTE', { prompt, candidates }, '互动二投票已开放。')
 }
 async function revealAudienceVote() {
   if (!canStageWrite.value || liveInteraction.value.phase !== 'VOTE_OPEN') return
@@ -492,10 +480,10 @@ void boot()
           </template>
           <template v-if="runtime.status === 'RUNNING'">
             <BaseButton variant="secondary" :disabled="!canStageWrite" @click="pause">暂停</BaseButton>
-            <BaseButton v-if="runtime.mode === 'LIVE' && runtime.currentScene !== 'COOPERATIVE_LIGHT'" :disabled="!canStageWrite" @click="advance">推进下一场景</BaseButton>
+            <BaseButton v-if="runtime.mode === 'LIVE' && runtime.currentScene === 'ASSEMBLY'" :disabled="!canStageWrite" @click="advance">推进下一场景</BaseButton>
             <BaseButton v-if="runtime.mode === 'REHEARSAL'" v-for="scene in Object.keys(sceneLabels)" :key="scene" variant="secondary" :disabled="!canStageWrite || scene === runtime.currentScene" @click="setScene(scene)">{{ sceneLabels[scene] }}</BaseButton>
-            <BaseButton v-if="runtime.mode === 'REHEARSAL' && runtime.currentScene === 'COOPERATIVE_LIGHT' && presentation.type === 'NONE'" :disabled="!canStageWrite" @click="previewFinale">预览终章</BaseButton>
-            <BaseButton v-if="runtime.mode === 'LIVE' && runtime.currentScene === 'COOPERATIVE_LIGHT'" variant="danger" :disabled="!canStageWrite" @click="complete">结束并锁定终章</BaseButton>
+            <BaseButton v-if="runtime.mode === 'REHEARSAL' && ['PROGRAM_SUPPORT','COOPERATIVE_LIGHT'].includes(runtime.currentScene) && presentation.type === 'NONE'" :disabled="!canStageWrite" @click="previewFinale">预览电影片尾</BaseButton>
+            <BaseButton v-if="runtime.mode === 'LIVE' && ['PROGRAM_SUPPORT', 'COOPERATIVE_LIGHT'].includes(runtime.currentScene)" variant="danger" :disabled="!canStageWrite" @click="complete">结束晚会并播放片尾</BaseButton>
           </template>
           <BaseButton v-if="runtime.status === 'PAUSED'" :disabled="!canStageWrite" @click="resume">恢复运行</BaseButton>
           <BaseButton v-if="presentation.type !== 'NONE' && runtime.status !== 'COMPLETED'" variant="secondary" :disabled="!canWrite" @click="clearPresentation">清除当前投影</BaseButton>
@@ -529,7 +517,7 @@ void boot()
           </StatusPill>
         </div>
 
-        <section v-if="['A', 'C'].includes(currentInteractionCode)" class="interaction-operation" aria-labelledby="buzzer-heading">
+        <section v-if="currentInteractionCode === 'A'" class="interaction-operation" aria-labelledby="buzzer-heading">
           <div><h3 id="buzzer-heading">抢答</h3></div>
           <label>大屏提示<input v-model="buzzerPrompt" maxlength="120" :placeholder="currentInteractionCode === 'A' ? '歌名 decoder · 立即抢答' : '谁是最“人” · 立即抢答'"></label>
           <div class="control-actions">
@@ -541,37 +529,24 @@ void boot()
         </section>
 
         <section v-else-if="currentInteractionCode === 'B'" class="interaction-operation" aria-labelledby="audience-heading">
-          <div><h3 id="audience-heading">上台观众抽取与投票</h3><p>抽取 2–12 位观众后开放投票。</p></div>
+          <div><h3 id="audience-heading">谁是卧底 · 选手与投票</h3><p>设置 2～12 位现场选手，确认后开放观众投票。</p></div>
+          <fieldset :disabled="!canStageWrite || liveInteraction.phase !== 'IDLE'" class="vote-candidate-editor">
+            <label>选手人数<input v-model.number="voteCandidateCount" type="number" min="2" max="12"></label>
+            <label v-for="(_, i) in draftCandidates" :key="i">选手 {{ i + 1 }}<input v-model="voteLabels[i]" maxlength="40" :placeholder="`${i + 1}号选手`"></label>
+            <label>投票题目<input v-model="votePrompt" maxlength="120"></label>
+          </fieldset>
           <div class="control-actions">
-            <BaseButton v-if="presentation.type === 'NONE' && liveInteraction.phase === 'IDLE'" :disabled="!canStageWrite || !raffle?.remainingCount" @click="openRaffle">开启观众抽取</BaseButton>
-            <BaseButton v-if="presentation.type === 'RAFFLE'" :disabled="!canStageWrite || !raffle?.remainingCount || (raffle?.winners.length ?? 0) >= 12" @click="drawRaffle">抽取一位</BaseButton>
-            <BaseButton v-if="presentation.type === 'RAFFLE'" variant="secondary" :disabled="!canStageWrite" @click="closeRaffle">完成抽取</BaseButton>
-            <BaseButton v-if="runtime.mode === 'REHEARSAL' && raffle?.winners.length && liveInteraction.phase === 'IDLE' && presentation.type === 'NONE'" variant="danger" :disabled="!canDemoWrite" @click="clearRaffle">清空排练结果</BaseButton>
+            <BaseButton v-if="liveInteraction.phase === 'IDLE'" :disabled="!canStageWrite || runtime.status !== 'RUNNING' || presentation.type !== 'NONE'" @click="openAudienceVote">确认选手并开放投票</BaseButton>
+            <BaseButton v-if="liveInteraction.phase === 'VOTE_OPEN'" :disabled="!canStageWrite" @click="revealAudienceVote">关闭投票并揭晓</BaseButton>
+            <BaseButton v-if="liveInteraction.phase === 'VOTE_REVEALED'" variant="secondary" :disabled="!canStageWrite" @click="closeLiveInteraction">收起本轮结果</BaseButton>
           </div>
-          <dl class="raffle-summary">
-            <div><dt>可抽取观众</dt><dd>{{ raffle?.eligibleCount ?? 0 }}</dd></div>
-            <div><dt>仍可抽取</dt><dd>{{ raffle?.remainingCount ?? 0 }}</dd></div>
-            <div><dt>上台候选</dt><dd>{{ raffle?.winners.length ?? 0 }} / 12</dd></div>
-          </dl>
-          <p v-if="!raffle?.winners.length" class="quiet">还没有抽取上台观众。</p>
-          <ol v-else class="winner-list" aria-label="已抽取的上台观众">
-            <li v-for="item in raffle.winners.slice(0, 12)" :key="item.raffleDrawId"><span>候选 {{ item.drawSequence }}</span><strong>{{ item.displayName }}</strong><code>{{ item.publicStarId }}</code></li>
-          </ol>
-          <p v-if="presentation.type === 'RAFFLE'" class="quiet">大屏会逐位揭晓。请等最后一位展示完成，再点击「完成抽取」。</p>
-          <div v-if="['NONE', 'RAFFLE'].includes(presentation.type) && raffle?.winners.length >= 2" class="vote-control">
-            <label>投票标题<input v-model="votePrompt" maxlength="120" placeholder="谁是卧底 · 现场投票"></label>
-            <div class="control-actions">
-              <BaseButton v-if="presentation.type === 'RAFFLE'" :disabled="!canStageWrite || runtime.status !== 'RUNNING' || raffle.winners.length > 12" @click="finishRaffleAndVote">完成抽取并开放投票</BaseButton>
-              <BaseButton v-if="presentation.type === 'NONE' && liveInteraction.phase === 'IDLE'" :disabled="!canStageWrite || runtime.status !== 'RUNNING'" @click="openAudienceVote">开放观众投票</BaseButton>
-              <BaseButton v-if="liveInteraction.phase === 'VOTE_OPEN'" :disabled="!canStageWrite" @click="revealAudienceVote">揭晓投票结果</BaseButton>
-              <BaseButton v-if="['VOTE_OPEN', 'VOTE_REVEALED'].includes(liveInteraction.phase)" variant="secondary" :disabled="!canStageWrite" @click="closeLiveInteraction">关闭本轮互动</BaseButton>
-            </div>
-            <div v-if="liveInteraction.phase.startsWith('VOTE')" class="admin-vote-board">
-              <p>已收到 <strong>{{ liveInteraction.totalVotes }}</strong> 票</p>
-              <ul><li v-for="candidate in liveInteraction.voteCandidates" :key="candidate.publicStarId"><span>{{ candidate.publicStarId }}</span><i><b :style="{ transform: `scaleX(${liveInteraction.totalVotes ? (candidate.voteCount ?? 0) / liveInteraction.totalVotes : 0})` }"></b></i><strong>{{ candidate.voteCount ?? 0 }}</strong></li></ul>
-            </div>
+          <div v-if="liveInteraction.phase.startsWith('VOTE')" class="admin-vote-board">
+            <p>已收到 <strong>{{ liveInteraction.totalVotes }}</strong> 票</p>
+            <ul><li v-for="candidate in liveInteraction.voteCandidates" :key="candidate.candidateId"><span>{{ candidate.displayLabel }}</span><i><b :style="{ transform: `scaleX(${liveInteraction.totalVotes ? (candidate.voteCount ?? 0) / liveInteraction.totalVotes : 0})` }"></b></i><strong>{{ candidate.voteCount ?? 0 }}</strong></li></ul>
           </div>
         </section>
+        <section v-else-if="currentInteractionCode === 'C'" class="interaction-operation"><h3>谁是最“人” · 线下互动</h3><p>由主持人组织现场互动。结束后在节目目录执行下一项。</p></section>
+
 
 
       </BaseCard>
@@ -590,7 +565,6 @@ void boot()
             <div><dt>已入场</dt><dd>{{ snapshot.funnel.admittedCount }}</dd></div>
             <div><dt>待完成入场</dt><dd>{{ snapshot.funnel.onboardingPendingCount }}</dd></div>
             <div><dt>恒星已启动</dt><dd>{{ snapshot.funnel.starStartedCount }}</dd></div>
-            <div><dt>协同点亮完成</dt><dd>{{ snapshot.funnel.cooperativeLightCount }}</dd></div>
           </dl>
         </BaseCard>
         <BaseCard padding="md">
@@ -1196,6 +1170,7 @@ void boot()
 .v2-admin summary:focus-visible{outline:2px solid var(--color-orbit-focus);outline-offset:4px}
 @media(max-width:680px){.v2-admin{gap:14px}.v2-heading{align-items:center;gap:16px;padding-block:8px}.v2-heading-actions{width:100%;justify-content:space-between}.v2-admin :deep(.base-card){padding:18px}.runtime-facts{gap:8px}.runtime-facts>div{padding:10px}.runtime-facts strong{font-size:.9rem}.runtime-card>.control-actions>button{flex:1 1 130px;margin-right:0;white-space:normal;line-height:1.4;padding-block:10px}.panel-heading>.control-actions{width:100%}.panel-heading>.control-actions>button{flex:1 1 120px}.attendance-overview>summary{padding:13px 16px;flex-wrap:wrap;gap:6px}.attendance-overview>summary>span{font-size:.73rem}.feedback-stack{top:auto}.feedback{padding:10px 12px}.v2-admin .login-card{padding:22px}.interaction-operation input{box-sizing:border-box}.candidate-actions>button{flex:1;min-width:0}}
 
+.vote-candidate-editor{border:0;padding:0;display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}.vote-candidate-editor label:last-child{grid-column:1/-1}
 </style>
 
 <style scoped src="./obs-console.css"></style>

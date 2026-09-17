@@ -184,14 +184,6 @@ function readinessWarnings(
     ).pluck().get(runtime.resetEpoch))
     if (pending > 0) warnings.push('STAR_START_PENDING')
   }
-  if (command === 'COMPLETE') {
-    const pending = Number(database.prepare(
-      `SELECT count(*) FROM v2_participant_states
-       WHERE reset_epoch = ? AND onboarding_state = 'ADMITTED'
-         AND cooperative_light_at IS NULL`,
-    ).pluck().get(runtime.resetEpoch))
-    if (pending > 0) warnings.push('COOPERATIVE_LIGHT_PENDING')
-  }
   return warnings
 }
 
@@ -516,7 +508,7 @@ export function executeV2RuntimeCommand(
       updateRuntimeTuple = false
       const live = readLiveInteractionRow(database, runtime.resetEpoch)
       if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' ||
-          runtime.presentationType !== 'NONE' || currentInteractionCode(database) !== request.segmentCode) {
+          runtime.presentationType !== 'NONE' || request.segmentCode !== 'A' || live.phase !== 'IDLE' || currentInteractionCode(database) !== 'A') {
         throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', `只有互动环节 ${request.segmentCode} 进行中时才能开放本轮抢答。`, 409)
       }
       setLiveInteraction(database, runtime, {
@@ -530,13 +522,14 @@ export function executeV2RuntimeCommand(
     } else if (request.command === 'OPEN_AUDIENCE_VOTE') {
       updateRuntimeTuple = false
       const live = readLiveInteractionRow(database, runtime.resetEpoch)
-      const candidates = Number(database.prepare(`SELECT COUNT(*) FROM v2_raffle_draws
-        WHERE reset_epoch = ? AND draw_sequence <= 12`).pluck().get(runtime.resetEpoch))
       if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' ||
-          runtime.presentationType !== 'NONE' || currentInteractionCode(database) !== 'B') {
-        throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '只有互动环节 B 进行中且抽取大屏关闭后才能开放投票。', 409)
+          runtime.presentationType !== 'NONE' || currentInteractionCode(database) !== 'B' || live.phase !== 'IDLE') {
+        throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '仅互动二空闲时可设置选手并开放投票；请先收起上一轮。', 409)
       }
-      if (candidates < 2) throw new V2RuntimeCommandError('RESOURCE_NOT_FOUND', '请先抽取至少两位上台观众。', 409)
+      const insertCandidate = database.prepare(`INSERT INTO v2_manual_vote_candidates
+        (reset_epoch, round_number, candidate_id, display_label, sort_order) VALUES (?, ?, ?, ?, ?)`)
+      request.candidates.forEach((label, index) => insertCandidate.run(runtime.resetEpoch,
+        live.roundNumber + 1, `candidate:${randomUUID()}`, label, index + 1))
       setLiveInteraction(database, runtime, {
         segmentCode: 'B',
         phase: 'VOTE_OPEN',
@@ -960,7 +953,7 @@ export function executeV2RuntimeCommand(
       if (runtime.presentationType === 'NONE') throw new V2RuntimeCommandError('PRESENTATION_STATE_INVALID', '当前没有活动投影。', 409)
       nextPresentationRevision = clearPresentation(database, runtime, timestamp)
     } else {
-      if (runtime.mode !== 'LIVE' || runtime.status !== 'RUNNING' || runtime.currentScene !== 'COOPERATIVE_LIGHT') throw new V2RuntimeCommandError('SCENE_TRANSITION_INVALID', '只能从 LIVE 协同点亮场景完成活动。', 409)
+      if (runtime.mode !== 'LIVE' || runtime.status !== 'RUNNING' || !['PROGRAM_SUPPORT', 'COOPERATIVE_LIGHT'].includes(runtime.currentScene ?? '')) throw new V2RuntimeCommandError('SCENE_TRANSITION_INVALID', '只能从正式节目阶段结束晚会。', 409)
       const displayed = database.prepare(
         `SELECT capsule.capsule_id AS capsuleId, star.public_star_id AS publicStarId,
                 star.color_temperature_kelvin AS colorTemperatureKelvin,

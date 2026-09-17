@@ -1,4 +1,5 @@
 <script setup>
+import { createBarrageLanes } from '../../rendering/barrage-lanes'
 import { createGiftSkyQueue } from '../../rendering/gift-sky-queue'
 import { useBuzzerCountdown } from '../../composables/useBuzzerCountdown'
 import GiftSignalIcon from '../student/GiftSignalIcon.vue'
@@ -22,12 +23,12 @@ import { createCinematicGalaxyScene, projectPublicStar } from './cinematic-galax
 import ClosingCredits from './ClosingCredits.vue'
 import AwardStage from './AwardStage.vue'
 import { createRaffleReveal } from './raffle-reveal'
-import { cooperativeLightProgress, screenPresentationCanReplace, screenSnapshotCanReplace } from './v2-screen-state'
+import { screenPresentationCanReplace, screenSnapshotCanReplace } from './v2-screen-state'
 
 const sceneCopy = {
   ASSEMBLY: { title: '星海集结', subtitle: '每一颗抵达的星，正在汇入同一片星河' },
   PROGRAM_SUPPORT: { title: '节目共振', subtitle: '此刻的欢呼，正在现场发生' },
-  COOPERATIVE_LIGHT: { title: '协同点亮', subtitle: '让彼此的光，在这一刻连成星海' },
+  COOPERATIVE_LIGHT: { title: '今夜，因你们而闪耀', subtitle: '感谢每一次登场，也感谢每一束来自台下的光' },
 }
 
 const snapshot = ref(null)
@@ -46,6 +47,7 @@ const transparentMedia = computed(() => route.query.media === 'overlay' && !hasP
 const programCue = ref(null)
 const pageHidden = ref(document.hidden)
 let programCueTimer = null
+let cueBarrages = []
 const router = useRouter()
 const systemReducedMotion = useReducedMotion()
 const motionPreference = computed(() => ['system', 'reduced'].includes(route.query.motion) ? route.query.motion : 'full')
@@ -79,7 +81,8 @@ let barrageSerial = 0
 const DEFAULT_SCENE_TRANSITION_MS = 1800
 const PROGRAM_OPENING_TRANSITION_MS = CINEMA_TIMING.openingMs
 const MAX_FLYING_BARRAGES = 24
-const BARRAGE_LANE_COUNT = 10
+const BARRAGE_LANE_COUNT = 4
+const barrageLanes = createBarrageLanes(BARRAGE_LANE_COUNT)
 const MAX_STATIC_BARRAGES = 3
 
 function clearGiftFlights() {
@@ -117,7 +120,6 @@ const buzzerCountdown = useBuzzerCountdown(liveInteraction, computed(() => snaps
 const giftRoomStats = computed(() => snapshot.value?.currentProgram?.kind === 'PERFORMANCE'
   ? (snapshot.value.currentProgram.giftCatalog ?? [])
   : [])
-const cooperative = computed(() => cooperativeLightProgress(snapshot.value?.aggregate))
 const ceremonyStage = computed(() => snapshot.value?.stage ?? { mode: 'PROGRAM', revision: 0, revealed: false, page: 0, totalPages: 1, award: null })
 const ceremonyVisible = computed(() => currentScene.value === 'PROGRAM_SUPPORT' && !openingProgram.value && !completed.value
   && presentation.value.type === 'NONE' && liveInteraction.value.phase === 'IDLE'
@@ -332,6 +334,8 @@ function removeFlyingBarrage(barrageId) {
 }
 
 function clearFlyingBarrages() {
+  cueBarrages = []
+  barrageLanes.clear()
   for (const timer of barrageTimers.values()) window.clearTimeout(timer)
   barrageTimers.clear()
   for (const animation of barrageAnimations.values()) {
@@ -348,14 +352,30 @@ function finishBarrageFlight(barrageId) {
 
 async function animateBarrage(barrage) {
   if (!interactionVisible.value || document.hidden) return
+  if (programCue.value && !showPersistentCredits.value) {
+    cueBarrages = [...cueBarrages.filter(item => item.barrageId !== barrage.barrageId), barrage].slice(-4)
+    return
+  }
   const staticDisplay = reducedMotion.value
   const serial = barrageSerial++
+  const probe = document.createElement('p')
+  probe.className = 'v2-barrage-stream__item'
+  probe.style.cssText = 'visibility:hidden;animation:none;transform:none;position:absolute;white-space:nowrap'
+  for (const name of root.value?.getAttributeNames() ?? []) if (name.startsWith('data-v-')) probe.setAttribute(name, '')
+  probe.textContent = barrage.text
+  root.value?.appendChild(probe)
+  const textWidth = probe.getBoundingClientRect().width
+  probe.remove()
+  const slot = staticDisplay ? { lane: serial % BARRAGE_LANE_COUNT, durationMs: 9800 }
+    : barrageLanes.reserve(textWidth, root.value?.clientWidth || window.innerWidth, performance.now())
+  if (!slot) return
   const flight = {
     barrageId: barrage.barrageId,
     text: barrage.text,
     colorStyle: barrage.colorStyle,
-    lane: serial % BARRAGE_LANE_COUNT,
-    durationMs: 9_800 + (serial % 5) * 420,
+    lane: slot.lane,
+    durationMs: slot.durationMs,
+    customColor: barrage.customColor,
     gsapAnimated: Boolean(gsap) && !staticDisplay,
   }
   const capacity = staticDisplay ? MAX_STATIC_BARRAGES : MAX_FLYING_BARRAGES
@@ -585,7 +605,13 @@ async function onLiveEvent(frame) {
     if (changed) { clearTimeout(programCueTimer); programCue.value = null; clearGiftFlights(); clearFlyingBarrages() }
     if (changed && interactionVisible.value) {
       programCue.value = snapshot.value.currentProgram
-      programCueTimer = setTimeout(() => { programCue.value = null }, 8500)
+      programCueTimer = setTimeout(() => {
+        programCue.value = null
+        const waiting = cueBarrages; cueBarrages = []
+        for (const barrage of waiting) {
+          if (snapshot.value?.publishedBarrages.some(item => item.barrageId === barrage.barrageId)) void animateBarrage(barrage)
+        }
+      }, 8500)
     }
   } else if (frame.name === 'live.interaction.changed') {
     snapshot.value.interaction.interactionRevision = payload.interactionRevision
@@ -727,9 +753,9 @@ onBeforeUnmount(() => {
     <div ref="stageBackdrop" class="v2-stage-backdrop" aria-hidden="true"></div>
     <ProgramStageBackground v-if="sceneTransition?.fromScene === 'PROGRAM_SUPPORT' && sceneTransition.toScene !== 'PROGRAM_SUPPORT' && !transparentMedia" class="city-outgoing" :theme="cityTheme.id" paused :branded="false" />
     <ProgramStageBackground v-if="currentScene === 'PROGRAM_SUPPORT' && !completed && !transparentMedia && !ceremonyVisible"
-      class="v2-program-stage" :stars="stageStars" :visual="activeVisual" :theme="cityTheme.id" :variant="programBackground(snapshot?.currentProgram, ceremonyStage)" :audio="audioEnabled" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED' || Boolean(sceneTransition)" @sky-points="skyPoints = $event" @audio-status="audioAvailable = $event" />
+      class="v2-program-stage" :stars="stageStars" :effects="giftFlights" :visual="activeVisual" :theme="cityTheme.id" :variant="programBackground(snapshot?.currentProgram, ceremonyStage)" :audio="audioEnabled" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED' || Boolean(sceneTransition)" @sky-points="skyPoints = $event" @audio-status="audioAvailable = $event" />
     <StarCityAtmosphere v-if="currentScene === 'PROGRAM_SUPPORT' && transparentMedia && !completed && !ceremonyVisible" overlay :stars="stageStars" :effects="giftFlights" :visual="activeVisual" :audio="audioEnabled" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED' || Boolean(sceneTransition)" @sky-points="skyPoints = $event" @audio-status="audioAvailable = $event" />
-    <Transition name="ceremony-fade"><AwardStage v-if="ceremonyVisible" :stage="ceremonyStage" :stars="stageStars" :audio="audioEnabled" :title="snapshot?.currentProgram?.kind === 'SPEECH' ? snapshot.currentProgram.title : ''" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED'" @audio-status="audioAvailable = $event" /></Transition>
+    <Transition name="ceremony-fade"><AwardStage v-if="ceremonyVisible" :stage="ceremonyStage" :stars="stageStars" :audio="audioEnabled" :title="snapshot?.currentProgram?.kind === 'SPEECH' ? snapshot.currentProgram.title : '2026迎新晚会'" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED'" @audio-status="audioAvailable = $event" /></Transition>
     <canvas ref="canvas" class="v2-galaxy" aria-hidden="true"></canvas>
     <ArrivalCount v-if="snapshot && currentScene === 'ASSEMBLY' && !completed && presentation.type === 'NONE'"
       :count="snapshot.aggregate.admittedCount" :reduced="reducedMotion" />
@@ -779,7 +805,7 @@ onBeforeUnmount(() => {
       <div v-if="completed || previewingFinale" ref="finaleLayer" class="v2-finale">
         <ClosingCredits :key="`${snapshot.resetEpoch}-${completed ? 'complete' : 'preview'}`"
           :programs="snapshot.programs ?? []" :aggregate="snapshot.aggregate"
-          :recap="snapshot.closingRecap"
+          :recap="snapshot.closingRecap" :background-visual="activeVisual"
           :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED'"
           :play="finaleMotion" :preview="previewingFinale" />
       </div>
@@ -812,8 +838,8 @@ onBeforeUnmount(() => {
           <template v-else>
             <p class="v2-vote-count">已收到 <strong>{{ liveInteraction.totalVotes }}</strong> 票</p>
             <div class="v2-vote-board">
-              <article v-for="candidate in liveInteraction.voteCandidates" :key="candidate.publicStarId" :style="{ '--candidate-color': candidate.displayColor }">
-                <span>{{ candidate.publicStarId }}</span><i><b :style="{ transform: `scaleX(${liveInteraction.totalVotes && candidate.voteCount !== null ? candidate.voteCount / liveInteraction.totalVotes : 0})` }"></b></i><strong>{{ liveInteraction.resultsVisible ? candidate.voteCount : '—' }}</strong>
+              <article v-for="candidate in liveInteraction.voteCandidates" :key="candidate.candidateId" :style="{ '--candidate-color': '#c7b9de' }">
+                <span>{{ candidate.displayLabel }}</span><i><b :style="{ transform: `scaleX(${liveInteraction.totalVotes && candidate.voteCount !== null ? candidate.voteCount / liveInteraction.totalVotes : 0})` }"></b></i><strong>{{ liveInteraction.resultsVisible ? candidate.voteCount : '—' }}</strong>
               </article>
             </div>
             <p>{{ liveInteraction.resultsVisible ? '本轮结果已经揭晓' : '投票进行中' }}</p>
@@ -826,15 +852,7 @@ onBeforeUnmount(() => {
         <p class="v2-kicker">SYSU · WELCOME NIGHT</p>
         <h1>{{ scene.title }}</h1>
         <p>{{ scene.subtitle }}</p>
-        <div v-if="currentScene === 'COOPERATIVE_LIGHT'" class="v2-cooperative-progress">
-          <p role="status"><strong>{{ cooperative.count }}</strong> 颗星已点亮<span>本场已入场 {{ cooperative.admitted }} 人</span></p>
-          <div class="v2-cooperative-progress__track" role="progressbar" aria-label="协同点亮进度"
-            :aria-valuenow="cooperative.count" :aria-valuemin="0" :aria-valuemax="Math.max(1, cooperative.admitted)"
-            :aria-valuetext="`${cooperative.count} 人已点亮，${cooperative.admitted} 人已入场`">
-            <i :style="{ transform: `scaleX(${cooperative.ratio})` }"></i>
-          </div>
-          <p>在手机上轻触「参与全场点亮」，让星河更亮一些</p>
-        </div>
+
       </div>
 
       <ProgramStageTitle v-if="showPersistentCredits" :key="snapshot.currentProgram.id" :program="snapshot.currentProgram" :visual="activeVisual" :reduced="reducedMotion" />
@@ -851,7 +869,7 @@ onBeforeUnmount(() => {
           :data-barrage-id="item.barrageId"
           :style="{
             ...barragePaint(item.colorStyle, item.customColor),
-            top: `${reducedMotion ? 10 + index * 13 : 8 + item.lane * 8.8}vh`,
+            top: `${15.5 + (reducedMotion ? index : item.lane) * 3.9}vh`,
             '--v2-barrage-duration': `${item.durationMs}ms`,
           }"
           @animationend="finishBarrageFlight(item.barrageId)"
@@ -871,6 +889,7 @@ html.v2-screen-active .route-screen .page-content>*{animation:none}
 html.v2-screen-active .ambient-field--screen{display:none}
 html.v2-program-overlay,html.v2-program-overlay body,html.v2-program-overlay .app-shell.route-screen{background:transparent!important}
 
+.v2-barrage-stream{height:33.333vh}.v2-barrage-stream__item{font-size:clamp(24px,2.05vw,40px);line-height:1.35;max-height:5.5vh}
 </style>
 
 <style scoped>
@@ -887,12 +906,6 @@ html.v2-program-overlay,html.v2-program-overlay body,html.v2-program-overlay .ap
 .v2-galaxy{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none}
 .v2-signal{position:absolute;z-index:9;top:24px;right:28px;margin:0;padding:8px 12px;border:1px solid rgba(255,200,102,.45);color:var(--color-orbit-warm);background:rgba(7,12,25,.86);font-family:var(--font-family-signal);font-size:14px}
 .v2-scene-copy{position:absolute;z-index:2;inset:0;display:grid;place-content:center;text-align:center;pointer-events:none}
-.v2-cooperative-progress{width:min(680px,76vw);margin:28px auto 0;font-size:clamp(20px,1.5vw,30px);color:var(--color-orbit-text-secondary)}
-.v2-cooperative-progress p{margin:14px 0}
-.v2-cooperative-progress strong{font-family:var(--font-family-data);font-size:clamp(42px,4vw,72px);color:var(--color-orbit-text-primary);font-variant-numeric:tabular-nums}
-.v2-cooperative-progress span{display:block;margin-top:8px;font-size:20px}
-.v2-cooperative-progress__track{height:4px;margin:24px 0;background:var(--color-orbit-border-subtle);overflow:hidden}
-.v2-cooperative-progress__track i{display:block;width:100%;height:100%;background:var(--color-orbit-text-primary);transform-origin:left}
 .v2-kicker,.v2-rehearsal{margin:0 0 16px;color:var(--color-orbit-text-secondary);font-family:var(--font-family-signal);font-size:clamp(12px,1vw,18px);letter-spacing:.24em}.v2-rehearsal{color:var(--color-orbit-warm);letter-spacing:.12em}
 .v2-scene-copy h1,.v2-finale h1{margin:0;font-family:var(--font-family-display);font-size:clamp(56px,7vw,128px);line-height:1.02;font-weight:620;letter-spacing:.04em}.scene-assembly .v2-scene-copy h1{text-shadow:0 12px 44px rgba(0,0,0,.7)}
 .v2-scene-copy>p:last-of-type,.v2-finale__copy>p{font-size:clamp(18px,1.45vw,28px);color:var(--color-orbit-text-secondary)}

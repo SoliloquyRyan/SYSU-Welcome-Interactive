@@ -92,6 +92,22 @@ describe('D-056 formal runtime environment', () => {
     ).toThrowError(expected)
   })
 
+  it.each([306, 400])('accepts the complete formal roster and capacity boundary of %i identities', (count) => {
+    fs.writeFileSync(path.join(runtimeDirectory, '2026-runtime-secret.json'),
+      JSON.stringify({ profile: 'PROTECTED_ROSTER', participantCount: count }))
+    expect(prepareFormalRuntime({ repositoryRoot, environment: {
+      FORMAL_RUNTIME_DIR: runtimeDirectory, FORMAL_PUBLIC_ORIGIN: 'https://welcome.example.edu.cn',
+    }, mode: 'production', platform: process.platform }).environment.DEMO_SEED_PARTICIPANT_COUNT).toBe(String(count))
+  })
+
+  it('rejects a formal roster beyond the supported capacity', () => {
+    fs.writeFileSync(path.join(runtimeDirectory, '2026-runtime-secret.json'),
+      JSON.stringify({ profile: 'PROTECTED_ROSTER', participantCount: 401 }))
+    expect(() => prepareFormalRuntime({ repositoryRoot, environment: {
+      FORMAL_RUNTIME_DIR: runtimeDirectory, FORMAL_PUBLIC_ORIGIN: 'https://welcome.example.edu.cn',
+    }, mode: 'production', platform: process.platform })).toThrow(/有效的受保护名单配置/)
+  })
+
   it('rejects production data stored inside the code checkout', () => {
     const nestedRuntime = path.join(repositoryRoot, 'backend', '.private')
     fs.mkdirSync(nestedRuntime, { recursive: true })

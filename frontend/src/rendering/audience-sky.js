@@ -19,7 +19,7 @@ export function audienceStars(stars = []) {
   for (const star of stars) {
     if (typeof star?.publicStarId === 'string' && typeof star.formationSlot === 'string' && star.formationSlot.length) unique.set(star.publicStarId, star)
   }
-  return [...unique.values()].sort((a, b) => a.formationSlot.localeCompare(b.formationSlot)).slice(0, 300)
+  return [...unique.values()].sort((a, b) => a.formationSlot.localeCompare(b.formationSlot)).slice(0, 400)
 }
 export function inSkyRectangle(point, rect, margin = 0) {
   return point.x >= rect.x - margin && point.x <= rect.x + rect.w + margin

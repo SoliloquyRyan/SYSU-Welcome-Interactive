@@ -189,7 +189,7 @@
       "interactionCode": "B",
       "interactionTitle": "谁是卧底",
       "formatAsProvided": "游戏",
-      "systemFormat": "抽取观众上台 + 投票",
+      "systemFormat": "设置选手 + 投票",
       "durationAsProvided": "15-20min",
       "durationSeconds": {
         "min": 900,
@@ -198,7 +198,7 @@
       },
       "kind": "interaction",
       "capabilities": [
-        "audience_draw",
+        "manual_candidates",
         "vote"
       ],
       "performers": ""
@@ -287,7 +287,7 @@
       "interactionCode": "C",
       "interactionTitle": "谁是最\"人\"",
       "formatAsProvided": "竞拍",
-      "systemFormat": "抢答",
+      "systemFormat": "线下互动",
       "durationAsProvided": "约8min",
       "durationSeconds": {
         "min": 480,
@@ -296,7 +296,7 @@
       },
       "kind": "interaction",
       "capabilities": [
-        "buzzer"
+        "offline"
       ],
       "performers": ""
     },
@@ -311,7 +311,7 @@
         "approximate": true
       },
       "kind": "performance",
-      "performers": "汪静怡 + 乐队"
+      "performers": "查无此队 · 主唱：汪静怡 / 键盘：杨媛迪 / 鼓手：徐嘉阳 / 吉他：董昭文、杨开元 / 贝斯：李潍鹏"
     }
   ],
   "closingRemarksSeconds": 120,

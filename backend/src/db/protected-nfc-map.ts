@@ -110,12 +110,15 @@ function invitationToken(value: string, expectedOrigin: string | null): string {
     url.password ||
     url.hash ||
     (expectedOrigin && url.origin !== expectedOrigin) ||
-    (expectedOrigin ? url.pathname !== '/welcome' : !url.pathname.endsWith('/welcome'))
+    (expectedOrigin
+      ? !['/welcome', '/welcomeparty/welcome'].includes(url.pathname)
+      : !url.pathname.endsWith('/welcome'))
   ) {
     throw new Error('Protected NFC map contains an invalid formal invitation URL')
   }
   const keys = [...url.searchParams.keys()]
   const token = url.searchParams.get('token') ?? ''
+  if (keys.length === 0) return '' // D-108 common entry; roster credentials stay out of URLs.
   if (
     keys.length !== 1 ||
     keys[0] !== 'token' ||
@@ -187,7 +190,8 @@ export function verifyProtectedNfcMap(
     const [seedIndexText, escapedName, studentNumber, publicStarId, url] = fields
     const seedIndex = Number(seedIndexText)
     const displayName = undoSpreadsheetFormulaEscape(escapedName!)
-    const tokenDigest = invitationTokenDigest(invitationToken(url!, expectedOrigin))
+    const token = invitationToken(url!, expectedOrigin)
+    const tokenDigest = token ? invitationTokenDigest(token) : null
     if (
       !Number.isInteger(seedIndex) ||
       seedIndex !== directory.seedIndex ||
@@ -200,20 +204,20 @@ export function verifyProtectedNfcMap(
         directory.id,
         studentNumber!,
       ) !== directory.studentNumberDigest ||
-      tokenDigest !== directory.tokenDigest
+      (tokenDigest !== null && tokenDigest !== directory.tokenDigest)
     ) {
       throw new Error('Protected NFC map does not match the protected directory')
     }
     if (
       studentNumbers.has(studentNumber!) ||
       publicStarIds.has(publicStarId!) ||
-      tokenDigests.has(tokenDigest)
+      (tokenDigest !== null && tokenDigests.has(tokenDigest))
     ) {
       throw new Error('Protected NFC map contains duplicate identity material')
     }
     studentNumbers.add(studentNumber!)
     publicStarIds.add(publicStarId!)
-    tokenDigests.add(tokenDigest)
+    if (tokenDigest !== null) tokenDigests.add(tokenDigest)
   }
 
   return { participantCount: dataRows.length }

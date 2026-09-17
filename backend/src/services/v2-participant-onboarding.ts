@@ -103,6 +103,7 @@ interface IdentityRow {
 }
 
 interface ParticipantRow {
+  accountType: 'STUDENT' | 'STAFF'
   identityId: string
   participantRevision: number
   onboardingState: 'NEEDS_COLOR' | 'NEEDS_CAPSULE_DECISION' | 'ADMITTED'
@@ -213,12 +214,14 @@ function assertParticipantWriteOpen(runtime: RuntimeRow): void {
 }
 
 function readParticipant(database: SqliteDatabase, identityId: string): ParticipantRow {
+  const hasRole = (database.pragma('table_info(synthetic_identities)') as Array<{ name: string }>).some(column => column.name === 'account_type')
   const participant = database
     .prepare(
        `SELECT participant.identity_id AS identityId,
               participant.participant_revision AS participantRevision,
               participant.onboarding_state AS onboardingState,
               identity.display_name AS displayName,
+              ${hasRole ? 'identity.account_type' : "'STUDENT'"} AS accountType,
               participant.activated_at AS activatedAt,
               participant.color_temperature_kelvin AS colorTemperatureKelvin,
               participant.display_color AS displayColor,
@@ -692,17 +695,11 @@ function allowedActions(database: SqliteDatabase, runtime: RuntimeRow, participa
       participant.admittedScene === 'PROGRAM_SUPPORT')
   ) {
     const current = readCurrentV2Program(database)
-    if (!current || current.kind === 'PERFORMANCE' && current.giftsEnabled !== false) actions.push('SEND_GIFT')
+    if (readV2Stage(database).mode !== 'HOST' && (!current || current.kind === 'PERFORMANCE' && current.giftsEnabled !== false)) actions.push('SEND_GIFT')
     actions.push('POST_BARRAGE')
     const live = readV2LiveInteraction(database, runtime.resetEpoch, { identityId: participant.identityId })
-    if (live.phase === 'BUZZER_OPEN' && !live.participation.hasBuzzed) actions.push('BUZZ_IN')
-    if (live.phase === 'VOTE_OPEN' && !live.participation.hasVoted) actions.push('CAST_AUDIENCE_VOTE')
-  }
-  if (
-    runtime.currentScene === 'COOPERATIVE_LIGHT' &&
-    participant.cooperativeLightAt === null
-  ) {
-    actions.push('COOPERATIVE_LIGHT')
+    if (participant.accountType !== 'STAFF' && live.segmentCode === 'A' && live.phase === 'BUZZER_OPEN' && !live.participation.hasBuzzed) actions.push('BUZZ_IN')
+    if (participant.accountType !== 'STAFF' && live.phase === 'VOTE_OPEN' && !live.participation.hasVoted) actions.push('CAST_AUDIENCE_VOTE')
   }
   return actions
 }
@@ -776,6 +773,7 @@ function participantProjection(
     participantRevision: participant.participantRevision,
     onboardingState: participant.onboardingState,
     displayName: participant.displayName,
+    accountType: participant.accountType,
     personalStarCode: participant.publicStarId,
     activatedAt: participant.activatedAt,
     colorTemperatureKelvin: participant.colorTemperatureKelvin,
@@ -1266,7 +1264,8 @@ export function executeV2ParticipantOnboardingCommand(
         runtime: runtimeTuple(currentRuntime),
         presentation: presentationFor(database, currentRuntime),
         presentationRevision: currentRuntime.presentationRevision,
-        currentProgram: readCurrentV2Program(database),
+        stage: readV2Stage(database),
+      currentProgram: readCurrentV2Program(database),
         liveInteraction: readV2LiveInteraction(database, currentRuntime.resetEpoch, { identityId }),
         participant: participantProjection(database, currentRuntime, identityId),
       })
@@ -1308,6 +1307,15 @@ export function executeV2ParticipantOnboardingCommand(
           runtime.resetEpoch,
         )
       }
+      if (request.command === 'COOPERATIVE_LIGHT') {
+        throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '晚会将由主控结束并播放片尾。', 409, runtime.resetEpoch)
+      }
+      if (participant.accountType === 'STAFF' && ['BUZZ_IN', 'CAST_AUDIENCE_VOTE'].includes(request.command)) {
+        throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '工作人员应援账号不参与抢答与投票。', 403, runtime.resetEpoch)
+      }
+      if (request.command === 'SEND_GIFT' && readV2Stage(database).mode === 'HOST') {
+        throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '报幕期间暂停送礼，请等待节目开始。', 409, runtime.resetEpoch)
+      }
       const admittedForProgram =
         participant.admittedScene === null ||
         participant.admittedScene === 'ASSEMBLY' ||
@@ -1318,9 +1326,7 @@ export function executeV2ParticipantOnboardingCommand(
           (participant.admittedScene === null || participant.admittedScene === 'ASSEMBLY')) ||
         ((request.command === 'SEND_GIFT' || request.command === 'POST_BARRAGE' ||
           request.command === 'BUZZ_IN' || request.command === 'CAST_AUDIENCE_VOTE') &&
-          runtime.currentScene === 'PROGRAM_SUPPORT' && admittedForProgram) ||
-        (request.command === 'COOPERATIVE_LIGHT' &&
-          runtime.currentScene === 'COOPERATIVE_LIGHT')
+          runtime.currentScene === 'PROGRAM_SUPPORT' && admittedForProgram)
       if (!sceneAllowed) {
         throw new V2ParticipantCommandError(
           'SCENE_ACTION_INVALID',
@@ -1396,16 +1402,16 @@ export function executeV2ParticipantOnboardingCommand(
         const giftEventId = `gift:${randomUUID()}`
         const insertGift = database.prepare(
           `INSERT INTO v2_gift_transactions (
-             id, reset_epoch, identity_id, program_id, gift_id, power_cost, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             id, reset_epoch, identity_id, program_id, gift_id, power_cost, created_at, score_eligible
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         for (let index = 0; index < request.quantity; index += 1) {
           insertGift.run(`${giftEventId}:${index + 1}`, runtime.resetEpoch, identityId,
-            request.programId, request.giftId, gift.powerCost, timestamp)
+            request.programId, request.giftId, gift.powerCost, timestamp, participant.accountType === 'STAFF' ? 0 : 1)
         }
         database.prepare(
           `UPDATE v2_program_catalog SET heat = heat + ?, updated_at = ? WHERE id = ?`,
-        ).run(totalPower, timestamp, program.id)
+        ).run(participant.accountType === 'STAFF' ? 0 : totalPower, timestamp, program.id)
         database.prepare(
           `UPDATE v2_participant_states SET participant_revision = ?,
              first_gift_at = COALESCE(first_gift_at, ?), power_balance = ?,
@@ -1553,7 +1559,7 @@ export function executeV2ParticipantOnboardingCommand(
       } else if (request.command === 'BUZZ_IN') {
         const live = readLiveInteractionRow(database, runtime.resetEpoch)
         const segmentCode = currentInteractionCode(database)
-        if (live.phase !== 'BUZZER_OPEN' || !live.segmentCode || segmentCode !== live.segmentCode) {
+        if (segmentCode !== 'A' || live.phase !== 'BUZZER_OPEN' || !live.segmentCode || segmentCode !== live.segmentCode) {
           throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '本轮抢答尚未开放或已经锁定。', 409, runtime.resetEpoch)
         }
         if (!live.openedAt || now.getTime() < Date.parse(live.openedAt) + 3000) {
@@ -1585,19 +1591,18 @@ export function executeV2ParticipantOnboardingCommand(
         if (live.phase !== 'VOTE_OPEN' || live.segmentCode !== 'B' || currentInteractionCode(database) !== 'B') {
           throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '观众投票尚未开放或已经结束。', 409, runtime.resetEpoch)
         }
-        const existingVote = database.prepare(`SELECT 1 FROM v2_audience_votes
+        const existingVote = database.prepare(`SELECT 1 FROM v2_manual_audience_votes
           WHERE reset_epoch = ? AND round_number = ? AND identity_id = ?`)
           .get(runtime.resetEpoch, live.roundNumber, identityId)
         if (existingVote) throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '本轮已经投过票。', 409, runtime.resetEpoch)
-        const candidate = database.prepare(`SELECT draw.identity_id AS identityId
-          FROM v2_raffle_draws draw JOIN v2_identity_slots slot ON slot.identity_id = draw.identity_id
-          WHERE draw.reset_epoch = ? AND slot.public_star_id = ? AND draw.draw_sequence <= 12`)
-          .get(runtime.resetEpoch, request.candidateStarId) as { identityId: string } | undefined
-        if (!candidate) throw new V2ParticipantCommandError('RESOURCE_NOT_FOUND', '该星号不在本轮上台候选中。', 404, runtime.resetEpoch)
-        database.prepare(`INSERT INTO v2_audience_votes (
-          id, reset_epoch, round_number, identity_id, candidate_identity_id, created_at
+        const candidate = database.prepare(`SELECT candidate_id FROM v2_manual_vote_candidates
+          WHERE reset_epoch = ? AND round_number = ? AND candidate_id = ?`)
+          .get(runtime.resetEpoch, live.roundNumber, request.candidateId)
+        if (!candidate) throw new V2ParticipantCommandError('RESOURCE_NOT_FOUND', '该选手不在本轮候选中。', 404, runtime.resetEpoch)
+        database.prepare(`INSERT INTO v2_manual_audience_votes (
+          id, reset_epoch, round_number, identity_id, candidate_id, created_at
         ) VALUES (?, ?, ?, ?, ?, ?)`).run(`vote:${randomUUID()}`, runtime.resetEpoch,
-          live.roundNumber, identityId, candidate.identityId, timestamp)
+          live.roundNumber, identityId, request.candidateId, timestamp)
         const interaction = interactionState(database, runtime.resetEpoch)
         const interactionRevision = interaction.interactionRevision + 1
         database.prepare(`UPDATE v2_live_interaction_state SET revision = ?, updated_at = ?
@@ -1610,31 +1615,11 @@ export function executeV2ParticipantOnboardingCommand(
           interactionRevision,
           liveInteraction: readV2LiveInteraction(database, runtime.resetEpoch),
         }, timestamp)
-      } else {
-        if (participant.cooperativeLightAt !== null) {
-          throw new V2ParticipantCommandError(
-            'SCENE_ACTION_INVALID',
-            '协同点亮已经完成。',
-            409,
-            runtime.resetEpoch,
-          )
-        }
-        database.prepare(
-          `UPDATE v2_participant_states SET participant_revision = ?,
-             cooperative_light_at = ?, starlight = ?, updated_at = ?
-           WHERE reset_epoch = ? AND identity_id = ?`,
-        ).run(revision, timestamp, nextStarlight, timestamp, runtime.resetEpoch, identityId)
-        database.prepare(
-          `INSERT INTO v2_reward_ledger (
-             reset_epoch, identity_id, event_key, delta, reward_rule_version, created_at
-           ) VALUES (?, ?, 'COOPERATIVE_LIGHT', 0, ?, ?)`,
-        ).run(runtime.resetEpoch, identityId, runtime.rewardRuleVersion, timestamp)
-        firstReward = true
       }
       appendParticipantEvent(database, identityId, runtime.resetEpoch, revision, timestamp)
       aggregateChanged =
         request.command === 'START_STAR' ||
-        request.command === 'COOPERATIVE_LIGHT' || firstReward
+        firstReward
     } else if (request.command === 'LOCK_COLOR') {
       if (participant.onboardingState !== 'NEEDS_COLOR') {
         throw new V2ParticipantCommandError(
@@ -1711,6 +1696,7 @@ export function executeV2ParticipantOnboardingCommand(
       runtime: runtimeTuple(currentRuntime),
       presentation: presentationFor(database, currentRuntime),
       presentationRevision: currentRuntime.presentationRevision,
+      stage: readV2Stage(database),
       currentProgram: readCurrentV2Program(database),
       liveInteraction: readV2LiveInteraction(database, currentRuntime.resetEpoch, { identityId }),
       participant: participantProjection(database, currentRuntime, identityId),

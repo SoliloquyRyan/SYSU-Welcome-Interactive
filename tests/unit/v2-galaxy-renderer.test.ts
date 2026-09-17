@@ -28,9 +28,9 @@ describe('V2-07 deterministic public galaxy placement', () => {
     expect(ACTIVE_RENDER_TARGET_FPS).toBe(60)
   })
 
-  it('treats 220 as the formal visual reference while preserving 300 as technical headroom', () => {
+  it('treats 220 as the formal visual reference while preserving 400 as technical headroom', () => {
     expect(FORMAL_VISUAL_REFERENCE_COUNT).toBe(220)
-    expect(TECHNICAL_STAR_CAPACITY).toBe(300)
+    expect(TECHNICAL_STAR_CAPACITY).toBe(400)
 
     const empty = assemblyDensityEnvelope(0, 10_000, false)
     const partial = assemblyDensityEnvelope(120, 10_000, false)

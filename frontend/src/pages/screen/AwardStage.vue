@@ -31,7 +31,7 @@ const programRows = computed(() => props.stage.award?.group === 'PROGRAM'
           <p class="ceremony-kicker">中山大学 · 迎新晚会</p>
           <h1 class="host-title">{{ title }}</h1>
           <div class="host-mark" aria-hidden="true"><i></i><span>✦</span><i></i></div>
-          <p class="host-subtitle">WELCOME TO OUR NEW CHAPTER</p>
+          <p class="host-subtitle">以星光作序，与未来相逢</p>
         </template>
       </div>
     </Transition>
@@ -75,4 +75,10 @@ h1.with-winners{font-size:3.3vw;letter-spacing:.1em}.ceremony-description{margin
 .is-podium li{background:linear-gradient(180deg,#30263c85,#27233850);border-radius:2px 2px 12px 12px}
 .is-podium li>div::before{display:none}
 @media(prefers-reduced-motion:reduce){.award-crossfade-enter-active,.award-crossfade-leave-active{transition:none}}
+
+.ceremony-content h1{font-size:clamp(76px,7vw,144px);font-weight:700;-webkit-text-stroke:1.1px currentColor;letter-spacing:.075em}
+.ceremony-content h1.with-winners{font-size:clamp(60px,4.65vw,96px)}
+.award-winners strong,.award-winners.is-program-rows strong,.award-winners .long-entry strong{font-size:clamp(28px,2.12vw,44px);font-weight:700;line-height:1.4}
+.award-winners p,.award-winners.is-program-rows p,.award-winners .long-entry p{font-size:clamp(20px,1.6vw,32px);line-height:1.45;overflow-wrap:anywhere}
+.host-subtitle{font:500 36px/1.8 var(--font-family-ui);letter-spacing:.16em}
 </style>

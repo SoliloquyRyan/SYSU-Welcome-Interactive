@@ -23,6 +23,7 @@ export const ProtectedRosterRecordSchema = z
   .object({
     displayName: z.string().trim().min(1).max(40),
     studentNumber: z.string().regex(/^\d{8}$/),
+    accountType: z.enum(['STUDENT', 'STAFF']).default('STUDENT'),
     surnameInitial: z.string().regex(/^[A-Z]$/).optional(),
   })
   .strict()
@@ -31,7 +32,7 @@ export const ProtectedRosterInputSchema = z
   .object({
     schemaVersion: z.literal(1),
     sourceSha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
-    records: z.array(ProtectedRosterRecordSchema).min(1).max(300),
+    records: z.array(ProtectedRosterRecordSchema).min(1).max(400),
   })
   .strict()
   .superRefine((value, context) => {
@@ -69,6 +70,7 @@ interface GeneratedParticipant {
   seedIndex: number
   displayName: string
   studentNumber: string
+  accountType: 'STUDENT' | 'STAFF'
   inviteToken: string
   publicStarId: string
   visualSeed: string
@@ -81,6 +83,7 @@ function generateParticipants(input: ProtectedRosterInput): GeneratedParticipant
     seedIndex: index + 1,
     displayName: record.displayName,
     studentNumber: record.studentNumber,
+    accountType: record.accountType,
     inviteToken: randomBytes(32).toString('base64url'),
     publicStarId: publicStarIds[index]!,
     visualSeed: randomBytes(16).toString('hex'),
@@ -93,12 +96,12 @@ function csvCell(value: string): string {
 }
 
 function welcomeUrl(token: string, publicOrigin?: string): string {
-  const pathAndQuery = `/welcome?token=${encodeURIComponent(token)}`
+  const pathAndQuery = token ? `/welcome?token=${encodeURIComponent(token)}` : '/welcome'
   if (!publicOrigin) return pathAndQuery
   const origin = new URL(publicOrigin)
   const basePath = origin.pathname.replace(/\/+$/, '')
   origin.pathname = `${basePath}/welcome`
-  origin.search = `?token=${encodeURIComponent(token)}`
+  origin.search = token ? `?token=${encodeURIComponent(token)}` : ''
   origin.hash = ''
   return origin.toString()
 }
@@ -174,8 +177,8 @@ export function importProtectedRoster(
     const insertIdentity = database.prepare(
       `INSERT INTO synthetic_identities (
          id, seed_index, display_name, student_number_digest, public_star_id,
-         visual_seed, enabled, created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+         visual_seed, enabled, created_at, account_type
+       ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
     )
     const insertInvitation = database.prepare(
       `INSERT INTO invitation_tokens (
@@ -202,6 +205,7 @@ export function importProtectedRoster(
         participant.publicStarId,
         participant.visualSeed,
         generatedAt,
+        participant.accountType,
       )
       insertInvitation.run(
         `invitation-${randomBytes(12).toString('hex')}`,
@@ -344,7 +348,7 @@ export function importProtectedRoster(
       participant.displayName,
       participant.studentNumber,
       participant.publicStarId,
-      welcomeUrl(participant.inviteToken, options.publicOrigin),
+      welcomeUrl('', options.publicOrigin),
     ]),
   ]
     .map((row) => row.map(csvCell).join(','))

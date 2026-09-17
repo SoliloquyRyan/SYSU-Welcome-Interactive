@@ -120,10 +120,7 @@ test('keeps mobile controls reachable and builds a memento only from confirmed p
     await page.getByRole('button', { name: '星程', exact: true }).click()
 
     checkpoint = 'completed-memento'
-    await admin.getByRole('button', { name: '推进下一场景', exact: true }).click()
-    await admin.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
-    await expect(page.getByRole('button', { name: '参与全场点亮', exact: true })).toBeVisible()
-    await admin.getByRole('button', { name: '结束并锁定终章', exact: true }).click()
+    await admin.getByRole('button', { name: '结束晚会并播放片尾', exact: true }).click()
     await admin.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
     const memento = page.getByRole('region', { name: '今夜的个人纪念' })
     await expect(memento).toBeVisible()

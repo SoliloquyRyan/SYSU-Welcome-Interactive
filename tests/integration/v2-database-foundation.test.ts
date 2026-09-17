@@ -273,7 +273,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
 
     const result = migrateDatabase(database, MIGRATIONS_PATH, () => NOW)
 
-    expect(result.applied).toEqual([8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21])
+    expect(result.applied).toEqual([8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22])
     expect(readProtocolRuntime(database)).toMatchObject({
       activeProtocolVersion: '1',
       activationState: 'V1_ACTIVE',
@@ -336,6 +336,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
       19,
       20,
       21,
+      22,
     ])
 
     await expect(
@@ -574,7 +575,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
       }),
     ).toMatchObject({
       ready: true,
-      schemaVersion: 21,
+      schemaVersion: 22,
       protocolVersion: '2',
       resetEpoch: 2,
       participantCount: 300,
@@ -611,7 +612,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
 
     expect(result).toMatchObject({
       previousSchemaVersion: 12,
-      schemaVersion: 21,
+      schemaVersion: 22,
       resetEpoch: 2,
       participantCount: 300,
     })
@@ -628,7 +629,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
     }
     expect(
       database.prepare('SELECT max(version) FROM _schema_migrations').pluck().get(),
-    ).toBe(21)
+    ).toBe(22)
     expect(
       database.prepare('SELECT count(*) FROM v2_raffle_state').pluck().get(),
     ).toBe(1)
@@ -638,7 +639,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
         manifestPath,
         participantCount: 300,
       }),
-    ).toMatchObject({ ready: true, schemaVersion: 21, resetEpoch: 2, issues: [] })
+    ).toMatchObject({ ready: true, schemaVersion: 22, resetEpoch: 2, issues: [] })
   })
 
   it('reconciles an existing admitted participant projection during schema 12→15 upgrade', async () => {
@@ -733,7 +734,7 @@ describe('V2-02 database foundation and explicit synthetic cutover gate', () => 
         manifestPath,
         participantCount: 300,
       }),
-    ).toMatchObject({ ready: true, schemaVersion: 21, issues: [] })
+    ).toMatchObject({ ready: true, schemaVersion: 22, issues: [] })
   })
 
   it('rolls schema 12→15 back while retaining the verified v2 backup', async () => {

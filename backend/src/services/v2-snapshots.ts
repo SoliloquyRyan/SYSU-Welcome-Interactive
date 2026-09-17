@@ -222,14 +222,6 @@ function adminWarnings(
     ).pluck().get(row.resetEpoch))
     if (pending > 0) warnings.push('STAR_START_PENDING')
   }
-  if (row.currentScene === 'COOPERATIVE_LIGHT') {
-    const pending = Number(database.prepare(
-      `SELECT count(*) FROM v2_participant_states
-       WHERE reset_epoch = ? AND onboarding_state = 'ADMITTED'
-         AND cooperative_light_at IS NULL`,
-    ).pluck().get(row.resetEpoch))
-    if (pending > 0) warnings.push('COOPERATIVE_LIGHT_PENDING')
-  }
   return warnings
 }
 

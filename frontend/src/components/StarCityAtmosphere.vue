@@ -18,7 +18,7 @@ function starGlow(color) {
   return starGlows.get(color)
 }
 const points = computed(() => audienceSkyPoints(props.stars, { ...props.visual, compact: props.compact, overlay: props.overlay, aspect: aspect.value }))
-const highlights = computed(() => props.overlay || props.compact ? giftStarHighlights(points.value, props.effects) : [])
+const highlights = computed(() => giftStarHighlights(points.value, props.effects))
 const admittedCount = computed(() => audienceStars(props.stars).length)
 let context, observer, dustSprite, frame = 0, previous = 0, time = 0, width = 0, height = 0
 let hidden = document.hidden, disconnected = navigator.onLine === false, disposed = false, reported = false
@@ -55,10 +55,10 @@ function paint(now, animated = false) {
   for (const star of points.value) {
     const personal = star.id === props.ownStarId
     const x = star.x * width, y = star.y * height, r = star.radius * (personal ? 1.6 : 1)
-    const shimmer = animated ? Math.sin(time / (props.compact ? 6800 : 4800) + star.phase) * (props.compact ? .025 : .065) : 0
-    const depth = props.compact ? .36 + (star.slot % 100) / 100 * .30 : .56
-    const light = props.overlay ? Math.min(.9, .025 + level * .012 + (giftLight.get(star.id) ?? 0))
-      : Math.min(.98, (personal ? .82 : depth) + shimmer + level * .18 + (giftLight.get(star.id) ?? 0))
+    // D-108: participant stars keep their coordinates but only confirmed gifts light them.
+    // Music modulates dust and city edges; it never lifts the resting opacity.
+    const light = Math.min(.98, giftLight.get(star.id) ?? 0)
+    if (light <= 0) continue
     context.globalAlpha = light; context.fillStyle = star.color || '#dce4ec'
     context.drawImage(starGlow(star.color || '#dce4ec'),x-r*3.2,y-r*3.2,r*6.4,r*6.4)
     context.globalAlpha = light
@@ -115,5 +115,5 @@ onBeforeUnmount(() => {
   window.removeEventListener('offline', connectivity); window.removeEventListener('online', connectivity)
 })
 </script>
-<template><canvas ref="canvas" class="star-city-atmosphere" aria-hidden="true" :data-audience-star-count="admittedCount" :data-projected-star-count="points.length" :data-star-placement="overlay ? 'video-faint' : 'art-whitespace'" :data-star-rest-opacity="overlay ? .025 : .56" data-decorative-star-count="0" :data-motion="reduced ? 'static' : paused ? 'paused' : 'ambient'"></canvas></template>
+<template><canvas ref="canvas" class="star-city-atmosphere" aria-hidden="true" :data-audience-star-count="admittedCount" :data-projected-star-count="points.length" :data-star-placement="overlay ? 'video-dormant' : 'art-whitespace'" data-star-rest-opacity="0" data-decorative-star-count="0" :data-motion="reduced ? 'static' : paused ? 'paused' : 'ambient'"></canvas></template>
 <style scoped>.star-city-atmosphere{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3}</style>

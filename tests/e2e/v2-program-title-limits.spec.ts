@@ -7,7 +7,7 @@ test('D106 keeps maximum catalog text inside the screen and loads real local tit
   const ac=await browser.newContext({baseURL:demo.baseURL})
   const sc=await browser.newContext({baseURL:demo.baseURL,viewport:{width:1920,height:1080},reducedMotion:'reduce'})
   const admin=await ac.newPage(),screen=await sc.newPage()
-  const out=path.resolve('output/playwright/d106-whitespace-stars',info.project.name)
+  const out=path.resolve('output/playwright/d108/title-limits',info.project.name)
   try {
     await admin.goto('/admin')
     await admin.getByLabel('账号',{exact:true}).fill(demo.credentials.admin.username)
@@ -34,7 +34,7 @@ test('D106 keeps maximum catalog text inside the screen and loads real local tit
     expect(await title.locator('h2').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true)
     await fs.mkdir(out,{recursive:true});await screen.screenshot({path:path.join(out,'long-program-text.png')})
     const fonts:any[]=[]
-    for(const [id,family] of [['event2026-03','FZZH-FangXianTiS'],['event2026-04','Orbitron'],['event2026-08','Welcome Stage Serif']]){
+    for(const [id,family] of [['event2026-03','FZZH-FangXianTiS'],['event2026-04','Orbitron'],['event2026-08','Orbitron']]){
       if(id !== 'event2026-03') {
         await admin.getByLabel('当前节目',{exact:true}).selectOption(id!)
         await admin.getByRole('button',{name:'设为当前节目',exact:true}).click()

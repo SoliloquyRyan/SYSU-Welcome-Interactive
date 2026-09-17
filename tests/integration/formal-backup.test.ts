@@ -135,7 +135,7 @@ describe('D-056 protected runtime backup and recovery', () => {
     const mapping = fs.readFileSync(nfcMapPath, 'utf8')
     fs.writeFileSync(
       nfcMapPath,
-      mapping.replace('/welcome?token=', '/welcome?token=A'),
+      mapping.replace('26000001', '26999999'),
       'utf8',
     )
     const bundleDirectory = path.join(temporaryDirectory, 'bundle')

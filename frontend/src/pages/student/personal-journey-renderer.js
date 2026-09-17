@@ -27,7 +27,7 @@ export {
 const TAU = Math.PI * 2
 const DEFAULT_COLOR = '#ffe3ad'
 const DEFAULT_NEUTRAL = '#eef6ff'
-const MAX_PUBLIC_STARS = 300
+const MAX_PUBLIC_STARS = 400
 export const PERSONAL_JOURNEY_SIGNAL_PALETTE = ORBITAL_SIGNAL_PALETTE
 
 // A restrained stellar palette: color variety is visible at close range but

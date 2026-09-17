@@ -1,3 +1,4 @@
+import { retainedV21Facts } from '../helpers/retained-v21-facts.js'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -55,7 +56,7 @@ describe('D-061 operational program catalog and maintenance', () => {
   }
   function rawCatalog() { return database.prepare('SELECT * FROM v2_program_catalog ORDER BY id').all() }
   function identityDigest() {
-    return createHash('sha256').update(JSON.stringify(database.prepare('SELECT * FROM synthetic_identities ORDER BY id').all()))
+    return createHash('sha256').update(JSON.stringify(retainedV21Facts(database.prepare('SELECT * FROM synthetic_identities ORDER BY id').all())))
       .update(fs.readFileSync(secretPath)).digest('hex')
   }
   function participant() {
@@ -70,7 +71,8 @@ describe('D-061 operational program catalog and maintenance', () => {
     expect(catalog.items).toHaveLength(25)
     expect(catalog.items.filter(({ kind }) => kind === 'PERFORMANCE')).toHaveLength(19)
     expect(catalog.items[3]).toMatchObject({ title: 'Worth it', durationLabel: '42s' })
-    expect(catalog.items[20]).toMatchObject({ kind: 'INTERLUDE', title: '互动环节三 · 谁是最"人"', formatLabel: '抢答' })
+    expect(catalog.items[13]).toMatchObject({ kind: 'INTERLUDE', formatLabel: '设置选手 + 投票' })
+    expect(catalog.items[20]).toMatchObject({ kind: 'INTERLUDE', title: '互动环节三 · 谁是最"人"', formatLabel: '线下互动' })
     expect(catalog.items[22]?.title).toBe('光年之外')
     expect(V2ProgramCatalogSchema.parse(validateCatalog(catalog).catalog)).toEqual(catalog)
     for (const invalid of [
@@ -109,7 +111,7 @@ describe('D-061 operational program catalog and maintenance', () => {
     database.close(); database = openDatabase(filename)
     expect(snapshot().programCatalog.revision).toBe(2)
     expect(snapshot().programs.map(({ id }) => id)).toEqual(reordered.items.map(({ id }) => id))
-    expect(verifyV2Foundation(database, verificationOptions())).toMatchObject({ ready: true, schemaVersion: 21, issues: [] })
+    expect(verifyV2Foundation(database, verificationOptions())).toMatchObject({ ready: true, schemaVersion: 22, issues: [] })
   })
 
   it('rejects role, revision and running-state conflicts and rolls back a partial catalog write', () => {
@@ -233,13 +235,13 @@ describe('D-061 operational program catalog and maintenance', () => {
     historical14()
     const before = identityDigest()
     const programs = database.prepare('SELECT id, title, heat FROM program_catalog ORDER BY id').all()
-    const gifts = database.prepare('SELECT * FROM v2_gift_transactions').all()
+    const gifts = retainedV21Facts(database.prepare('SELECT * FROM v2_gift_transactions').all())
     const rewards = database.prepare('SELECT * FROM v2_reward_ledger ORDER BY id').all()
     const result = await upgradeV2ProgramCatalogFrom14To15(database, options())
-    expect(result).toMatchObject({ previousSchemaVersion: 14, schemaVersion: 21, resetEpoch: 1 })
+    expect(result).toMatchObject({ previousSchemaVersion: 14, schemaVersion: 22, resetEpoch: 1 })
     expect(identityDigest()).toBe(before)
     expect(database.prepare('SELECT id, title, heat FROM v2_program_catalog ORDER BY id').all()).toEqual(programs)
-    expect(database.prepare('SELECT * FROM v2_gift_transactions').all()).toEqual(gifts)
+    expect(retainedV21Facts(database.prepare('SELECT * FROM v2_gift_transactions').all())).toEqual(gifts)
     expect(database.prepare('SELECT * FROM v2_reward_ledger ORDER BY id').all()).toEqual(rewards)
     expect(snapshot().currentProgram?.id).toBe(programId)
     expect(verifyV2Foundation(database, verificationOptions()).ready).toBe(true)
@@ -252,7 +254,7 @@ describe('D-061 operational program catalog and maintenance', () => {
     historical14(15)
     const before = database.prepare('SELECT * FROM v2_runtime_state').get()
     const result = await upgradeV2InteractionsFrom15To16(database, options())
-    expect(result).toMatchObject({previousSchemaVersion:15,schemaVersion: 21,resetEpoch:1})
+    expect(result).toMatchObject({previousSchemaVersion:15,schemaVersion: 22,resetEpoch:1})
     expect(database.prepare('SELECT * FROM v2_runtime_state').get()).toEqual(before)
     expect(verifyV2Foundation(database, verificationOptions()).ready).toBe(true)
     const backup = openDatabase(result.backupPath)
@@ -267,11 +269,11 @@ describe('D-061 operational program catalog and maintenance', () => {
     historical14(16)
     const runtimeBefore = database.prepare('SELECT * FROM v2_runtime_state').get()
     const result = await upgradeV2GiftExperienceFrom16To17(database, options())
-    expect(result).toMatchObject({ previousSchemaVersion: 16, schemaVersion: 21, resetEpoch: 1 })
+    expect(result).toMatchObject({ previousSchemaVersion: 16, schemaVersion: 22, resetEpoch: 1 })
     expect(identityDigest()).toBe(before)
     expect(database.prepare('SELECT power_cost FROM gift_catalog ORDER BY sort_order').pluck().all()).toEqual([1, 5, 10, 20])
     expect(database.prepare('SELECT * FROM v2_runtime_state').get()).toEqual(runtimeBefore)
-    expect(verifyV2Foundation(database, verificationOptions())).toMatchObject({ ready: true, schemaVersion: 21, issues: [] })
+    expect(verifyV2Foundation(database, verificationOptions())).toMatchObject({ ready: true, schemaVersion: 22, issues: [] })
     const backup = openDatabase(result.backupPath)
     try { expect(backup.prepare('SELECT MAX(version) FROM _schema_migrations').pluck().get()).toBe(16) } finally { backup.close() }
   })
@@ -319,10 +321,10 @@ describe('D-061 operational program catalog and maintenance', () => {
     historical14(17)
     const identityBefore = identityDigest()
     const tables = ['v2_runtime_state', 'v2_program_catalog_state', 'v2_gift_transactions', 'v2_reward_ledger', 'v2_domain_events', 'v2_participant_states']
-    const retained = () => tables.map(table => database.prepare(`SELECT * FROM ${table}`).all())
+    const retained = () => tables.map(table => retainedV21Facts(database.prepare(`SELECT * FROM ${table}`).all()))
     const before = retained()
     const result = await upgradeV2ProgramCreditsFrom17To18(database, options())
-    expect(result).toMatchObject({ previousSchemaVersion: 17, schemaVersion: 21, resetEpoch: 1 })
+    expect(result).toMatchObject({ previousSchemaVersion: 17, schemaVersion: 22, resetEpoch: 1 })
     expect(retained()).toEqual(before)
     expect(identityDigest()).toBe(identityBefore)
     expect(snapshot().currentProgram).toMatchObject({ id: 'event2026-01', performers: '吴津颖、宋欣然', heat: 1 })
@@ -347,12 +349,12 @@ describe('D-061 operational program catalog and maintenance', () => {
     const runtimeBefore = database.prepare('SELECT * FROM v2_runtime_state').get()
     historical14(18)
     const result = await upgradeV2LiveInteractionsFrom18To19(database, options())
-    expect(result).toMatchObject({ previousSchemaVersion: 18, schemaVersion: 21, resetEpoch: 1 })
+    expect(result).toMatchObject({ previousSchemaVersion: 18, schemaVersion: 22, resetEpoch: 1 })
     expect(identityDigest()).toBe(identityBefore)
     expect(database.prepare('SELECT * FROM v2_runtime_state').get()).toEqual(runtimeBefore)
     expect(database.prepare('SELECT reset_epoch, phase, round_number, revision FROM v2_live_interaction_state').get())
       .toEqual({ reset_epoch: 1, phase: 'IDLE', round_number: 0, revision: 0 })
-    expect(verifyV2Foundation(database, verificationOptions())).toMatchObject({ ready: true, schemaVersion: 21, issues: [] })
+    expect(verifyV2Foundation(database, verificationOptions())).toMatchObject({ ready: true, schemaVersion: 22, issues: [] })
     const backup = openDatabase(result.backupPath)
     try {
       expect(backup.pragma('integrity_check', { simple: true })).toBe('ok')

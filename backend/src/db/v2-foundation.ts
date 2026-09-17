@@ -12,6 +12,7 @@ import {
   migrateActiveV2LiveInteractionsFrom18To19,
   migrateActiveV2AwardsFrom19To20,
   migrateActiveV2ProgramRankingFrom20To21,
+  migrateActiveV2EventEntryFrom21To22,
   migrateActiveV2ProgramCreditsFrom17To18,
   migrateActiveV2ProgramCatalogFrom14To15,
   migrateActiveV2InteractionsFrom15To16,
@@ -132,7 +133,7 @@ export interface V2UpgradeOptions extends Omit<SeedOptions, 'now'> {
 
 export interface V2UpgradeResult {
   previousSchemaVersion: 12
-  schemaVersion: 21
+  schemaVersion: 22
   resetEpoch: number
   backupPath: string
   backupSha256: string
@@ -180,6 +181,8 @@ const V1_MUTABLE_TABLES = [
 
 const V2_EPOCH_MUTABLE_TABLES = [
   'v2_audience_votes',
+  'v2_manual_audience_votes',
+  'v2_manual_vote_candidates',
   'v2_buzzer_entries',
   'v2_raffle_draws',
   'v2_screen_moderation_audit',
@@ -259,6 +262,8 @@ const EXPECTED_TABLES = new Set([
   'v2_live_interaction_state',
   'v2_buzzer_entries',
   'v2_audience_votes',
+  'v2_manual_audience_votes',
+  'v2_manual_vote_candidates',
   'v2_program_catalog',
   'v2_program_catalog_state',
   'v2_awards',
@@ -267,6 +272,8 @@ const EXPECTED_TABLES = new Set([
 ])
 
 const EXPECTED_CUTOVER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  v2_manual_vote_candidates: ['reset_epoch', 'round_number', 'candidate_id', 'display_label', 'sort_order'],
+  v2_manual_audience_votes: ['id', 'reset_epoch', 'round_number', 'identity_id', 'candidate_id', 'created_at'],
   app_state: [
     'id', 'reset_epoch', 'event_seq', 'seed_version', 'seed_fingerprint',
     'is_resetting', 'updated_at',
@@ -507,6 +514,7 @@ function schemaDriftIssues(database: SqliteDatabase): string[] {
   for (const [tableName, expectedColumns] of Object.entries(
     EXPECTED_CUTOVER_COLUMNS,
   )) {
+    if (['v2_manual_vote_candidates', 'v2_manual_audience_votes'].includes(tableName) && schemaVersion < 22) continue
     if (tableName === 'v2_program_heat_adjustments' && schemaVersion < 21) continue
     if (['v2_awards', 'v2_ceremony_state'].includes(tableName) && schemaVersion < 20) continue
     if (tableName === 'v2_interaction_unlocks' && schemaVersion < 16) continue
@@ -518,7 +526,7 @@ function schemaDriftIssues(database: SqliteDatabase): string[] {
     )
       .map(({ name }) => name)
       .sort()
-    const expected = expectedColumns.filter(column => !(
+    const expected = [...expectedColumns, ...(schemaVersion >= 22 && tableName === 'synthetic_identities' ? ['account_type'] : []), ...(schemaVersion >= 22 && tableName === 'v2_gift_transactions' ? ['score_eligible'] : [])].filter(column => !(
       tableName === 'v2_barrages' &&
       ((column === 'color_style' && schemaVersion < 16) || (column === 'custom_color' && schemaVersion < 19))
     )).sort()
@@ -556,7 +564,7 @@ function schemaDefinition(database: SqliteDatabase): string {
 function schemaMatchesMigrations(
   database: SqliteDatabase,
   migrationsPath: string,
-  throughVersion = 21,
+  throughVersion = 22,
 ): boolean {
   const pristine = new Database(':memory:')
   try {
@@ -857,10 +865,10 @@ function assertMigrationsReady(
   migrationsPath: string,
 ): void {
   const verification = verifyMigrations(database, migrationsPath)
-  if (!verification.ready || verification.currentVersion !== 21) {
+  if (!verification.ready || verification.currentVersion !== 22) {
     maintenanceError(
       'V2_MIGRATIONS_NOT_READY',
-      `V2 cutover requires the complete schema through migration 0021: ${verification.issues.join('; ')}`,
+      `V2 cutover requires the complete schema through migration 0022: ${verification.issues.join('; ')}`,
     )
   }
 }
@@ -1024,10 +1032,10 @@ function assessSyntheticV2UpgradeSource(
     options.migrationsPath,
     12,
   )
-  if (!migrations.ready || migrations.availableVersion !== 21) {
+  if (!migrations.ready || migrations.availableVersion !== 22) {
     maintenanceError(
       'V2_MIGRATIONS_NOT_READY',
-      `V2 upgrade requires an exact schema-12 database with migrations 0013-0021 as the repository tip: ${migrations.issues.join('; ')}`,
+      `V2 upgrade requires an exact schema-12 database with migrations 0013-0022 as the repository tip: ${migrations.issues.join('; ')}`,
     )
   }
 
@@ -1264,6 +1272,8 @@ function clearV1MutableState(database: SqliteDatabase): void {
 
 function clearV2MutableState(database: SqliteDatabase): void {
   database.exec(`
+    DELETE FROM v2_manual_audience_votes;
+    DELETE FROM v2_manual_vote_candidates;
     DELETE FROM v2_audience_votes;
     DELETE FROM v2_buzzer_entries;
     DELETE FROM v2_live_interaction_state;
@@ -1514,7 +1524,7 @@ export async function upgradeSyntheticV2DatabaseFrom12To15(
 
     return {
       previousSchemaVersion: migration.previousVersion as 12,
-      schemaVersion: migration.currentVersion as 21,
+      schemaVersion: migration.currentVersion as 22,
       resetEpoch: assessment.resetEpoch,
       backupPath: backup.backupPath,
       backupSha256: backup.sha256,
@@ -1614,11 +1624,11 @@ export function resetSyntheticV2Database(
 
 export function verifyV2Foundation(
   database: SqliteDatabase,
-  options: Omit<V2CutoverOptions, 'backupPath' | 'confirmation' | 'now'> & { throughSchemaVersion?: 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 },
+  options: Omit<V2CutoverOptions, 'backupPath' | 'confirmation' | 'now'> & { throughSchemaVersion?: 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 },
 ): V2FoundationVerification {
   const issues: string[] = []
-  const target = options.throughSchemaVersion ?? 21
-  const migrations = target < 21
+  const target = options.throughSchemaVersion ?? 22
+  const migrations = target < 22
     ? verifyMigrationHistoryAtVersion(database, options.migrationsPath, target)
     : verifyMigrations(database, options.migrationsPath)
   if (!migrations.ready) issues.push(...migrations.issues)
@@ -1648,7 +1658,7 @@ export function verifyV2Foundation(
         issues.push('The current v2 program is not in the active catalog')
       }
       const heatMismatch = Number(database.prepare(`SELECT COUNT(*) FROM v2_program_catalog program
-        WHERE program.heat != (SELECT COALESCE(SUM(gift.power_cost), 0) FROM v2_gift_transactions gift WHERE gift.program_id = program.id)`).pluck().get())
+        WHERE program.heat != (SELECT COALESCE(SUM(gift.power_cost), 0) FROM v2_gift_transactions gift WHERE gift.program_id = program.id${target >= 22 ? ' AND gift.score_eligible = 1' : ''})`).pluck().get())
       if (heatMismatch > 0) issues.push('V2 program heat does not match retained gift transactions')
     } catch { issues.push('The v2 program catalog is unavailable') }
   }
@@ -1871,8 +1881,11 @@ export function verifyV2Foundation(
       'v2_raffle_draws',
       'v2_buzzer_entries',
       'v2_audience_votes',
+  'v2_manual_audience_votes',
+  'v2_manual_vote_candidates',
     ]) {
       if (tableName === 'v2_interaction_unlocks' && target < 16) continue
+      if (['v2_manual_audience_votes', 'v2_manual_vote_candidates'].includes(tableName) && target < 22) continue
       if (['v2_buzzer_entries', 'v2_audience_votes'].includes(tableName) && target < 19) continue
       const wrongEpoch = Number(
         database
@@ -2546,5 +2559,37 @@ export async function upgradeV2ProgramRankingFrom20To21(database: SqliteDatabase
     if (database.inTransaction) database.exec('ROLLBACK')
     throw new V2MaintenanceError('V2_UPGRADE_ROLLED_BACK',
       `Programme ranking upgrade rolled back; verified backup retained. ${error instanceof Error ? error.message : 'Unknown failure'}`)
+  }
+}
+
+export async function upgradeV2EventEntryFrom21To22(database: SqliteDatabase, options: V2UpgradeOptions) {
+  if (options.confirmation !== V2_CATALOG_UPGRADE_CONFIRMATION) {
+    maintenanceError('V2_DESTRUCTIVE_CONFIRMATION_REQUIRED', `Stop the services before confirming ${V2_CATALOG_UPGRADE_CONFIRMATION}`)
+  }
+  const verifySource = () => {
+    const source = verifyV2Foundation(database, { ...options, throughSchemaVersion: 21 })
+    if (!source.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Schema-21 source is inconsistent: ${source.issues.join('; ')}`)
+    return source
+  }
+  const source = verifySource()
+  const backup = await createVerifiedBackup(database, options.backupPath, '2')
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    if (Number(database.pragma('data_version', { simple: true })) !== backup.dataVersion) {
+      maintenanceError('V2_DATA_CHANGED_DURING_UPGRADE', 'The database changed after its verified backup')
+    }
+    verifySource()
+    const migration = migrateActiveV2EventEntryFrom21To22(database, options.migrationsPath, options.now)
+    const verified = verifyV2Foundation(database, options)
+    if (!verified.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Event entry upgrade validation failed: ${verified.issues.join('; ')}`)
+    options.beforeCommit?.()
+    database.exec('COMMIT')
+    return { previousSchemaVersion: migration.previousVersion, schemaVersion: migration.currentVersion,
+      resetEpoch: source.resetEpoch, participantCount: source.participantCount,
+      backupPath: backup.backupPath, backupSha256: backup.sha256 }
+  } catch (error) {
+    if (database.inTransaction) database.exec('ROLLBACK')
+    throw new V2MaintenanceError('V2_UPGRADE_ROLLED_BACK',
+      `Event entry upgrade rolled back; verified backup retained. ${error instanceof Error ? error.message : 'Unknown failure'}`)
   }
 }

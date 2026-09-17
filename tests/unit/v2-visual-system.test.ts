@@ -196,11 +196,8 @@ describe('V2 mobile visual system contracts', () => {
     }
 
     expect(cssRule(style, '.operation-dock')).toContain('border-radius: var(--shape-panel)')
-    const logout = cssRule(style, '.v2-welcome__logout')
-    expect(logout).toContain('min-height: 44px')
-    expect(logout).toContain('border: 0')
-    expect(Number.parseFloat(logout.match(/border-radius:\s*([^;]+)/u)?.[1] ?? '999')).toBeLessThanOrEqual(4)
-    expect(style).toMatch(/\.v2-welcome__logout::before,[\s\S]*?\.v2-welcome__logout::after\s*\{/u)
+    expect(style).not.toContain('.v2-welcome__logout')
+
   })
 
   it('shares Orbital Signal semantics while keeping the admin surface operational and explicit', () => {

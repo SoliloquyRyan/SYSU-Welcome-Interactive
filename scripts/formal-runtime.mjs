@@ -118,7 +118,7 @@ export function prepareFormalRuntime({
     profile?.profile !== 'PROTECTED_ROSTER' ||
     !Number.isInteger(profile.participantCount) ||
     profile.participantCount < 1 ||
-    profile.participantCount > 300
+    profile.participantCount > 400
   ) {
     throw new Error('正式运行凭据不是有效的受保护名单配置。')
   }

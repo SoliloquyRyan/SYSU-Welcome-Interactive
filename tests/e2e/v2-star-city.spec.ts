@@ -94,14 +94,10 @@ test('reviews the star city surfaces, OBS fallback, and partial combined-operati
     expect(alpha).toBe(0)
 
     await admin.getByLabel('当前节目', { exact: true }).selectOption('event2026-14')
-    checkpoint = 'raffle preparation'
+    checkpoint = 'manual candidate preparation'
     await expect(admin.locator('.cue-current')).toContainText('lovesik girls')
     await admin.getByRole('button', { name: '设为当前节目', exact: true }).click()
-    await admin.getByRole('button', { name: '开启观众抽取', exact: true }).click()
-    await admin.getByRole('button', { name: '抽取一位', exact: true }).click()
-    await expect(admin.locator('.winner-list code')).toHaveCount(1)
-    await admin.getByRole('button', { name: '抽取一位', exact: true }).click()
-    await expect(admin.locator('.winner-list code')).toHaveCount(2)
+    await admin.getByLabel('选手人数',{exact:true}).fill('2')
     let failVote = true
     await admin.route('**/api/v2/admin/commands', async route => {
       if (failVote && route.request().postDataJSON().command === 'OPEN_AUDIENCE_VOTE') {
@@ -109,19 +105,17 @@ test('reviews the star city surfaces, OBS fallback, and partial combined-operati
         await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ protocolVersion: '2', error: { code: 'INTERACTION_REVISION_CONFLICT', message: 'State changed' } }) })
       } else await route.continue()
     })
-    await confirm(admin, '完成抽取并开放投票')
-    checkpoint = 'partial failure recovery'
-    await expect(admin.locator('.workflow-receipt')).toContainText('操作已停止')
-    await expect(admin.locator('.workflow-receipt')).toContainText('已确认：收起抽取画面')
-    await expect(admin.getByRole('button', { name: '开放观众投票', exact: true })).toBeEnabled()
-    await shot(admin, '07-partial-operation')
-    await admin.getByRole('button', { name: '开放观众投票', exact: true }).click()
-    await expect(admin.locator('.workflow-receipt')).toHaveCount(0)
+    await confirm(admin, '确认选手并开放投票')
+    checkpoint = 'stale vote recovery'
+    await expect(admin.getByLabel('选手人数',{exact:true})).toHaveValue('2')
+    await expect(admin.getByRole('button', {name:'确认选手并开放投票',exact:true})).toBeEnabled()
+    await shot(admin, '07-stale-vote-retry')
+    await confirm(admin, '确认选手并开放投票')
     await screen.goto('/screen?motion=reduced')
     await expect(screen.locator('.v2-vote-board article')).toHaveCount(2)
     await shot(screen, '08-stage-vote')
     await shot(phones[0]!, '09-phone-vote')
-    await confirm(admin, '揭晓投票结果')
+    await confirm(admin, '关闭投票并揭晓')
     checkpoint = 'reveal and next'
     await expect(admin.getByRole('button', { name: '收起互动并进入下一项', exact: true })).toBeEnabled()
     await confirm(admin, '收起互动并进入下一项')

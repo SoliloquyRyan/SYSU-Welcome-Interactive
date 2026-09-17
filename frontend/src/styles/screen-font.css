@@ -4,7 +4,7 @@
   font-family: 'Fangxian';
   src: url('../assets/fonts/fangxian-title.woff2') format('woff2');
   font-style: normal;
-  font-weight: 300 900;
+  font-weight: 300;
   font-display: swap;
 }
 @font-face {
@@ -47,9 +47,13 @@
 }
 .v2-screen :is(h1,h2,.v2-raffle__code,.v2-buzzer-winner) {
   font-family: var(--font-family-display);
-  font-weight: 400;
+  font-weight: 700;
+  -webkit-text-stroke: .8px currentColor;
   text-shadow: 0 0 14px #bdb1db24;
 }
 .v2-screen :is(.program-title-cue p,.award-winners strong,.award-winners p,.ceremony-kicker,.ceremony-description,.v2-barrage-stream__item) {
   font-family: var(--font-family-ui);
 }
+
+/* D-108: strengthen the supplied light outlines without changing performer typography. */
+.v2-screen :is(.program-stage-title h2,.ceremony-content h1,.closing-credits h1,.closing-credits h2,.v2-scene-copy h1){font-family:var(--font-family-display);font-weight:700;-webkit-text-stroke:1.8px currentColor;paint-order:stroke fill}

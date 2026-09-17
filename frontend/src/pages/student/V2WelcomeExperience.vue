@@ -133,7 +133,6 @@ const giftQuantity = ref(1)
 const voteChoice = ref('')
 const dockTextInputFocused = ref(false)
 const giftOpen = ref(false)
-const logoutOpen = ref(false)
 const titleMotionEnabled = ref(false)
 const archiveMetricHelp = ref('')
 const busy = ref('')
@@ -144,8 +143,6 @@ const visualHeight = ref(null)
 const compactKeyboard = ref(false)
 const giftTrigger = ref(null)
 const giftClose = ref(null)
-const logoutTrigger = ref(null)
-const logoutCancel = ref(null)
 const sceneHeading = ref(null)
 const reducedMotion = useReducedMotion()
 const commandKeys = new Map()
@@ -186,7 +183,7 @@ const runtime = computed(() => snapshot.value?.runtime ?? null)
 const admitted = computed(() => participant.value?.onboardingState === 'ADMITTED')
 const completed = computed(() => runtime.value?.status === 'COMPLETED')
 const navigationAvailable = computed(() => admitted.value || completed.value)
-const modalOpen = computed(() => giftOpen.value || logoutOpen.value || barrageConfirmOpen.value)
+const modalOpen = computed(() => giftOpen.value || barrageConfirmOpen.value)
 const headerUnavailable = computed(() => modalOpen.value || Boolean(cinematic.value))
 const sceneCopy = computed(() => mobileSceneCopy(snapshot.value))
 const currentProgram = computed(() => snapshot.value?.currentProgram ?? null)
@@ -216,13 +213,13 @@ const viewCopy = computed(() => {
     }
   }
   if (runtime.value?.status === 'RUNNING' && runtime.value?.currentScene === 'PROGRAM_SUPPORT') {
-    if (snapshot.value?.stage?.mode === 'HOST' && currentProgram.value?.kind !== 'SPEECH') return { kicker: '迎新之夜', title: '此刻，共赴新程', subtitle: '' }
+    if (snapshot.value?.stage?.mode === 'HOST' && currentProgram.value?.kind !== 'SPEECH') return { kicker: '迎新之夜', title: '2026迎新晚会', subtitle: '' }
     return { kicker: snapshot.value?.presentation.type === 'RAFFLE' ? '互动环节二' : '正在现场', title: snapshot.value?.presentation.type === 'RAFFLE' ? '上台观众，即将揭晓' : currentProgram.value?.title ?? '等待节目', subtitle: snapshot.value?.presentation.type === 'RAFFLE' ? '抬头看向大屏，等待本轮上台观众公布。' : currentProgram.value ? programCredits(currentProgram.value) || '' : '' }
   }
   return {
     kicker: runtime.value?.status === 'COMPLETED' ? '活动终章' : '现场信号',
     title: sceneCopy.value.title,
-    displayTitle: completed.value ? '今夜的星河，\n已经成形' : sceneCopy.value.title,
+    displayTitle: completed.value ? '以星光作序，\n与未来相逢' : sceneCopy.value.title,
     subtitle: sceneCopy.value.subtitle,
   }
 })
@@ -275,7 +272,7 @@ const journeyPhase = computed(() => {
 const journeyPlaying = computed(() => ['discovering', 'color-confirm', 'orbit-handoff'].includes(cinematic.value))
 const programBackgroundVisible = computed(() => admitted.value && !completed.value
   && runtime.value?.currentScene === 'PROGRAM_SUPPORT' && !journeyPlaying.value)
-const galaxyCapacityValid = computed(() => (snapshot.value?.publicStars?.length ?? 0) <= 300)
+const galaxyCapacityValid = computed(() => (snapshot.value?.publicStars?.length ?? 0) <= 400)
 const connectionMessage = computed(() => {
   // COMPLETED intentionally closes realtime. The memento carries the durable
   // end state; intentional suspension must not look like a connection fault.
@@ -305,6 +302,7 @@ const giftInteractionReady = computed(() =>
   Boolean(currentProgram.value && currentProgram.value.kind === 'PERFORMANCE' && currentProgram.value.giftsEnabled !== false),
 )
 const giftAvailabilityMessage = computed(() => {
+  if (snapshot.value?.stage?.mode === 'HOST') return '报幕期间暂停送礼，节目开始后恢复。'
   if (runtime.value?.status === 'PAUSED') return '现场已暂停，暂时不能送礼物。'
   if (runtime.value?.status === 'COMPLETED') return '本场活动已结束，礼物互动已经关闭。'
   if (realtime.state.value !== 'online') {
@@ -496,7 +494,6 @@ function clearSession() {
   finishCinematic()
   giftOpen.value = false
   barrageConfirmOpen.value = false
-  logoutOpen.value = false
   dockTextInputFocused.value = false
   busyOwner = null
   busy.value = ''
@@ -578,13 +575,14 @@ async function onPublicEvent(frame) {
       reduced: reducedMotion.value, hidden: document.hidden, cinematic: cinematic.value,
       presentation: current.presentation.type,
     })
-    const next = await refreshSnapshot()
+    if (playOpening) mobileProgramOpening.value = true
+    const next = await refreshSnapshot().catch(error => { finishMobileProgramOpening(); throw error })
     if (playOpening && mounted && next?.runtime.runRevision === payload.runtime.runRevision
       && next.runtime.currentScene === 'PROGRAM_SUPPORT' && next.runtime.status === 'RUNNING'
       && next.presentation.type === 'NONE' && realtime.state.value === 'online'
       && admitted.value && !reducedMotion.value && !document.hidden && !cinematic.value) {
       mobileProgramOpening.value = true
-    }
+    } else finishMobileProgramOpening()
     return
   }
   if (frame.name === 'presentation.changed') {
@@ -857,9 +855,6 @@ async function startStar() {
   await runCommand('START_STAR', {}, '你的星已正式启动。')
 }
 
-async function cooperativeLight() {
-  await runCommand('COOPERATIVE_LIGHT', {}, '你已完成协同点亮。')
-}
 
 async function postBarrage(premiumConfirmed = false) {
   if (!barrageDraft.value.trim() || barrageLength.value > 40) {
@@ -906,7 +901,7 @@ async function buzzIn() {
 
 async function castAudienceVote() {
   if (!voteChoice.value) return
-  const next = await runCommand('CAST_AUDIENCE_VOTE', { candidateStarId: voteChoice.value }, '已投票')
+  const next = await runCommand('CAST_AUDIENCE_VOTE', { candidateId: voteChoice.value }, '已投票')
   if (next) voteChoice.value = ''
 }
 
@@ -939,41 +934,6 @@ async function closeGift(restore = true) {
   }
 }
 
-async function openLogout() {
-  document.activeElement?.blur?.()
-  archiveMetricHelp.value = ''
-  logoutOpen.value = true
-  await nextTick()
-  logoutCancel.value?.focus()
-}
-
-async function closeLogout(restore = true) {
-  logoutOpen.value = false
-  if (restore) {
-    await nextTick()
-    logoutTrigger.value?.focus({ preventScroll: true })
-  }
-}
-
-async function confirmLogout() {
-  abortSnapshotRequests()
-  realtime.stop()
-  const busyToken = {}
-  busyOwner = busyToken
-  busy.value = 'logout'
-  try {
-    await v2ParticipantApi.logout()
-  } catch {
-    // Local clearing is intentional even when the LAN service is unreachable.
-  } finally {
-    if (busyOwner === busyToken) {
-      busyOwner = null
-      busy.value = ''
-    }
-    clearSession()
-  }
-}
-
 function trapDialog(event) {
   const focusable = [...event.currentTarget.querySelectorAll(
     'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [href]',
@@ -993,8 +953,7 @@ function trapDialog(event) {
 function onEscape(event) {
   if (event.key !== 'Escape') return
   finishMobileProgramOpening()
-  if (logoutOpen.value) void closeLogout()
-  else if (giftOpen.value) void closeGift()
+  if (giftOpen.value) void closeGift()
   else if (barrageConfirmOpen.value) void closePremiumBarrage()
   else archiveMetricHelp.value = ''
 }
@@ -1143,7 +1102,8 @@ onBeforeUnmount(() => {
   >
     <OpeningMusic :scene="runtime?.currentScene" :status="runtime?.status" />
     <PersonalJourneyStage
-      v-if="!programBackgroundVisible"
+      v-if="!programBackgroundVisible || mobileProgramOpening"
+      :class="{ 'is-opening-galaxy': mobileProgramOpening && programBackgroundVisible }"
       ref="journeyStage"
       :phase="journeyPhase"
       :playing="journeyPlaying"
@@ -1153,7 +1113,7 @@ onBeforeUnmount(() => {
       :own-star="journeyOwnStar"
       :public-stars="snapshot?.publicStars ?? []"
     />
-    <ProgramStageBackground v-else compact :stars="snapshot?.publicStars ?? []" :effects="giftFlights" :own-star-id="participant?.ownPublicStarId" :visual="phoneVisual" :variant="programBackground(currentProgram, snapshot?.stage)" :theme="starCityTheme({ program: currentProgram, stage: snapshot?.stage, presentation: snapshot?.presentation, liveInteraction: snapshot?.liveInteraction }).id" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED'" @sky-points="phoneSkyPoints = $event" />
+    <ProgramStageBackground v-if="admitted && !completed" :class="{ 'is-preloaded-background': !programBackgroundVisible, 'is-opening-city': mobileProgramOpening && programBackgroundVisible }" compact :stars="snapshot?.publicStars ?? []" :effects="giftFlights" :own-star-id="participant?.ownPublicStarId" :visual="phoneVisual" :variant="programBackground(currentProgram, snapshot?.stage)" :theme="starCityTheme({ program: currentProgram, stage: snapshot?.stage, presentation: snapshot?.presentation, liveInteraction: snapshot?.liveInteraction }).id" :reduced="reducedMotion" :paused="pageHidden || !programBackgroundVisible || runtime?.status === 'PAUSED'" @sky-points="phoneSkyPoints = $event" />
     <MobileProgramOpening v-if="mobileProgramOpening && programBackgroundVisible" @finish="finishMobileProgramOpening" />
     <GiftSkyEffects compact :points="phoneSkyPoints" :effects="giftFlights" :aggregate="giftAggregate" :reduced="reducedMotion" />
 
@@ -1176,13 +1136,6 @@ onBeforeUnmount(() => {
           alt=""
         >
       </a>
-       <button
-        v-if="snapshot"
-        ref="logoutTrigger"
-        type="button"
-         class="v2-welcome__logout"
-         @click="openLogout"
-       >退出登录</button>
     </header>
 
     <main
@@ -1363,8 +1316,9 @@ onBeforeUnmount(() => {
 
       <template v-else>
         <div ref="mainDockBody" :key="viewRevealKey" class="dock-body admitted-panel page-reveal">
+          <p v-if="participant?.accountType === 'STAFF'" class="staff-entry-note">工作人员应援 · 礼物不计入节目排名</p>
           <template v-if="activeTab === 'scene'">
-            <PersonalMemento v-if="runtime?.status === 'COMPLETED'" :participant="participant" :star-code="personalStarCode" :color="selectedColor" @open-archive="selectTab('archive')" />
+            <PersonalMemento v-if="runtime?.status === 'COMPLETED'" :participant="participant" :star-code="personalStarCode" :color="selectedColor" @open-archive="selectTab('archive')" @open-programs="selectTab('programs')" />
             <div v-else-if="runtime?.status === 'PAUSED'" class="terminal-copy">
               <strong>互动暂时停止</strong><p>恢复后会从当前现场环节继续。</p>
             </div>
@@ -1386,7 +1340,7 @@ onBeforeUnmount(() => {
             <form v-else-if="runtime?.currentScene === 'PROGRAM_SUPPORT'" class="program-composer" @submit.prevent="postBarrage()">
               <div class="now-playing"><span>现场聊天</span><span v-if="currentProgram?.kind === 'PERFORMANCE' && currentProgram.giftsEnabled !== false">热度 {{ currentProgram.heat }}</span></div>
 
-              <div v-if="currentProgramGiftSummary.length" class="current-program-gifts" aria-label="当前节目收到的礼物">
+              <div v-if="currentProgramGiftSummary.length && snapshot?.stage?.mode !== 'HOST'" class="current-program-gifts" aria-label="当前节目收到的礼物">
                 <span>本节目收到</span>
                 <ul>
                   <li v-for="gift in currentProgramGiftSummary" :key="gift.id + '-' + gift.sentCount" class="gift-received" :data-gift-id="gift.id"><GiftSignalIcon :gift-id="gift.id" aria-hidden="true" /><span>{{ gift.name }}</span><strong>{{ gift.id === 'gift-starship' ? `${(gift.sentCount ?? 0) * gift.powerCost} 礼物值` : `×${gift.sentCount ?? 0}` }}</strong></li>
@@ -1407,12 +1361,12 @@ onBeforeUnmount(() => {
                 <template v-else-if="liveInteraction.phase === 'VOTE_OPEN'">
 
                   <div class="vote-options" role="radiogroup" aria-label="上台观众候选">
-                    <label v-for="candidate in liveInteraction.voteCandidates" :key="candidate.publicStarId" :style="{ '--candidate-color': candidate.displayColor }"><input v-model="voteChoice" type="radio" name="audience-vote" :value="candidate.publicStarId" :disabled="liveInteraction.participation.hasVoted"><span>{{ candidate.publicStarId }}</span></label>
+                    <label v-for="candidate in liveInteraction.voteCandidates" :key="candidate.candidateId" :style="{ '--candidate-color': selectedColor }"><input v-model="voteChoice" type="radio" name="audience-vote" :value="candidate.candidateId" :disabled="liveInteraction.participation.hasVoted"><span>{{ candidate.displayLabel }}</span></label>
                   </div>
                   <button class="dock-primary" type="button" :disabled="!voteChoice || !actionAllowed(snapshot, 'CAST_AUDIENCE_VOTE') || Boolean(busy)" @click="castAudienceVote">{{ liveInteraction.participation.hasVoted ? '本轮已投票' : '确定' }}</button>
                 </template>
                 <template v-else>
-                  <div class="vote-results"><div v-for="candidate in liveInteraction.voteCandidates" :key="candidate.publicStarId"><span>{{ candidate.publicStarId }}</span><i :style="{ transform: `scaleX(${liveInteraction.totalVotes ? (candidate.voteCount ?? 0) / liveInteraction.totalVotes : 0})` }"></i><strong>{{ candidate.voteCount ?? 0 }}</strong></div></div>
+                  <div class="vote-results"><div v-for="candidate in liveInteraction.voteCandidates" :key="candidate.candidateId"><span>{{ candidate.displayLabel }}</span><i :style="{ transform: `scaleX(${liveInteraction.totalVotes ? (candidate.voteCount ?? 0) / liveInteraction.totalVotes : 0})` }"></i><strong>{{ candidate.voteCount ?? 0 }}</strong></div></div>
                   <p>共收到 {{ liveInteraction.totalVotes }} 票</p>
                 </template>
               </section>
@@ -1434,7 +1388,7 @@ onBeforeUnmount(() => {
                 <div class="composer-identity"><button class="style-trigger" type="button" aria-controls="barrage-style-picker" :aria-expanded="colorPickerOpen" @click="colorPickerOpen = !colorPickerOpen">星色 <span :style="{ background: barrageSwatch(selectedBarrageStyle) }"></span></button><small>{{ personalStarCode }} · {{ barrageLength }} / 40</small></div>
                 <button
                   ref="giftTrigger"
-                  v-if="currentProgram?.kind === 'PERFORMANCE' && currentProgram.giftsEnabled !== false"
+                  v-if="currentProgram?.kind === 'PERFORMANCE' && currentProgram.giftsEnabled !== false && snapshot?.stage?.mode !== 'HOST'"
                   class="gift-trigger"
                   type="button"
                   aria-label="送礼物"
@@ -1445,12 +1399,7 @@ onBeforeUnmount(() => {
               </div>
             </form>
 
-            <section v-else-if="runtime?.currentScene === 'COOPERATIVE_LIGHT'" class="cooperative-card">
-              <div class="cooperative-count"><span>此刻，与你一起点亮</span><strong>{{ snapshot.aggregate.cooperativeLightCount }}<small> / {{ snapshot.aggregate.admittedCount }}</small></strong></div>
-              <progress :value="snapshot.aggregate.cooperativeLightCount" :max="Math.max(1,snapshot.aggregate.admittedCount)" aria-label="全场点亮进度"></progress>
-              <button v-if="actionAllowed(snapshot, 'COOPERATIVE_LIGHT')" class="dock-primary" type="button" :disabled="!writesReady || Boolean(busy)" @click="cooperativeLight">{{ busy === 'COOPERATIVE_LIGHT' ? '正在点亮…' : '参与全场点亮' }}</button>
-              <div v-else class="terminal-copy"><strong>{{ participant.cooperativeLightAt ? '点亮已完成' : '已进入协同点亮' }}</strong><p>{{ participant.cooperativeLightAt ? '你的光，已与全场相连。' : '等待现场发出点亮信号。' }}</p></div>
-            </section>
+            <section v-else-if="runtime?.currentScene === 'COOPERATIVE_LIGHT'" class="terminal-copy"><strong>今夜，因你们而闪耀</strong><p>请看大屏，和我们一起留下今晚的纪念。</p></section>
           </template>
 
           <section v-else-if="activeTab === 'programs'" class="program-list" aria-labelledby="view-title">
@@ -1568,13 +1517,7 @@ onBeforeUnmount(() => {
         <div class="dock-actions"><button ref="barrageConfirmCancel" class="dock-secondary" type="button" @click="closePremiumBarrage()">返回</button><button class="dock-primary" type="button" :disabled="Boolean(busy)" @click="confirmPremiumBarrage">确定</button></div>
       </section>
     </div>
-    <div v-if="logoutOpen" class="modal-backdrop modal-backdrop--dialog">
-      <section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="logout-title" aria-describedby="logout-description" @keydown.tab="trapDialog">
-        <h2 id="logout-title">退出当前身份？</h2>
-        <p id="logout-description">退出后可重新核验或扫码进入。{{ barrageDraft ? '未提交的弹幕草稿将丢失。' : '' }}</p>
-        <div class="dock-actions"><button ref="logoutCancel" class="dock-secondary" type="button" @click="closeLogout()">返回</button><button class="dock-danger" type="button" :disabled="busy === 'logout'" @click="confirmLogout">确定</button></div>
-      </section>
-    </div>
+
   </section>
 </template>
 
@@ -1711,37 +1654,6 @@ onBeforeUnmount(() => {
   outline: 2px solid var(--color-orbit-focus);
   outline-offset: 4px;
 }
-
-.v2-welcome__logout {
-  position: relative;
-  min-width: 72px;
-  min-height: 44px;
-  padding: 0 10px 0 20px;
-  border: 0;
-  border-radius: 2px;
-  color: rgba(220, 234, 255, 0.84);
-  background: transparent;
-  font: 500 var(--font-size-xs) var(--font-ui);
-  letter-spacing: 0.08em;
-  cursor: pointer;
-}
-.v2-welcome__logout::before,
-.v2-welcome__logout::after {
-  position: absolute;
-  left: 7px;
-  width: 8px;
-  height: 8px;
-  border-left: 1px solid rgba(126, 190, 255, 0.7);
-  content: "";
-}
-.v2-welcome__logout::before { top: 10px; border-top: 1px solid rgba(126, 190, 255, 0.7); }
-.v2-welcome__logout::after { bottom: 10px; border-bottom: 1px solid rgba(126, 190, 255, 0.7); }
-.v2-welcome__logout:hover,
-.v2-welcome__logout:focus-visible {
-  color: #f3f8ff;
-  background: linear-gradient(90deg, transparent, rgba(96, 160, 242, 0.16));
-}
-.v2-welcome__logout:focus-visible { outline: 2px solid var(--color-orbit-focus); outline-offset: 2px; }
 
 .modal-sheet header button {
   min-width: 52px;
@@ -3155,14 +3067,22 @@ textarea:focus-visible {
 .v2-welcome:not(.is-content-page) .operation-dock{border:1px solid rgba(180,210,239,.15);border-radius:18px;background:linear-gradient(150deg,rgba(20,37,55,.4),rgba(3,10,20,.28));box-shadow:inset 0 1px rgba(230,244,255,.035)}
 .entry-form input{border-radius:12px;min-height:48px;background:rgba(3,10,19,.36);border-color:rgba(157,191,224,.24)}
 .entry-form .dock-primary,.color-control .dock-primary{border-radius:12px}
-.v2-welcome__logout{border:1px solid rgba(158,193,226,.17);border-radius:12px;background:rgba(8,20,34,.3)}
-.v2-welcome__logout::before,.v2-welcome__logout::after{display:none}
 .gift-grid button{position:relative}.gift-grid .gift-icon-shell{border:0}
 .gift-selection-mark{position:absolute;right:10px;top:10px;display:grid;place-items:center;width:18px;height:18px;border-radius:50%;color:#0b1c2b;background:#cee4f4;font-size:12px;font-weight:600}
 .gift-send-row>span{line-height:1.35}.gift-send-row .gift-total-label{display:block;margin-bottom:3px;color:#9fb6cc;font:400 11px/1.5 var(--font-ui)}
 .live-interaction-card{border-color:rgba(177,205,227,.19);background:linear-gradient(130deg,rgba(25,43,60,.5),rgba(5,16,28,.48));-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
 .v2-welcome.is-completed .operation-dock{background:linear-gradient(150deg,rgba(20,37,55,.55),rgba(3,10,20,.5));border-radius:18px}
 
+
+/* The old galaxy stays mounted until the new city has completed its handoff. */
+.is-preloaded-background{opacity:0;visibility:hidden}.is-opening-galaxy{z-index:2;animation:d108-galaxy-out 2.4s both}.is-opening-city{animation:d108-city-in 2.4s both}
+[data-program-opening="playing"] .program-composer{animation:d108-content-in 2.4s both}
+.v2-welcome :is(h1,h2,h3,.dock-view-title,.archive-owner,.program-list strong){font-weight:700}
+@keyframes d108-galaxy-out{0%,12%{opacity:1}80%,100%{opacity:0}}
+@keyframes d108-city-in{0%,8%{opacity:0}82%,100%{opacity:1}}
+@keyframes d108-content-in{0%,48%{opacity:0}100%{opacity:1}}
+@media(prefers-reduced-motion:reduce){.is-opening-galaxy{display:none}.is-opening-city,[data-program-opening="playing"] .program-composer{animation:none}}
+.staff-entry-note{font:500 12px/1.6 var(--font-family-ui);color:#c9bbd9;margin:0 0 12px}
 </style>
 
 <style scoped src="./star-city-mobile.css"></style>

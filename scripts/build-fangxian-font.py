@@ -19,6 +19,7 @@ def main():
     catalog = json.loads((ROOT / 'docs/event-program-2026.json').read_text(encoding='utf-8'))
     for item in catalog['items']:
         characters.update(map(ord, item['titleAsProvided']))
+    characters.update(map(ord, (ROOT / 'backend/migrations/0020_awards_and_stage.sql').read_text(encoding='utf-8')))
     # Existing on-screen titles and dialog copy; participant names use Noto.
     for directory in ['frontend/src/pages/screen', 'frontend/src/components']:
         for source in (ROOT / directory).rglob('*.vue'):

@@ -218,7 +218,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 21, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 22, issues: [] })
   })
 
   it('requires an explicit readiness override and audits the anonymous funnel', () => {
@@ -307,7 +307,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 21, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 22, issues: [] })
   })
 
   it('starts one public star once without retired starlight rewards', () => {
@@ -419,7 +419,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 21, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 22, issues: [] })
   })
 
   it('unlocks a gradient once, replays safely and rejects invalid or unaffordable styles without charging', () => {
@@ -610,7 +610,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     })).toThrowError(V2ParticipantCommandError)
   })
 
-  it('freezes scene writes while paused and requires unfinished cooperative light confirmation', () => {
+  it('freezes scene writes while paused and completes without the retired cooperative-light gate', () => {
     admit(0)
     setLiveAndStart()
     runtime({
@@ -634,17 +634,8 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       expectedParticipantRevision: snapshot.participant.participantRevision,
     })).toThrowError(V2ParticipantCommandError)
     runtime({ command: 'RESUME', expectedRunRevision: 5, confirmed: true })
-    expect(() => runtime({
-      command: 'COMPLETE', expectedRunRevision: 6,
-      expectedPresentationRevision: 0, confirmed: true,
-      overrideReadinessWarnings: false,
-    })).toThrowError(V2RuntimeCommandError)
     snapshot = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
-    const light = participantCommand(0, {
-      command: 'COOPERATIVE_LIGHT',
-      expectedParticipantRevision: snapshot.participant.participantRevision,
-    })
-    expect(light.participant).toMatchObject({ cooperativeLightAt: expect.any(String), starlight: 0 })
+    expect(snapshot.participant.allowedActions).not.toContain('COOPERATIVE_LIGHT')
     const completed = runtime({
       command: 'COMPLETE', expectedRunRevision: 6,
       expectedPresentationRevision: 0, confirmed: true,
@@ -701,7 +692,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     expect(readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW).raffle.winners).toHaveLength(2)
   })
 
-  it('locks the first response for A and runs B audience draw, one-person-one-vote and reveal', () => {
+  it('locks the first response for A and runs B independent candidates, one-person-one-vote and reveal', () => {
     admit(0)
     admit(1)
     runtime({ command: 'START', expectedRunRevision: 0, confirmed: true })
@@ -722,16 +713,11 @@ describe('V2-04 three-scene runtime and participant actions', () => {
 
     runtime({ command: 'CLOSE_LIVE_INTERACTION', expectedInteractionRevision: 3, confirmed: true })
     runtime({ command: 'SET_PROGRAM', expectedRunRevision: 2, expectedInteractionRevision: 4, programId: ids[1], confirmed: true })
-    runtime({ command: 'OPEN_RAFFLE', expectedRunRevision: 2, expectedPresentationRevision: 0, confirmed: true })
-    runtime({ command: 'DRAW_RAFFLE', expectedRunRevision: 2, expectedPresentationRevision: 1, confirmed: true })
-    runtime({ command: 'DRAW_RAFFLE', expectedRunRevision: 2, expectedPresentationRevision: 2, confirmed: true })
-    runtime({ command: 'CLOSE_RAFFLE', expectedRunRevision: 2, expectedPresentationRevision: 3, confirmed: true })
-    const candidates = readV2ScreenSnapshot(database, NOW).raffle.winners
-    expect(candidates).toHaveLength(2)
-
-    runtime({ command: 'OPEN_AUDIENCE_VOTE', expectedInteractionRevision: 5, prompt: '谁是卧底 · 现场投票', confirmed: true })
-    participantCommand(0, { command: 'CAST_AUDIENCE_VOTE', expectedParticipantRevision: 3, candidateStarId: candidates[0]!.publicStarId })
-    participantCommand(1, { command: 'CAST_AUDIENCE_VOTE', expectedParticipantRevision: 2, candidateStarId: candidates[1]!.publicStarId })
+    runtime({ command: 'OPEN_AUDIENCE_VOTE', expectedInteractionRevision: 5, candidates: ['1号选手', '2号选手'], prompt: '谁是卧底 · 现场投票', confirmed: true })
+    const candidates = readV2ScreenSnapshot(database, NOW).liveInteraction.voteCandidates as Array<{candidateId: string}>
+    expect(database.prepare('SELECT COUNT(*) FROM v2_raffle_draws').pluck().get()).toBe(0)
+    participantCommand(0, { command: 'CAST_AUDIENCE_VOTE', expectedParticipantRevision: 3, candidateId: candidates[0]!.candidateId })
+    participantCommand(1, { command: 'CAST_AUDIENCE_VOTE', expectedParticipantRevision: 2, candidateId: candidates[1]!.candidateId })
     const hidden = readV2ScreenSnapshot(database, NOW).liveInteraction
     expect(hidden).toMatchObject({ phase: 'VOTE_OPEN', totalVotes: 2, resultsVisible: false })
     expect(hidden.voteCandidates.every(({ voteCount }) => voteCount === null)).toBe(true)
