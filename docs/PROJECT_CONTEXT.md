@@ -1,5 +1,7 @@
 # 项目上下文
 
+> **当前权威入口（2026-09-20）**：本文件按 D 版本倒序保留历史上下文，不是当前线上状态卡。接手或排练请先看 [`README.md`](./README.md)、[`NEXT_YEAR_QUICKSTART.md`](./NEXT_YEAR_QUICKSTART.md)、[`POST_EVENT_REVIEW_20260920.md`](./POST_EVENT_REVIEW_20260920.md) 和 [`CI_STATUS.md`](./CI_STATUS.md)；旧 schema、部署地址和“当前”字样只能作为对应日期的证据，不能直接照搬。
+
 > **D-108（2026-09-17，已发布）**：统一名单入场、50 个工作人员应援账号、互动二独立选手投票、互动三线下、隐藏待亮星和 165 秒电影片尾已上线。schema 22 正式库独立运行，初始待开始；D-107 和旧排练库保留。当前操作以[主持对稿单](./HOST_CUE_GUIDE.md)、[实施验收](./D108_IMPLEMENTATION.md)和[发布恢复索引](./D108_RELEASE_AND_RECOVERY.md)为准；下方旧版本内容保留历史时点。
 
 > **D-107（2026-09-16，已发布）**：已认可的 D-102～D-106 更新已推送 GitHub 并部署至既有服务器。schema 21、现有场次与数据保留；36 段主持人动画及 25 项目录对稿页已上线；发布结果见 [D-107](./D107_RELEASE_AND_HOST_CUES.md)，对稿说明见 [主持人对稿单](./HOST_CUE_GUIDE.md)。下方旧版本状态保留历史时点。
