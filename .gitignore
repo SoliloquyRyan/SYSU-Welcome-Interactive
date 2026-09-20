@@ -29,6 +29,8 @@ Thumbs.db
 data/
 private/
 backups/
+.welcome-recovery/
+frontend/src/assets/speakers/
 exports/
 backend/.data/
 backend/.private/

@@ -16,6 +16,9 @@ const controllable = computed(() => writable.value && props.snapshot.runtime.sta
   && props.snapshot.liveInteraction?.phase === 'IDLE')
 const selected = ref('program-honors')
 const selectedAward = computed(() => awards.value.find(item => item.id === selected.value))
+const campusCombined = computed(() => selected.value === 'photography'
+  ? awards.value.filter(item => ['photography', 'creativity'].includes(item.id))
+  : [])
 const draft = ref(null)
 const editorDialog=ref(null)
 watch(draft,async value=>{await nextTick();if(value&&!editorDialog.value?.open)editorDialog.value?.showModal()})
@@ -32,9 +35,10 @@ const onStage = computed(() => stage.value.award?.id === selected.value && stage
 const modeLabel = computed(() => stage.value.mode === 'AWARD' ? stage.value.revealed ? '名单展示中' : '奖项标题' : stage.value.mode === 'HOST' ? '报幕／主题背景' : '节目画面')
 
 watch(() => props.savedSignal, () => { draft.value = null })
-watch(() => current.value?.awardGroup, group => {
-  if (group) selected.value = awards.value.find(item => item.group === group)?.id ?? selected.value
-})
+watch(() => [current.value?.awardGroup, stage.value.award?.id], ([group, awardId]) => {
+  if (awardId) selected.value = awardId === 'creativity' ? 'photography' : awardId
+  else if (group) selected.value = awards.value.find(item => item.group === group)?.id ?? selected.value
+}, { immediate: true })
 function command(command, extra = {}) { emit('command', { command, expectedStageRevision: stage.value.revision, ...extra }) }
 async function edit(award = selectedAward.value) {
   if (!award || award.group !== 'CAMPUS') return
@@ -53,16 +57,19 @@ function save(confirmed) {
     <header><div><h2>舞台与颁奖</h2><p role="status">{{ modeLabel }}<template v-if="stage.mode === 'AWARD'"> · {{ stage.award?.title }}</template></p></div>
       <div class="award-actions"><BaseButton variant="secondary" :disabled="!controllable || stage.mode === 'HOST'" @click="command('SET_STAGE_MODE', { mode: 'HOST' })">报幕／主题背景</BaseButton><BaseButton variant="secondary" :disabled="!controllable || !current || ['AWARD', 'SPEECH'].includes(current.kind) || stage.mode === 'PROGRAM'" @click="command('SET_STAGE_MODE', { mode: 'PROGRAM' })">返回节目</BaseButton></div>
     </header>
-    <nav class="ceremony-shortcuts" aria-label="颁奖流程"><BaseButton v-for="item in snapshot.programs.filter(item => ['AWARD','SPEECH'].includes(item.kind) || item.title.replace(/[《》]/g, '') === '光年之外')" :key="item.id" variant="secondary" :aria-current="item.id === current?.id ? 'step' : undefined" :disabled="!controllable || item.id === current?.id" @click="emit('select', item.id)">{{ item.title }}</BaseButton></nav>
+    <nav class="ceremony-shortcuts" aria-label="颁奖流程"><BaseButton v-for="item in snapshot.programs.filter(item => item.kind === 'AWARD')" :key="item.id" variant="secondary" :aria-current="item.id === current?.id ? 'step' : undefined" :disabled="!controllable || item.id === current?.id" @click="emit('select', item.id)">{{ item.title }}</BaseButton></nav>
     <details class="award-workspace" open>
       <summary>奖项管理<span>{{ selectedAward?.title ?? '选择奖项' }}</span></summary>
       <div class="award-workspace-content">
     <div class="award-selection"><label for="award-choice">奖项</label><select id="award-choice" v-model="selected" :disabled="!canWrite">
       <optgroup label="节目颁奖"><option v-for="award in awards.filter(a => a.group === 'PROGRAM')" :key="award.id" :value="award.id">{{ award.title }} · 动力值前三名</option></optgroup>
-      <optgroup label="校园图鉴"><option v-for="award in awards.filter(a => a.group === 'CAMPUS')" :key="award.id" :value="award.id">{{ award.title }} · {{ award.confirmed ? `${award.entryCount} 人已确认` : '名单待确认' }}</option></optgroup>
-    </select><BaseButton v-if="selectedAward?.group === 'CAMPUS'" variant="secondary" :disabled="!writable || snapshot.runtime.status === 'COMPLETED' || onStage && stage.revealed" @click="edit()">录入名单</BaseButton></div>
+      <optgroup label="校园图鉴"><option v-for="award in awards.filter(a => a.group === 'CAMPUS' && a.id !== 'creativity')" :key="award.id" :value="award.id">{{ award.id === 'photography' ? '最佳摄影奖 + 最佳创意奖 · 同页' : award.title }} · {{ award.confirmed ? `${award.entryCount} 人已确认` : '名单待确认' }}</option></optgroup>
+    </select></div>
     <V2ProgramScores v-if="selectedAward?.group === 'PROGRAM'" :snapshot="snapshot" :can-write="canWrite" :saved-signal="heatSavedSignal" @command="body => command(body.command, body)" />
-    <p v-if="selectedAward?.group === 'CAMPUS' && !selectedAward.confirmed" class="award-note">名单待确认</p>
+    <p v-if="selectedAward?.group === 'CAMPUS'" class="award-note">正式名单已确认，现场仅可展示与翻页。</p>
+    <div v-if="campusCombined.length" class="award-combined-preview" aria-label="摄影与创意组合名单">
+      <section v-for="award in campusCombined" :key="award.id"><h3>{{ award.title }}</h3><ol><li v-for="entry in award.entries" :key="entry.name">{{ entry.name }}</li></ol></section>
+    </div>
     <div class="award-actions award-reveal-controls">
       <BaseButton variant="secondary" :disabled="!controllable || current?.kind !== 'AWARD' || current?.awardGroup !== selectedAward?.group" @click="command('SELECT_AWARD', { awardId: selected })">展示奖项</BaseButton>
       <BaseButton :disabled="!controllable || !onStage || !selectedAward?.confirmed || stage.revealed" @click="command('REVEAL_AWARD')">揭晓名单</BaseButton>
@@ -85,6 +92,7 @@ function save(confirmed) {
 </template>
 
 <style scoped>
+.award-combined-preview{display:grid;grid-template-columns:1fr 1fr;gap:12px}.award-combined-preview section{padding:12px;border:1px solid #91b9e41f;border-radius:10px;background:#030a1366}.award-combined-preview h3{margin:0 0 8px;font-size:.9rem}.award-combined-preview ol{margin:0;padding-left:24px;line-height:1.8}
 .awards-console{display:grid;gap:18px}.awards-console header{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}.awards-console h2,.awards-console h3,.awards-console p{margin:0}.awards-console h2{font-size:var(--font-size-lg)}.awards-console p{color:var(--color-text-secondary);font-size:.85rem;line-height:1.65}.awards-console header p{margin-top:6px}.award-actions,.award-selection,.award-pagination,.ceremony-shortcuts{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.ceremony-shortcuts{padding-bottom:16px;border-bottom:1px solid var(--color-border-subtle)}.award-selection select{flex:1;min-width:220px}.award-selection label{font-size:.85rem;color:var(--color-text-secondary)}.award-editor{display:grid;gap:14px;border-top:1px solid var(--color-border-subtle);padding-top:18px}.award-editor label{display:grid;gap:8px;font-size:.85rem}.awards-console input,.awards-console textarea,.awards-console select{min-height:44px;border-radius:12px;border:1px solid var(--color-border-strong);padding:10px 12px;color:var(--color-text-primary);background:var(--color-orbit-surface-2);font:inherit;min-width:0}.awards-console textarea{resize:vertical;line-height:1.7}.awards-console :focus-visible{outline:2px solid var(--color-orbit-focus);outline-offset:3px}.award-pagination{margin-left:auto;font-size:.9rem;font-variant-numeric:tabular-nums}.award-preview{display:grid;grid-template-columns:1fr 1fr;max-height:240px;overflow:auto;list-style:none;margin:0;padding:12px;background:var(--color-orbit-surface-1);border-radius:12px;gap:10px}.award-preview li{display:grid;gap:4px;overflow-wrap:anywhere}.award-preview small{color:var(--color-text-secondary)}[role=alert]{color:var(--color-danger)!important}@media(max-width:600px){.award-selection select{flex-basis:100%}.award-actions>button{flex:1 1 130px;white-space:nowrap}.award-pagination{margin-left:0}.award-preview{grid-template-columns:1fr}}
 
 .awards-console{gap:16px}.awards-console>header{align-items:center}.awards-console>header>.award-actions{justify-content:flex-end}.awards-console header p{font-size:.8rem}.ceremony-shortcuts{gap:8px;padding-bottom:0;border-bottom:0}.ceremony-shortcuts>button{flex:1;min-width:130px}.ceremony-shortcuts>button[aria-current=step]{border-color:#a0c9ef70;background:#7faeed14;color:#c7e5ff}
@@ -96,4 +104,4 @@ function save(confirmed) {
 .awards-console{display:flex;flex-direction:column;gap:8px}.awards-console>header,.ceremony-shortcuts{display:none}.award-workspace{flex:1;min-height:0;border:0;padding:0}.award-workspace>summary{display:none}.award-workspace-content{height:100%;display:flex;flex-direction:column;gap:8px;padding:0}.award-selection select{min-height:36px;padding:6px}.award-note{margin:0;font-size:12px}.award-reveal-controls{margin-top:auto}.award-editor{position:fixed;inset:5vh 6vw;z-index:46;box-shadow:0 0 0 100vmax #080d17c9;background:#232c38;display:flex;flex-direction:column;gap:8px;padding:18px;max-height:90dvh}.award-editor>label{flex:1;min-height:0;display:flex;flex-direction:column}.award-editor textarea{flex:1;min-height:90px;resize:none}.award-editor .award-preview{max-height:120px;flex:none;padding:4px}.award-editor .award-actions{flex:none;margin-top:auto}.award-editor h3,.award-editor p{margin:0}
 </style>
 
-<style scoped>dialog.award-editor{margin:0;width:auto;height:90dvh;color:inherit}dialog.award-editor::backdrop{background:#080d17b0}</style>
+<style scoped>dialog.award-editor{margin:0;width:auto;height:90dvh;color:inherit}dialog.award-editor::backdrop{background:#080d17b0}.awards-console .ceremony-shortcuts{display:flex;flex:none}.awards-console .ceremony-shortcuts :deep(button){min-height:44px}.award-selection select{min-height:44px}.award-workspace{overflow-y:auto}</style>

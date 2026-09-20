@@ -8,6 +8,16 @@ interface LiveStateRow {
   roundNumber: number
   prompt: string
   openedAt: string | null
+  opensAt: string | null
+  audioTrackId: string | null
+  audioInputUuid: string | null
+  audioStatus: 'IDLE' | 'ARMED' | 'COUNTDOWN' | 'PAUSED' | 'ENDED'
+  audioArmedAt: string | null
+  audioTriggerEventId: string | null
+}
+
+function hasColumn(database: SqliteDatabase, table: string, column: string): boolean {
+  return (database.prepare(`PRAGMA table_xinfo(${table})`).all() as Array<{ name: string }>).some(row => row.name === column)
 }
 
 function hasLiveInteractionTables(database: SqliteDatabase): boolean {
@@ -18,10 +28,17 @@ function hasLiveInteractionTables(database: SqliteDatabase): boolean {
 
 export function readLiveInteractionRow(database: SqliteDatabase, resetEpoch: number): LiveStateRow {
   if (!hasLiveInteractionTables(database)) {
-    return { revision: 0, segmentCode: null, phase: 'IDLE', roundNumber: 0, prompt: '', openedAt: null }
+    return { revision: 0, segmentCode: null, phase: 'IDLE', roundNumber: 0, prompt: '', openedAt: null, opensAt: null, audioTrackId: null, audioInputUuid: null, audioStatus: 'IDLE', audioArmedAt: null, audioTriggerEventId: null }
   }
+  const audioColumns = hasColumn(database, 'v2_live_interaction_state', 'audio_status')
   return database.prepare(`SELECT revision, segment_code AS segmentCode, phase,
-      round_number AS roundNumber, prompt, opened_at AS openedAt
+      round_number AS roundNumber, prompt, opened_at AS openedAt,
+      ${hasColumn(database, 'v2_live_interaction_state', 'opens_at') ? 'opens_at' : 'NULL'} AS opensAt,
+      ${hasColumn(database, 'v2_live_interaction_state', 'audio_track_id') ? 'audio_track_id' : 'NULL'} AS audioTrackId,
+      ${hasColumn(database, 'v2_live_interaction_state', 'audio_input_uuid') ? 'audio_input_uuid' : 'NULL'} AS audioInputUuid,
+      ${audioColumns ? 'audio_status' : "'IDLE'"} AS audioStatus,
+      ${hasColumn(database, 'v2_live_interaction_state', 'audio_armed_at') ? 'audio_armed_at' : 'NULL'} AS audioArmedAt,
+      ${hasColumn(database, 'v2_live_interaction_state', 'audio_trigger_event_id') ? 'audio_trigger_event_id' : 'NULL'} AS audioTriggerEventId
     FROM v2_live_interaction_state WHERE reset_epoch = ?`).get(resetEpoch) as LiveStateRow
 }
 
@@ -45,6 +62,7 @@ export function readV2LiveInteraction(
   options: { identityId?: string; showHiddenResults?: boolean } = {},
 ): any {
   const state = readLiveInteractionRow(database, resetEpoch)
+  const answerStatusColumn = hasColumn(database, 'v2_buzzer_entries', 'answer_status')
   const leader = state.phase.startsWith('BUZZER')
     ? database.prepare(`SELECT slot.public_star_id AS publicStarId,
           star.display_color AS displayColor
@@ -53,6 +71,7 @@ export function readV2LiveInteraction(
         LEFT JOIN v2_public_stars star ON star.reset_epoch = entry.reset_epoch
           AND star.identity_id = entry.identity_id
         WHERE entry.reset_epoch = ? AND entry.round_number = ?
+          ${answerStatusColumn ? "AND entry.answer_status = 'PENDING'" : ''}
         ORDER BY entry.response_sequence LIMIT 1`).get(resetEpoch, state.roundNumber) ?? null
     : null
   const buzzCount = state.phase.startsWith('BUZZER')
@@ -102,8 +121,12 @@ export function readV2LiveInteraction(
     phase: state.phase,
     roundNumber: state.roundNumber,
     prompt: state.prompt,
-    opensAt: state.phase.startsWith('BUZZER') && state.openedAt
-      ? new Date(Date.parse(state.openedAt) + 3000).toISOString() : null,
+    opensAt: state.phase.startsWith('BUZZER')
+      ? state.opensAt ?? (state.openedAt ? new Date(Date.parse(state.openedAt) + 3000).toISOString() : null)
+      : null,
+    audio: {
+      status: state.audioStatus,
+    },
     buzzCount,
     leader,
     voteCandidates: candidates.map((candidate) => ({
@@ -121,7 +144,8 @@ export function readV2LiveInteraction(
     }
   }
   const buzz = database.prepare(`SELECT response_sequence AS responseSequence
-    FROM v2_buzzer_entries WHERE reset_epoch = ? AND round_number = ? AND identity_id = ?`)
+    FROM v2_buzzer_entries WHERE reset_epoch = ? AND round_number = ? AND identity_id = ?
+    ORDER BY response_sequence DESC LIMIT 1`)
     .get(resetEpoch, state.roundNumber, options.identityId) as { responseSequence: number } | undefined
   const vote = isManual ? database.prepare(`SELECT candidate_id AS publicStarId FROM v2_manual_audience_votes
     WHERE reset_epoch = ? AND round_number = ? AND identity_id = ?`).get(resetEpoch, state.roundNumber, options.identityId) as {publicStarId: string} | undefined

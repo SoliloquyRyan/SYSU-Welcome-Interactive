@@ -69,7 +69,7 @@ describe('D-054 protected roster import', () => {
   it('creates a verified protected v2 directory without putting student IDs in URLs', () => {
     const result = importRoster()
 
-    expect(result).toMatchObject({ participantCount: 2, schemaVersion: 23 })
+    expect(result).toMatchObject({ participantCount: 2, schemaVersion: 24 })
     expect(database.prepare('SELECT public_star_id FROM synthetic_identities ORDER BY seed_index').pluck().all())
       .toEqual(['C-0001', 'C-0002'])
     expect(readProtocolRuntime(database)).toMatchObject({
@@ -94,7 +94,7 @@ describe('D-054 protected roster import', () => {
       }),
     ).toMatchObject({
       ready: true,
-      schemaVersion: 23,
+      schemaVersion: 24,
       participantCount: 2,
       resetEpoch: 1,
       issues: [],

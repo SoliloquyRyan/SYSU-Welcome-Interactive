@@ -5,19 +5,37 @@ import { databaseTableExists } from '../db/open-database.js'
 import { readV2ProgramRanking } from './v2-program-ranking.js'
 import { readCurrentV2Program } from './v2-program-catalog.js'
 
+// The public ceremony order is independent from the historical insertion order
+// in v2_awards. Keep program honors first, then campus awards in the order used
+// by the host: third prize, second prize, first prize, photography/creativity,
+// and finally the points ranking.
+const AWARD_DISPLAY_ORDER: Record<string, number> = {
+  'program-honors': 0,
+  'route-1': 10,
+  'route-2': 20,
+  'route-3': 30,
+  photography: 40,
+  creativity: 41,
+  'points-top20': 50,
+}
+
 export function readV2Awards(database: SqliteDatabase) {
   if (!databaseTableExists(database, 'v2_awards')) return []
-  const rows = database.prepare(`SELECT id, group_code AS "group", title, description,
+  const rows = database.prepare(`SELECT id, group_code AS "group", title, description, sort_order,
     entries_json AS entries, confirmed, revision FROM v2_awards ORDER BY sort_order`).all() as
-    Array<{id: string; group: string; title: string; description: string; entries: string; confirmed: number; revision: number}>
+    Array<{id: string; group: string; title: string; description: string; sort_order: number; entries: string; confirmed: number; revision: number}>
   const ranked = databaseTableExists(database, 'v2_program_heat_adjustments')
-  return rows.filter(raw => !ranked || raw.group !== 'PROGRAM' || raw.id === 'program-honors').map(raw => {
+  return rows
+    .filter(raw => !ranked || raw.group !== 'PROGRAM' || raw.id === 'program-honors')
+    .sort((a, b) => (AWARD_DISPLAY_ORDER[a.id] ?? 1000 + a.sort_order) - (AWARD_DISPLAY_ORDER[b.id] ?? 1000 + b.sort_order))
+    .map(raw => {
+    const { sort_order: _sortOrder, ...publicRaw } = raw
     if (ranked && raw.id === 'program-honors') {
       const ranking = readV2ProgramRanking(database)
-      return V2AwardAdminSchema.parse({ ...raw, ...ranking, title: '节目颁奖', description: '动力值前三名', entryCount: ranking.confirmed ? ranking.entries.length : 0 })
+      return V2AwardAdminSchema.parse({ ...publicRaw, ...ranking, title: '节目颁奖', description: '动力值前三名', entryCount: ranking.confirmed ? ranking.entries.length : 0 })
     }
     const entries = JSON.parse(raw.entries)
-    return V2AwardAdminSchema.parse({ ...raw, entries, confirmed: Boolean(raw.confirmed),
+    return V2AwardAdminSchema.parse({ ...publicRaw, entries, confirmed: Boolean(raw.confirmed),
       entryCount: raw.confirmed ? entries.length : 0 })
   })
 }
@@ -27,22 +45,36 @@ export function readV2AwardSummaries(database: SqliteDatabase) {
 }
 
 export function readV2Stage(database: SqliteDatabase) {
-  const fallback = { revision: 0, mode: 'PROGRAM', revealed: false, page: 0, totalPages: 1, award: null }
+  const fallback = { revision: 0, mode: 'PROGRAM', revealed: false, page: 0, totalPages: 1, award: null, awardPanels: [] }
   if (!databaseTableExists(database, 'v2_ceremony_state')) return V2StageSchema.parse(fallback)
   const row = database.prepare('SELECT revision, mode, award_id AS awardId, page, revealed FROM v2_ceremony_state WHERE id = 1').get() as
     { revision: number; mode: string; awardId: string | null; page: number; revealed: number } | undefined
   if (!row) return V2StageSchema.parse(fallback)
-  const award = readV2Awards(database).find(({ id }) => id === row.awardId)
-  const revealed = row.mode === 'AWARD' && Boolean(row.revealed) && Boolean(award?.confirmed)
-  const pageSize = award?.entries.some(entry => entry.name.length > 24 || entry.detail.length > 70) ? 4 : 8
+  const awards = readV2Awards(database)
+  const award = awards.find(({ id }) => id === row.awardId)
+  const campusPair = awards.filter(item => item.id === 'photography' || item.id === 'creativity')
+  const panelAwards = award?.group === 'CAMPUS' && award.id === 'photography' && campusPair.length === 2 && campusPair.every(item => item.confirmed)
+    ? campusPair
+    : award ? [award] : []
+  const composite = panelAwards.length > 1
+  const revealed = row.mode === 'AWARD' && Boolean(row.revealed) && panelAwards.length > 0 && panelAwards.every(item => item.confirmed)
+  const pageSize = composite ? 1 : award?.entries.some(entry => entry.name.length > 24) ? 4 : 8
   const totalPages = revealed && award ? Math.max(1, Math.ceil(award.entries.length / pageSize)) : 1
   const page = Math.min(row.page, totalPages - 1)
   return V2StageSchema.parse({ revision: row.revision, mode: row.mode, revealed, page, totalPages,
     award: award && row.mode === 'AWARD' ? {
       id: award.id, group: award.group, title: award.title, description: award.description,
       confirmed: award.confirmed, entryCount: award.entryCount,
-      entries: revealed ? award.entries.slice(page * pageSize, page * pageSize + pageSize) : [],
-    } : null })
+      entries: revealed ? (composite ? award.entries : award.entries.slice(page * pageSize, page * pageSize + pageSize))
+        .map(({ name, rank }) => ({ name, ...(rank === undefined ? {} : { rank }), detail: '' })) : [],
+    } : null,
+    awardPanels: row.mode === 'AWARD' && composite ? panelAwards.map(panel => ({
+      id: panel.id,
+      group: 'CAMPUS' as const,
+      title: panel.title,
+      entries: revealed ? panel.entries.map(({ name, rank }) => ({ name, ...(rank === undefined ? {} : { rank }), detail: '' })) : [],
+    })) : [],
+  })
 }
 
 // Caller owns the transaction. Selecting a directory item always starts with a title,
@@ -93,7 +125,8 @@ export function applyV2CeremonyCommand(database: SqliteDatabase, request: Return
       if (request.command === 'SELECT_AWARD') {
         const award = awards.find(({ id }) => id === request.awardId)
         if (!award || award.group !== program.awardGroup) fail('RESOURCE_NOT_FOUND', '此奖项不属于当前颁奖环节。')
-        database.prepare("UPDATE v2_ceremony_state SET mode = 'AWARD', award_id = ?, page = 0, revealed = 0 WHERE id = 1").run(request.awardId)
+        const selectedId = request.awardId === 'creativity' ? 'photography' : request.awardId
+        database.prepare("UPDATE v2_ceremony_state SET mode = 'AWARD', award_id = ?, page = 0, revealed = 0 WHERE id = 1").run(selectedId)
       } else {
         if (stage.mode !== 'AWARD' || !stage.award) fail('SCENE_ACTION_INVALID', '请先选择奖项。')
         if (request.command === 'REVEAL_AWARD') {

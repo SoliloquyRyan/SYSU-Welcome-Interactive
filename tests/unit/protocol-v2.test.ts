@@ -29,6 +29,7 @@ function idleLiveInteraction(participant = false) {
     phase: 'IDLE' as const,
     roundNumber: 0,
     prompt: '',
+    audio: { status: 'IDLE' as const },
     buzzCount: 0,
     leader: null,
     voteCandidates: [],
@@ -685,7 +686,7 @@ describe('protocol v2 shared contract', () => {
         ...giftEvent.payload,
         gift: { ...giftEvent.payload.gift, publicStarId: 'L-4821' },
       },
-    }).success).toBe(false)
+    }).success).toBe(true)
   })
 
   it('rejects v1 stage fields and unknown fields in every v2 write family', () => {

@@ -39,7 +39,7 @@ export function createGiftSkyQueue({ compact = false, reduced = () => false, onC
       const id = gift.giftEventId ?? gift.id
       if (!id || seen.has(id) || !Object.hasOwn(GIFT_SKY_DURATIONS, gift.giftId)) return false
       seen.add(id); if (seen.size > 512) seen.delete(seen.values().next().value)
-      const at = now(), item = { id, giftId: gift.giftId, color: giftDisplayColor(gift.displayColor), quantity: Math.max(1, Math.min(20, Number(gift.quantity) || 1)), batches: 1, receivedAt: at }
+      const at = now(), item = { id, publicStarId: gift.publicStarId ?? null, giftId: gift.giftId, color: giftDisplayColor(gift.displayColor), quantity: Math.max(1, Math.min(20, Number(gift.quantity) || 1)), batches: 1, receivedAt: at }
       // A burst joins the already visible flash/trail without extending its life.
       const merged = [...pending, ...active].find(i => i.giftId === item.giftId && i.color === item.color && at - i.receivedAt < 320)
       if (merged) { merged.quantity += item.quantity; merged.batches++ }

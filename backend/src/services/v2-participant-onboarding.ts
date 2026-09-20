@@ -701,7 +701,10 @@ function allowedActions(database: SqliteDatabase, runtime: RuntimeRow, participa
     if (readV2Stage(database).mode !== 'HOST' && (!current || current.kind === 'PERFORMANCE' && current.giftsEnabled !== false)) actions.push('SEND_GIFT')
     actions.push('POST_BARRAGE')
     const live = readV2LiveInteraction(database, runtime.resetEpoch, { identityId: participant.identityId })
-    if (participant.accountType === 'STUDENT' && live.segmentCode === 'A' && live.phase === 'BUZZER_OPEN' && !live.participation.hasBuzzed) actions.push('BUZZ_IN')
+    // A wrong answer returns the same round to BUZZER_OPEN.  The server
+    // records every attempt, so the same student may try again; the client
+    // must not hide the action merely because a previous attempt exists.
+    if (participant.accountType === 'STUDENT' && live.segmentCode === 'A' && live.phase === 'BUZZER_OPEN') actions.push('BUZZ_IN')
     if (participant.accountType === 'STUDENT' && live.phase === 'VOTE_OPEN' && !live.participation.hasVoted) actions.push('CAST_AUDIENCE_VOTE')
   }
   return actions
@@ -1499,10 +1502,12 @@ export function executeV2ParticipantOnboardingCommand(
           interactionRevision,
           gift: {
             giftEventId,
+            publicStarId: participant.publicStarId,
             ...(participant.displayColor ? { displayColor: participant.displayColor } : {}),
-            showStarship: gift.id === 'gift-starship' && Number(database.prepare(
-              "SELECT COUNT(DISTINCT CASE WHEN substr(id, 1, 5) = 'gift:' THEN substr(id, 1, 41) ELSE id END) FROM v2_gift_transactions WHERE reset_epoch = ? AND program_id = ? AND gift_id = ?",
-            ).pluck().get(runtime.resetEpoch, program.id, gift.id)) <= 2,
+            // Starship is a normal small sky pass in D-110.  Keep the
+            // optional legacy flag for older clients, but never gate the
+            // effect on the first two sends of a programme.
+            showStarship: gift.id === 'gift-starship',
             programId: program.id,
             giftId: gift.id,
             giftName: gift.name,
@@ -1622,7 +1627,8 @@ export function executeV2ParticipantOnboardingCommand(
         if (segmentCode !== 'A' || live.phase !== 'BUZZER_OPEN' || !live.segmentCode || segmentCode !== live.segmentCode) {
           throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '本轮抢答尚未开放或已经锁定。', 409, runtime.resetEpoch)
         }
-        if (!live.openedAt || now.getTime() < Date.parse(live.openedAt) + 3000) {
+        const opensAt = live.opensAt ?? (live.openedAt ? new Date(Date.parse(live.openedAt) + 3000).toISOString() : null)
+        if (!opensAt || now.getTime() < Date.parse(opensAt)) {
           throw new V2ParticipantCommandError('SCENE_ACTION_INVALID', '倒计时尚未结束。', 409, runtime.resetEpoch)
         }
         const responseSequence = Number(database.prepare(`SELECT COALESCE(MAX(response_sequence), 0) + 1
@@ -1630,14 +1636,23 @@ export function executeV2ParticipantOnboardingCommand(
           .pluck().get(runtime.resetEpoch, live.roundNumber))
         database.prepare(`INSERT INTO v2_buzzer_entries (
           id, reset_epoch, round_number, segment_code, identity_id,
-          response_sequence, responded_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(`buzz:${randomUUID()}`, runtime.resetEpoch,
+          response_sequence, responded_at, answer_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`).run(`buzz:${randomUUID()}`, runtime.resetEpoch,
           live.roundNumber, live.segmentCode, identityId, responseSequence, timestamp)
         const interaction = interactionState(database, runtime.resetEpoch)
         const interactionRevision = interaction.interactionRevision + 1
         database.prepare(`UPDATE v2_live_interaction_state SET phase = 'BUZZER_LOCKED',
+          audio_status = CASE WHEN audio_input_uuid IS NULL OR audio_status = 'ENDED' THEN audio_status ELSE 'PAUSED' END,
           revision = ?, updated_at = ? WHERE reset_epoch = ?`)
           .run(interactionRevision, timestamp, runtime.resetEpoch)
+        if (live.audioInputUuid && live.audioStatus !== 'ENDED') {
+          database.prepare(`UPDATE v2_interaction_audio_actions SET acknowledged_at = ?
+            WHERE reset_epoch = ? AND acknowledged_at IS NULL`).run(timestamp, runtime.resetEpoch)
+          database.prepare(`INSERT INTO v2_interaction_audio_actions
+            (id, reset_epoch, round_number, input_uuid, action, created_at)
+            VALUES (?, ?, ?, ?, 'PAUSE', ?)`)
+            .run(`audio-action:${randomUUID()}`, runtime.resetEpoch, live.roundNumber, live.audioInputUuid, timestamp)
+        }
         database.prepare(`UPDATE v2_screen_interaction_state SET interaction_revision = ?,
           updated_at = ? WHERE reset_epoch = ?`).run(interactionRevision, timestamp, runtime.resetEpoch)
         database.prepare(`UPDATE v2_participant_states SET participant_revision = ?, updated_at = ?

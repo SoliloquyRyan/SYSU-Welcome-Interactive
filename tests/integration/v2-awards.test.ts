@@ -15,6 +15,7 @@ import { readV2AdminSnapshot, readV2ScreenSnapshot } from '../../backend/src/ser
 import { activateV2Participant, executeV2ParticipantOnboardingCommand, readV2ParticipantSnapshot } from '../../backend/src/services/v2-participant-onboarding.js'
 import { V2ProgramCatalogSchema } from '../../packages/contracts/src/protocol-v2.js'
 import { eventProgramPreset, validateCatalog } from '../../frontend/src/pages/admin/program-catalog.js'
+import { readV2ObsSceneCue } from '../../backend/src/services/v2-obs-scene-cue.js'
 
 const MIGRATIONS = path.join(BACKEND_ROOT, 'migrations')
 const NOW = new Date('2026-09-06T07:00:00.000Z')
@@ -84,6 +85,8 @@ describe('D-096 awards, stage and recipient privacy', () => {
   it('keeps the exact tail, three interaction letters, stable identities and lightyears gift prohibition', () => {
     startProgramStage()
     expect(snapshot().programs.slice(-4).map(p => p.title)).toEqual(['节目颁奖', '光年之外', '负责人讲话', '校园图鉴颁奖'])
+    expect(snapshot().awards!.filter(award => award.group === 'CAMPUS').map(award => award.id))
+      .toEqual(['route-1', 'route-2', 'route-3', 'photography', 'creativity', 'points-top20'])
     expect(snapshot().programs.filter(p => ['INTERLUDE','DEFERRED'].includes(p.kind)).map(p => p.displayCode)).toEqual(['A','B','C'])
     expect(snapshot().programs.filter(p => p.kind === 'PERFORMANCE')).toHaveLength(19)
     const active = participant()
@@ -113,6 +116,8 @@ describe('D-096 awards, stage and recipient privacy', () => {
     expect(publicState()).not.toContain('合成获奖人甲')
     ceremony('REVEAL_AWARD')
     expect(publicState()).toContain('合成获奖人甲')
+    expect(publicState()).not.toContain('合成作品一')
+    expect(snapshot().awards!.find(a => a.id === 'photography')!.entries[0]!.detail).toBe('合成作品一')
     expect(JSON.stringify(readV2ParticipantSnapshot(database, identity, NOW))).toContain('合成获奖人甲')
     expect(() => save('photography', [{ name: '改名' }], true)).toThrowError(expect.objectContaining({ code: 'SCENE_ACTION_INVALID' }))
     ceremony('HIDE_AWARD')
@@ -154,7 +159,7 @@ describe('D-096 awards, stage and recipient privacy', () => {
     startProgramStage(); apply(request('SET_PROGRAM', {programId:'ceremony-campus-awards'})); ceremony('SELECT_AWARD', {awardId:'photography'}); ceremony('REVEAL_AWARD')
     expect(snapshot().stage).toMatchObject({totalPages:3,page:0})
     expect(snapshot().stage!.award!.entries).toHaveLength(4)
-    ceremony('SET_AWARD_PAGE',{page:2}); expect(snapshot().stage!.award!.entries).toEqual(entries.slice(8).map((entry, index) => ({ ...entry, rank: index + 9 })))
+    ceremony('SET_AWARD_PAGE',{page:2}); expect(snapshot().stage!.award!.entries).toEqual(entries.slice(8).map((entry, index) => ({ name:entry.name, detail:'', rank: index + 9 })))
   })
 
   it('rejects stale writes and reviewer control and replays an identical reveal without double advancing', () => {
@@ -176,14 +181,32 @@ describe('D-096 awards, stage and recipient privacy', () => {
     expect(snapshot().currentProgram!.giftsEnabled).toBe(true)
     ceremony('SET_STAGE_MODE', { mode: 'HOST' })
     expect(snapshot().stage!.mode).toBe('HOST')
+    const hostCue = readV2ObsSceneCue(database)
+    expect(hostCue).toMatchObject({ stageMode:'HOST', programId:null, stageRevision:snapshot().stage!.revision })
+    expect(hostCue!.cueId).toContain(':HOST:host')
     expect(snapshot().currentProgram!.giftsEnabled).toBe(false)
     ceremony('SET_STAGE_MODE', { mode: 'PROGRAM' })
     expect(snapshot().currentProgram!.giftsEnabled).toBe(true)
+    expect(readV2ObsSceneCue(database)).toMatchObject({ stageMode:'PROGRAM', programId:'event2026-01' })
+    expect(readV2ObsSceneCue(database)!.cueId).not.toBe(hostCue!.cueId)
     apply(request('SET_PROGRAM', { programId: 'event2026-07' }))
     const live = snapshot()
     apply({ protocolVersion: '2', resetEpoch: 1, idempotencyKey: 'award-buzzer', command: 'OPEN_BUZZER', confirmed:true, expectedInteractionRevision: live.interaction.interactionRevision, segmentCode:'A', prompt:'合成抢答' })
     expect(() => ceremony('SET_STAGE_MODE', { mode:'HOST' })).toThrow()
     expect(() => apply(request('SET_PROGRAM', { programId:'ceremony-program-awards' }))).toThrow()
+  })
+
+  it('emits the dedicated OBS speech scene cue while the webpage remains in host mode', () => {
+    startProgramStage()
+    apply(request('SET_PROGRAM', { programId: 'ceremony-speech' }))
+    const cue = readV2ObsSceneCue(database)
+    expect(cue).toMatchObject({
+      stageMode: 'PROGRAM',
+      programId: 'ceremony-speech',
+      title: '负责人讲话',
+    })
+    expect(cue!.cueId).toContain(':PROGRAM:ceremony-speech')
+    expect(snapshot().stage!.mode).toBe('HOST')
   })
 
   it('upgrades schema 19 with a verified backup while preserving all prior runtime, gifts and catalogue identities', async () => {
@@ -207,7 +230,7 @@ describe('D-096 awards, stage and recipient privacy', () => {
     const retained = () => ['v2_runtime_state','v2_gift_transactions','synthetic_identities','v2_participant_states','v2_domain_events'].map(table => retainedV21Facts(database.prepare('SELECT * FROM '+table).all()))
     const before = retained(); const identities = identityDigest()
     const result = await upgradeV2AwardsFrom19To20(database, options())
-    expect(result).toMatchObject({previousSchemaVersion:19,schemaVersion: 23,resetEpoch:1})
+    expect(result).toMatchObject({previousSchemaVersion:19,schemaVersion: 24,resetEpoch:1})
     expect(retained()).toEqual(before); expect(identityDigest()).toBe(identities)
     expect(snapshot().awards).toHaveLength(7)
     const backup = openDatabase(result.backupPath)

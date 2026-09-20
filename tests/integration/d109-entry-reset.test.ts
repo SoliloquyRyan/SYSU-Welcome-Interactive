@@ -65,7 +65,7 @@ describe('D-109 atomic entry, independent guest quota and archived rounds', () =
     expect(db.prepare('SELECT COUNT(*) FROM v2_public_stars').pluck().get()).toBe(0)
     expect(db.prepare("SELECT COUNT(*) FROM synthetic_identities WHERE account_kind='GUEST'").pluck().get()).toBe(0)
     expect(fingerprintProtectedDirectoryDatabase(db)).toBe(fingerprint)
-    expect(db.prepare("SELECT confirmed FROM v2_awards WHERE id='photography'").pluck().get()).toBe(0)
+    expect(db.prepare("SELECT confirmed FROM v2_awards WHERE id='photography'").pluck().get()).toBe(1)
     expect(restoreGuestSession(db,visitor.guestRecoverySecret,NOW)).toBe(null)
     expect(()=>executeV2ParticipantOnboardingCommand(db,first.session.identityId,{protocolVersion:'2',resetEpoch:1,idempotencyKey:key(),command:'START_STAR',expectedParticipantRevision:2},NOW)).toThrow()
     const archive=db.prepare('SELECT archive_filename FROM v2_round_archives').pluck().get() as string

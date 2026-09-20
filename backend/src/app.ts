@@ -1,6 +1,6 @@
 import { archiveAndResetRound } from './services/v2-formal-reset.js'
 import websocket from '@fastify/websocket'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import {
   ActivateParticipantRequestSchema,
   AdminLoginRequestSchema,
@@ -34,7 +34,9 @@ import Fastify, {
   type FastifyInstance,
   type FastifyRequest,
 } from 'fastify'
-import { ZodError } from 'zod'
+import { z, ZodError } from 'zod'
+import { AUDIO_TRACK_IDS, audioBridgeStatus, recordAudioHeartbeat } from './services/v2-audio-bridge-state.js'
+import { readV2ObsSceneCue } from './services/v2-obs-scene-cue.js'
 
 import {
   authenticateSession,
@@ -134,6 +136,9 @@ import {
 } from './services/v2-participant-onboarding.js'
 import {
   executeV2RuntimeCommand,
+  handleV2AudioBridgeEvent,
+  readV2AudioBridgeActions,
+  acknowledgeV2AudioBridgeAction,
   V2RuntimeCommandError,
 } from './services/v2-runtime-commands.js'
 
@@ -489,6 +494,86 @@ export async function buildApp(
       .header('cache-control', 'no-store')
       .code(result.accepted ? 200 : result.statusCode)
       .send(result.body)
+  })
+
+  function requireObsAudioBridge(request: FastifyRequest): void {
+    if (!v2Active) throw new ApiError('SERVICE_UNAVAILABLE', 'v2 运行时尚未启用。', 409)
+    const configured = config.obsAudioBridgeToken
+    const supplied = request.headers['x-obs-audio-token']
+    if (!configured || typeof supplied !== 'string' ||
+        !timingSafeEqual(createHash('sha256').update(supplied).digest(), createHash('sha256').update(configured).digest())) {
+      throw new ApiError('AUTH_REQUIRED', 'OBS 音频桥接未配置或鉴权失败。', 401)
+    }
+  }
+
+  app.post('/api/v2/integrations/obs/audio-event', { bodyLimit: 2_048 }, async (request, reply) => {
+    if (!v2Active) throw new ApiError('SERVICE_UNAVAILABLE', 'v2 运行时尚未启用。', 409)
+    requireObsAudioBridge(request)
+    const body = z.object({ resetEpoch: z.number().int().positive(), roundNumber: z.number().int().positive(),
+      armId: z.string().uuid(), eventId: z.string().min(1).max(128), event: z.enum(['STARTED', 'ENDED']),
+      trackId: z.enum(AUDIO_TRACK_IDS), inputUuid: z.string().min(1).max(128),
+    }).strict().parse(request.body)
+    return reply.header('cache-control', 'no-store').send(handleV2AudioBridgeEvent(database, body, now()))
+  })
+
+  app.post('/api/v2/integrations/obs/heartbeat', { bodyLimit: 2_048 }, async (request, reply) => {
+    requireObsAudioBridge(request)
+    try {
+      recordAudioHeartbeat(database, request.body, now())
+    } catch {
+      throw new ApiError('VALIDATION_FAILED', 'OBS 音频桥接心跳无效。', 400)
+    }
+    return reply.header('cache-control', 'no-store').send({ ok: true })
+  })
+
+  function audioArm() {
+    return database.prepare(`SELECT a.id AS armId, a.reset_epoch AS resetEpoch, a.round_number AS roundNumber,
+      a.track_id AS trackId, a.input_uuid AS inputUuid, a.armed_at AS armedAt, l.audio_status AS status
+      FROM v2_interaction_audio_arms a JOIN v2_live_interaction_state l
+        ON l.reset_epoch = a.reset_epoch AND l.round_number = a.round_number
+      JOIN v2_runtime_state r ON r.reset_epoch = a.reset_epoch
+      WHERE a.status IN ('ARMED', 'TRIGGERED') AND l.audio_status <> 'IDLE'
+        AND r.status = 'RUNNING' AND r.current_scene = 'PROGRAM_SUPPORT'`).get() ?? null
+  }
+
+  app.get('/api/v2/admin/audio-status', async (request, reply) => {
+    if (!v2Active) throw new ApiError('SERVICE_UNAVAILABLE', 'v2 运行时尚未启用。', 409)
+    const epoch = Number(database.prepare('SELECT reset_epoch FROM v2_runtime_state WHERE id = 1').pluck().get())
+    if (!v2SessionValid(v2AdminSession(request), epoch)) throw new ApiError('AUTH_REQUIRED', '需要有效的后台会话。', 401)
+    return reply.header('cache-control', 'no-store').send({ ...audioBridgeStatus(database, now()), arm: audioArm() })
+  })
+
+  app.get('/api/v2/integrations/obs/audio-actions', async (request, reply) => {
+    if (!v2Active) throw new ApiError('SERVICE_UNAVAILABLE', 'v2 运行时尚未启用。', 409)
+    requireObsAudioBridge(request)
+    const resetEpoch = Number(database.prepare('SELECT reset_epoch FROM v2_runtime_state WHERE id = 1').pluck().get())
+    return reply.header('cache-control', 'no-store').send({ actions: readV2AudioBridgeActions(database, resetEpoch) })
+  })
+
+  app.get('/api/v2/integrations/obs/audio-arm', async (request, reply) => {
+    if (!v2Active) throw new ApiError('SERVICE_UNAVAILABLE', 'v2 运行时尚未启用。', 409)
+    requireObsAudioBridge(request)
+    return reply.header('cache-control', 'no-store').send({ arm: audioArm(), serverNow: now().toISOString() })
+  })
+
+  app.get('/api/v2/integrations/obs/scene-cue', async (request, reply) => {
+    if (!v2Active) throw new ApiError('SERVICE_UNAVAILABLE', 'v2 运行时尚未启用。', 409)
+    requireObsAudioBridge(request)
+    return reply.header('cache-control', 'no-store').send({
+      cue: readV2ObsSceneCue(database),
+      serverNow: now().toISOString(),
+    })
+  })
+
+  app.post('/api/v2/integrations/obs/audio-actions/:actionId/ack', { bodyLimit: 512 }, async (request, reply) => {
+    if (!v2Active) throw new ApiError('SERVICE_UNAVAILABLE', 'v2 运行时尚未启用。', 409)
+    requireObsAudioBridge(request)
+    const resetEpoch = Number(database.prepare('SELECT reset_epoch FROM v2_runtime_state WHERE id = 1').pluck().get())
+    const body = z.object({ resetEpoch: z.number().int().positive() }).strict().parse(request.body)
+    if (body.resetEpoch !== resetEpoch) throw new ApiError('VALIDATION_FAILED', '音频动作已跨轮次失效。', 409)
+    const actionId = String((request.params as { actionId?: string }).actionId ?? '')
+    if (!actionId || actionId.length > 128) throw new ApiError('VALIDATION_FAILED', '音频动作编号无效。', 400)
+    return reply.header('cache-control', 'no-store').send({ acknowledged: acknowledgeV2AudioBridgeAction(database, resetEpoch, actionId, now()) })
   })
 
   app.get('/api/v2/screen/snapshot', async (_request, reply) => {

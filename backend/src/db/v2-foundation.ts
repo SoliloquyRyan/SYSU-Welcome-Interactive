@@ -14,6 +14,7 @@ import {
   migrateActiveV2ProgramRankingFrom20To21,
   migrateActiveV2EventEntryFrom21To22,
   migrateActiveV2GuestsFrom22To23,
+  migrateActiveV2AudioFrom23To24,
   migrateActiveV2ProgramCreditsFrom17To18,
   migrateActiveV2ProgramCatalogFrom14To15,
   migrateActiveV2InteractionsFrom15To16,
@@ -134,7 +135,7 @@ export interface V2UpgradeOptions extends Omit<SeedOptions, 'now'> {
 
 export interface V2UpgradeResult {
   previousSchemaVersion: 12
-  schemaVersion: 23
+  schemaVersion: 24
   resetEpoch: number
   backupPath: string
   backupSha256: string
@@ -203,6 +204,8 @@ const V2_EPOCH_MUTABLE_TABLES = [
   'v2_reward_ledger',
   'v2_participant_states',
   'v2_control_receipts',
+  'v2_interaction_audio_arms',
+  'v2_interaction_audio_actions',
 ] as const
 
 const V2_PRE_CUTOVER_TABLES = [
@@ -272,6 +275,8 @@ const EXPECTED_TABLES = new Set([
   'v2_program_heat_adjustments',
   'v2_guest_credentials',
   'v2_round_archives',
+  'v2_interaction_audio_arms',
+  'v2_interaction_audio_actions',
 ])
 
 const EXPECTED_CUTOVER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
@@ -459,11 +464,20 @@ const EXPECTED_CUTOVER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   v2_ceremony_state: ['id', 'reset_epoch', 'revision', 'mode', 'award_id', 'page', 'revealed'],
   v2_live_interaction_state: [
     'id', 'reset_epoch', 'segment_code', 'phase', 'round_number', 'prompt',
-    'revision', 'opened_at', 'updated_at',
+    'revision', 'opened_at', 'updated_at', 'opens_at', 'audio_track_id',
+    'audio_input_uuid', 'audio_status', 'audio_armed_at', 'audio_trigger_event_id',
   ],
   v2_buzzer_entries: [
     'id', 'reset_epoch', 'round_number', 'segment_code', 'identity_id',
-    'response_sequence', 'responded_at',
+    'response_sequence', 'responded_at', 'answer_status',
+  ],
+  v2_interaction_audio_arms: [
+    'id', 'reset_epoch', 'round_number', 'segment_code', 'track_id', 'input_uuid',
+    'prompt', 'status', 'armed_at', 'triggered_at', 'trigger_event_id',
+  ],
+  v2_interaction_audio_actions: [
+    'id', 'reset_epoch', 'round_number', 'input_uuid', 'action', 'created_at',
+    'acknowledged_at',
   ],
   v2_audience_votes: [
     'id', 'reset_epoch', 'round_number', 'identity_id',
@@ -520,6 +534,7 @@ function schemaDriftIssues(database: SqliteDatabase): string[] {
     EXPECTED_CUTOVER_COLUMNS,
   )) {
     if (['v2_guest_credentials', 'v2_round_archives'].includes(tableName) && schemaVersion < 23) continue
+    if (['v2_interaction_audio_arms', 'v2_interaction_audio_actions'].includes(tableName) && schemaVersion < 24) continue
     if (['v2_manual_vote_candidates', 'v2_manual_audience_votes'].includes(tableName) && schemaVersion < 22) continue
     if (tableName === 'v2_program_heat_adjustments' && schemaVersion < 21) continue
     if (['v2_awards', 'v2_ceremony_state'].includes(tableName) && schemaVersion < 20) continue
@@ -532,10 +547,12 @@ function schemaDriftIssues(database: SqliteDatabase): string[] {
     )
       .map(({ name }) => name)
       .sort()
-    const expected = [...expectedColumns, ...(schemaVersion >= 23 && tableName === 'synthetic_identities' ? ['account_kind'] : []), ...(schemaVersion >= 22 && tableName === 'synthetic_identities' ? ['account_type'] : []), ...(schemaVersion >= 22 && tableName === 'v2_gift_transactions' ? ['score_eligible'] : [])].filter(column => !(
-      tableName === 'v2_barrages' &&
-      ((column === 'color_style' && schemaVersion < 16) || (column === 'custom_color' && schemaVersion < 19))
-    )).sort()
+    const expected = [...expectedColumns, ...(schemaVersion >= 23 && tableName === 'synthetic_identities' ? ['account_kind'] : []), ...(schemaVersion >= 22 && tableName === 'synthetic_identities' ? ['account_type'] : []), ...(schemaVersion >= 22 && tableName === 'v2_gift_transactions' ? ['score_eligible'] : [])].filter(column => {
+      if (tableName === 'v2_barrages' && ((column === 'color_style' && schemaVersion < 16) || (column === 'custom_color' && schemaVersion < 19))) return false
+      if (schemaVersion < 24 && tableName === 'v2_live_interaction_state' && ['opens_at', 'audio_track_id', 'audio_input_uuid', 'audio_status', 'audio_armed_at', 'audio_trigger_event_id'].includes(column)) return false
+      if (schemaVersion < 24 && tableName === 'v2_buzzer_entries' && column === 'answer_status') return false
+      return true
+    }).sort()
     if (JSON.stringify(actualColumns) !== JSON.stringify(expected)) {
       issues.push(`Unexpected schema for ${tableName}`)
     }
@@ -570,7 +587,7 @@ function schemaDefinition(database: SqliteDatabase): string {
 function schemaMatchesMigrations(
   database: SqliteDatabase,
   migrationsPath: string,
-  throughVersion = 23,
+  throughVersion = 24,
 ): boolean {
   const pristine = new Database(':memory:')
   try {
@@ -871,10 +888,10 @@ function assertMigrationsReady(
   migrationsPath: string,
 ): void {
   const verification = verifyMigrations(database, migrationsPath)
-  if (!verification.ready || verification.currentVersion !== 23) {
+  if (!verification.ready || verification.currentVersion !== 24) {
     maintenanceError(
       'V2_MIGRATIONS_NOT_READY',
-      `V2 cutover requires the complete schema through migration 0023: ${verification.issues.join('; ')}`,
+      `V2 cutover requires the complete schema through migration 0024: ${verification.issues.join('; ')}`,
     )
   }
 }
@@ -1038,10 +1055,10 @@ function assessSyntheticV2UpgradeSource(
     options.migrationsPath,
     12,
   )
-  if (!migrations.ready || migrations.availableVersion !== 23) {
+  if (!migrations.ready || migrations.availableVersion !== 24) {
     maintenanceError(
       'V2_MIGRATIONS_NOT_READY',
-      `V2 upgrade requires an exact schema-12 database with migrations 0013-0023 as the repository tip: ${migrations.issues.join('; ')}`,
+      `V2 upgrade requires an exact schema-12 database with migrations 0013-0024 as the repository tip: ${migrations.issues.join('; ')}`,
     )
   }
 
@@ -1530,7 +1547,7 @@ export async function upgradeSyntheticV2DatabaseFrom12To15(
 
     return {
       previousSchemaVersion: migration.previousVersion as 12,
-      schemaVersion: migration.currentVersion as 23,
+      schemaVersion: migration.currentVersion as 24,
       resetEpoch: assessment.resetEpoch,
       backupPath: backup.backupPath,
       backupSha256: backup.sha256,
@@ -1630,11 +1647,11 @@ export function resetSyntheticV2Database(
 
 export function verifyV2Foundation(
   database: SqliteDatabase,
-  options: Omit<V2CutoverOptions, 'backupPath' | 'confirmation' | 'now'> & { throughSchemaVersion?: 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 },
+  options: Omit<V2CutoverOptions, 'backupPath' | 'confirmation' | 'now'> & { throughSchemaVersion?: 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 },
 ): V2FoundationVerification {
   const issues: string[] = []
-  const target = options.throughSchemaVersion ?? 23
-  const migrations = target < 23
+  const target = options.throughSchemaVersion ?? 24
+  const migrations = target < 24
     ? verifyMigrationHistoryAtVersion(database, options.migrationsPath, target)
     : verifyMigrations(database, options.migrationsPath)
   if (!migrations.ready) issues.push(...migrations.issues)
@@ -2636,5 +2653,37 @@ export async function upgradeV2GuestsFrom22To23(database: SqliteDatabase, option
     if (database.inTransaction) database.exec('ROLLBACK')
     throw new V2MaintenanceError('V2_UPGRADE_ROLLED_BACK',
       `Guest entry upgrade rolled back; verified backup retained. ${error instanceof Error ? error.message : 'Unknown failure'}`)
+  }
+}
+
+export async function upgradeV2AudioFrom23To24(database: SqliteDatabase, options: V2UpgradeOptions) {
+  if (options.confirmation !== V2_CATALOG_UPGRADE_CONFIRMATION) {
+    maintenanceError('V2_DESTRUCTIVE_CONFIRMATION_REQUIRED', `Stop the services before confirming ${V2_CATALOG_UPGRADE_CONFIRMATION}`)
+  }
+  const verifySource = () => {
+    const source = verifyV2Foundation(database, { ...options, throughSchemaVersion: 23 })
+    if (!source.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Schema-23 source is inconsistent: ${source.issues.join('; ')}`)
+    return source
+  }
+  const source = verifySource()
+  const backup = await createVerifiedBackup(database, options.backupPath, '2')
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    if (Number(database.pragma('data_version', { simple: true })) !== backup.dataVersion) {
+      maintenanceError('V2_DATA_CHANGED_DURING_UPGRADE', 'The database changed after its verified backup')
+    }
+    verifySource()
+    const migration = migrateActiveV2AudioFrom23To24(database, options.migrationsPath, options.now)
+    const verified = verifyV2Foundation(database, options)
+    if (!verified.ready) maintenanceError('V2_PROTOCOL_STATE_INVALID', `Audio buzzer upgrade validation failed: ${verified.issues.join('; ')}`)
+    options.beforeCommit?.()
+    database.exec('COMMIT')
+    return { previousSchemaVersion: migration.previousVersion, schemaVersion: migration.currentVersion,
+      resetEpoch: source.resetEpoch, participantCount: source.participantCount,
+      backupPath: backup.backupPath, backupSha256: backup.sha256 }
+  } catch (error) {
+    if (database.inTransaction) database.exec('ROLLBACK')
+    throw new V2MaintenanceError('V2_UPGRADE_ROLLED_BACK',
+      `Audio buzzer upgrade rolled back; verified backup retained. ${error instanceof Error ? error.message : 'Unknown failure'}`)
   }
 }

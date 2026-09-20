@@ -146,10 +146,17 @@ export const V2AwardSummarySchema = z.object({
 export const V2AwardAdminSchema = V2AwardSummarySchema.extend({
   entries: z.array(V2AwardEntrySchema).max(300), revision: V2RevisionSchema,
 }).strict()
+export const V2AwardPanelSchema = z.object({
+  id: V2EntityIdSchema,
+  group: z.literal('CAMPUS'),
+  title: z.string().min(1).max(80),
+  entries: z.array(V2AwardEntrySchema).max(8),
+}).strict()
 export const V2StageSchema = z.object({
   revision: V2RevisionSchema, mode: z.enum(['PROGRAM','HOST','AWARD']),
   revealed: z.boolean(), page: z.number().int().min(0), totalPages: z.number().int().min(1),
   award: V2AwardSummarySchema.extend({ entries: z.array(V2AwardEntrySchema).max(8) }).nullable(),
+  awardPanels: z.array(V2AwardPanelSchema).max(2).default([]),
 }).strict()
 export const V2PresentationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('NONE') }).strict(),
@@ -223,7 +230,10 @@ export const V2LiveInteractionPublicStateSchema = z.object({
   roundNumber: z.number().int().nonnegative(),
   prompt: z.string().trim().max(120),
   opensAt: V2IsoDateTimeSchema.nullable().optional(),
-  buzzCount: z.number().int().nonnegative().max(400),
+  audio: z.object({
+    status: z.enum(['IDLE', 'ARMED', 'COUNTDOWN', 'PAUSED', 'ENDED']),
+  }).strict().default({ status: 'IDLE' }),
+  buzzCount: z.number().int().nonnegative(),
   leader: V2LiveInteractionPersonSchema.nullable(),
   voteCandidates: z.array(V2LiveVoteCandidateSchema).max(12),
   totalVotes: z.number().int().nonnegative().max(400),
@@ -349,6 +359,10 @@ export const V2AdminBarrageSchema = V2PublicBarrageSchema.extend({
 export const V2PublicGiftEventSchema = z
   .object({
     giftEventId: V2EntityIdSchema,
+    // The server may identify the already registered star that sent the gift.
+    // It is an anchor for a short visual flash only; it does not expose the
+    // participant identity or alter the public star roster.
+    publicStarId: V2PublicStarIdSchema.optional(),
     showStarship: z.boolean().optional(),
     displayColor: V2DisplayColorSchema.optional(),
     programId: V2EntityIdSchema,
@@ -843,7 +857,7 @@ function expectedAllowedActions(input: {
     ) {
       if (input.stage?.mode !== 'HOST' && (!input.currentProgram || input.currentProgram.kind === 'PERFORMANCE' && input.currentProgram.giftsEnabled !== false)) actions.push('SEND_GIFT')
       actions.push('POST_BARRAGE')
-      if (participant.accountType === 'STUDENT' && input.liveInteraction?.segmentCode === 'A' && input.liveInteraction?.phase === 'BUZZER_OPEN' && !input.liveInteraction.participation.hasBuzzed) {
+      if (participant.accountType === 'STUDENT' && input.liveInteraction?.segmentCode === 'A' && input.liveInteraction?.phase === 'BUZZER_OPEN') {
         actions.push('BUZZ_IN')
       }
       if (participant.accountType === 'STUDENT' && input.liveInteraction?.phase === 'VOTE_OPEN' && !input.liveInteraction.participation.hasVoted) {
@@ -1385,6 +1399,7 @@ export const V2_ADMIN_COMMANDS = [
   'START',
   'SET_SCENE',
   'SET_PROGRAM',
+  'ADVANCE_PROGRAM',
   'UPDATE_PROGRAM_CATALOG',
   'ADVANCE',
   'PAUSE',
@@ -1396,6 +1411,8 @@ export const V2_ADMIN_COMMANDS = [
   'CLOSE_RAFFLE',
   'CLEAR_RAFFLE',
   'OPEN_BUZZER',
+  'ARM_AUDIO_BUZZER',
+  'MARK_BUZZER_WRONG',
   'OPEN_AUDIENCE_VOTE',
   'REVEAL_AUDIENCE_VOTE',
   'CLOSE_LIVE_INTERACTION',
@@ -1455,6 +1472,15 @@ export const V2AdminCommandSchema = z.discriminatedUnion('command', [
       command: z.literal('SET_PROGRAM'),
       expectedInteractionRevision: V2RevisionSchema,
       programId: V2EntityIdSchema,
+      confirmed: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      ...runtimeCommandBase,
+      command: z.literal('ADVANCE_PROGRAM'),
+      expectedInteractionRevision: V2RevisionSchema,
+      expectedStageRevision: V2RevisionSchema,
       confirmed: z.literal(true),
     })
     .strict(),
@@ -1533,6 +1559,23 @@ export const V2AdminCommandSchema = z.discriminatedUnion('command', [
   }).strict(),
   z.object({
     ...v2WriteBase,
+    command: z.literal('ARM_AUDIO_BUZZER'),
+    expectedInteractionRevision: V2RevisionSchema,
+    segmentCode: z.literal('A'),
+    trackId: z.enum(['b2-eason', 'r2-jj', 'r3-gem']),
+    inputUuid: z.string().trim().min(1).max(128),
+    prompt: z.string().trim().min(1).max(120),
+    confirmed: z.literal(true),
+  }).strict(),
+  z.object({
+    ...v2WriteBase,
+    command: z.literal('MARK_BUZZER_WRONG'),
+    expectedInteractionRevision: V2RevisionSchema,
+    segmentCode: z.literal('A'),
+    confirmed: z.literal(true),
+  }).strict(),
+  z.object({
+    ...v2WriteBase,
     command: z.literal('OPEN_AUDIENCE_VOTE'),
     candidates: z.array(z.string().trim().min(1).max(40)).min(2).max(12),
     expectedInteractionRevision: V2RevisionSchema,
@@ -1548,6 +1591,7 @@ export const V2AdminCommandSchema = z.discriminatedUnion('command', [
   z.object({
     ...v2WriteBase,
     command: z.literal('CLOSE_LIVE_INTERACTION'),
+    answerAccepted: z.boolean().optional(),
     expectedInteractionRevision: V2RevisionSchema,
     confirmed: z.literal(true),
   }).strict(),

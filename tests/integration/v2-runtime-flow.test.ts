@@ -17,8 +17,12 @@ import {
 } from '../../backend/src/services/v2-participant-onboarding.js'
 import {
   executeV2RuntimeCommand,
+  handleV2AudioBridgeEvent,
+  readV2AudioBridgeActions,
   V2RuntimeCommandError,
 } from '../../backend/src/services/v2-runtime-commands.js'
+import { audioBridgeStatus, recordAudioHeartbeat } from '../../backend/src/services/v2-audio-bridge-state.js'
+import { readV2ObsSceneCue } from '../../backend/src/services/v2-obs-scene-cue.js'
 import {
   readV2AdminSnapshot,
   readV2ScreenSnapshot,
@@ -185,13 +189,32 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     }
   }
 
-  function setLiveAndStart() {
+  function restoreLegacyAssembly() {
+    // Explicit historical fixture: D-111 no longer generates ASSEMBLY on START.
+    // These tests retain coverage for restored pre-D-111 snapshots and commands.
     runtime({ command: 'SET_MODE', expectedRunRevision: 0, targetMode: 'LIVE', confirmed: true })
-    return runtime({ command: 'START', expectedRunRevision: 1, confirmed: true })
+    runtime({ command: 'START', expectedRunRevision: 1, confirmed: true })
+    database.prepare("UPDATE v2_runtime_state SET current_scene = 'ASSEMBLY' WHERE id = 1").run()
+    return readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW)
   }
 
-  it('runs LIVE through exactly three scenes and atomically completes with one confirmation', () => {
-    const started = setLiveAndStart()
+  it('D-111 starts directly at the host theme without requiring star startup, then completes from the programme stage', () => {
+    admit(0)
+    runtime({ command: 'SET_MODE', expectedRunRevision: 0, targetMode: 'LIVE', confirmed: true })
+    const started = runtime({ command: 'START', expectedRunRevision: 1, confirmed: true })
+    expect(started.runtime).toMatchObject({ status: 'RUNNING', currentScene: 'PROGRAM_SUPPORT', runRevision: 2 })
+    const screen = readV2ScreenSnapshot(database, NOW)
+    expect(screen.currentProgram).toBeNull()
+    expect(screen.stage?.mode).toBe('HOST')
+    const own = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
+    expect(own.participant.allowedActions).not.toContain('START_STAR')
+    const completed = runtime({ command: 'COMPLETE', expectedRunRevision: 2, expectedPresentationRevision: 0, confirmed: true, overrideReadinessWarnings: false })
+    expect(completed.runtime.status).toBe('COMPLETED')
+    expect(readV2ParticipantSnapshot(database, manifest(0).id, NOW).participant.allowedActions).toEqual([])
+  })
+
+  it('restores legacy LIVE through exactly three scenes and atomically completes with one confirmation', () => {
+    const started = restoreLegacyAssembly()
     expect(started.runtime).toEqual({ mode: 'LIVE', status: 'RUNNING', currentScene: 'ASSEMBLY', runRevision: 2 })
 
     const program = runtime({
@@ -218,12 +241,12 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 23, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 24, issues: [] })
   })
 
-  it('requires an explicit readiness override and audits the anonymous funnel', () => {
+  it('legacy ASSEMBLY requires an explicit readiness override and audits the anonymous funnel', () => {
     admit(0)
-    setLiveAndStart()
+    restoreLegacyAssembly()
 
     expect(() => runtime({
       command: 'ADVANCE', expectedRunRevision: 2,
@@ -254,7 +277,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
   })
 
   it('selects the current program with an interaction revision and publishes one recoverable event', () => {
-    setLiveAndStart()
+    restoreLegacyAssembly()
     runtime({
       command: 'ADVANCE', expectedRunRevision: 2,
       expectedPresentationRevision: 0, confirmed: true,
@@ -286,6 +309,10 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     const actor = { sessionShortId: 'admin-short', requestId: 'set-program-request', roles: ['STAGE_CONTROLLER'] as const }
     const selected = executeV2RuntimeCommand(database, { ...actor, roles: [...actor.roles] }, input, NOW)
     expect(selected).toMatchObject({ command: 'SET_PROGRAM', replayed: false, interactionRevision: 1 })
+    expect(readV2ObsSceneCue(database)).toMatchObject({
+      cueId: `2:3:3:1:PROGRAM:${program.id}`, resetEpoch: 2, runRevision: 3,
+      stageRevision: 3, interactionRevision: 1, stageMode: 'PROGRAM', programId: program.id, title: program.title,
+    })
     const screen = readV2ScreenSnapshot(database, NOW)
     const admin = readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW)
     expect(screen.currentProgram).toMatchObject({ id: program.id, title: program.title, heat: 0 })
@@ -307,12 +334,36 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 23, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 24, issues: [] })
+  })
+
+  it('advances only to the adjacent catalogue item and rejects stale or terminal advances', () => {
+    runtime({ command: 'START', expectedRunRevision: 0, confirmed: true })
+    const first = readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW)
+    const expectedFirst = first.programs[0]!
+    runtime({ command: 'ADVANCE_PROGRAM', expectedRunRevision: 1, expectedInteractionRevision: 0, expectedStageRevision: first.stage.revision, confirmed: true })
+    expect(readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW).currentProgram?.id).toBe(expectedFirst.id)
+    const second = readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW)
+    expect(() => runtime({ command: 'ADVANCE_PROGRAM', expectedRunRevision: 1, expectedInteractionRevision: second.interaction.interactionRevision, expectedStageRevision: second.stage.revision - 1, confirmed: true })).toThrowError(expect.objectContaining({ code: 'REVISION_CONFLICT' }))
+    let state = second
+    for (let index = 1; index < state.programs.length; index += 1) {
+      const current = state
+      runtime({ command: 'ADVANCE_PROGRAM', expectedRunRevision: 1, expectedInteractionRevision: current.interaction.interactionRevision, expectedStageRevision: current.stage.revision, confirmed: true })
+      state = readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW)
+    }
+    expect(state.currentProgram?.id).toBe(state.programs.at(-1)?.id)
+    expect(() => runtime({ command: 'ADVANCE_PROGRAM', expectedRunRevision: 1, expectedInteractionRevision: state.interaction.interactionRevision, expectedStageRevision: state.stage.revision, confirmed: true })).toThrowError(expect.objectContaining({ code: 'SCENE_ACTION_INVALID' }))
+  })
+
+  it('does not expose an OBS scene cue outside the running programme stage', () => {
+    expect(readV2ObsSceneCue(database)).toBeNull()
+    restoreLegacyAssembly()
+    expect(readV2ObsSceneCue(database)).toBeNull()
   })
 
   it('starts one public star once without retired starlight rewards', () => {
     admit(0)
-    setLiveAndStart()
+    restoreLegacyAssembly()
     const before = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
     const result = participantCommand(0, {
       command: 'START_STAR',
@@ -326,7 +377,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
   })
 
   it('does not let a participant admitted after ASSEMBLY backfill START_STAR', () => {
-    setLiveAndStart()
+    restoreLegacyAssembly()
     runtime({
       command: 'ADVANCE', expectedRunRevision: 2,
       expectedPresentationRevision: 0, confirmed: true,
@@ -343,7 +394,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
 
   it('deducts every gift while first-event audit rows add no starlight', () => {
     admit(0)
-    setLiveAndStart()
+    restoreLegacyAssembly()
     runtime({
       command: 'ADVANCE', expectedRunRevision: 2,
       expectedPresentationRevision: 0, confirmed: true,
@@ -419,12 +470,12 @@ describe('V2-04 three-scene runtime and participant actions', () => {
       migrationsPath: MIGRATIONS_PATH,
       manifestPath,
       participantCount: 300,
-    })).toMatchObject({ ready: true, schemaVersion: 23, issues: [] })
+    })).toMatchObject({ ready: true, schemaVersion: 24, issues: [] })
   })
 
   it('unlocks a gradient once, replays safely and rejects invalid or unaffordable styles without charging', () => {
     admit(0)
-    setLiveAndStart()
+    restoreLegacyAssembly()
     runtime({ command: 'ADVANCE', expectedRunRevision: 2, expectedPresentationRevision: 0, confirmed: true, overrideReadinessWarnings: true })
     let snapshot = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
     const request = {command: 'POST_BARRAGE', expectedParticipantRevision: snapshot.participant.participantRevision, idempotencyKey: 'gradient-once', text: '星云应援', colorStyle: 'nebula'}
@@ -446,7 +497,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
 
   it('pauses, removes, source-blocks and clears anonymous barrages with audit facts', () => {
     admit(0)
-    setLiveAndStart()
+    restoreLegacyAssembly()
     runtime({
       command: 'ADVANCE', expectedRunRevision: 2,
       expectedPresentationRevision: 0, confirmed: true,
@@ -500,7 +551,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
 
   it('rejects links, contact details and per-source barrage bursts before publication', () => {
     admit(0)
-    setLiveAndStart()
+    restoreLegacyAssembly()
     runtime({
       command: 'ADVANCE', expectedRunRevision: 2,
       expectedPresentationRevision: 0, confirmed: true,
@@ -528,7 +579,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
 
   it('caps the public barrage stream at twelve accepted messages per second', () => {
     for (let index = 0; index < 13; index += 1) admit(index)
-    setLiveAndStart()
+    restoreLegacyAssembly()
     runtime({
       command: 'ADVANCE', expectedRunRevision: 2,
       expectedPresentationRevision: 0, confirmed: true,
@@ -584,7 +635,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
 
   it('completes without a message recap and rejects later participant writes', () => {
     admit(0)
-    setLiveAndStart()
+    restoreLegacyAssembly()
     runtime({
       command: 'ADVANCE', expectedRunRevision: 2,
       expectedPresentationRevision: 0, confirmed: true,
@@ -612,7 +663,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
 
   it('freezes scene writes while paused and completes without the retired cooperative-light gate', () => {
     admit(0)
-    setLiveAndStart()
+    restoreLegacyAssembly()
     runtime({
       command: 'ADVANCE', expectedRunRevision: 2,
       expectedPresentationRevision: 0, confirmed: true,
@@ -663,20 +714,16 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     admit(0)
     admit(1)
     runtime({ command: 'START', expectedRunRevision: 0, confirmed: true })
-    runtime({
-      command: 'SET_SCENE', expectedRunRevision: 1,
-      expectedPresentationRevision: 0, targetScene: 'PROGRAM_SUPPORT', confirmed: true,
-    })
     const programs = database.prepare('SELECT id FROM v2_program_catalog ORDER BY sort_order LIMIT 2').pluck().all() as string[]
     database.prepare("UPDATE v2_program_catalog SET kind = 'INTERLUDE' WHERE id IN (?, ?)").run(programs[0], programs[1])
     database.prepare('UPDATE v2_program_catalog_state SET current_program_id = ? WHERE id = 1').run(programs[1])
     const opened = runtime({
-      command: 'OPEN_RAFFLE', expectedRunRevision: 2,
+      command: 'OPEN_RAFFLE', expectedRunRevision: 1,
       expectedPresentationRevision: 0, confirmed: true,
     })
     expect(opened.presentation).toEqual({ type: 'RAFFLE' })
-    runtime({ command: 'DRAW_RAFFLE', expectedRunRevision: 2, expectedPresentationRevision: 1, confirmed: true })
-    runtime({ command: 'DRAW_RAFFLE', expectedRunRevision: 2, expectedPresentationRevision: 2, confirmed: true })
+    runtime({ command: 'DRAW_RAFFLE', expectedRunRevision: 1, expectedPresentationRevision: 1, confirmed: true })
+    runtime({ command: 'DRAW_RAFFLE', expectedRunRevision: 1, expectedPresentationRevision: 2, confirmed: true })
     const admin = readV2AdminSnapshot(database, ['STAGE_CONTROLLER'], NOW)
     const screen = readV2ScreenSnapshot(database, NOW)
     expect(admin.raffle.winners).toHaveLength(2)
@@ -685,7 +732,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     expect(JSON.stringify(screen.raffle)).not.toContain('displayName')
     expect(screen.raffle).toMatchObject({ eligibleCount: 2, remainingCount: 0 })
     const paused = runtime({
-      command: 'PAUSE', expectedRunRevision: 2,
+      command: 'PAUSE', expectedRunRevision: 1,
       expectedPresentationRevision: 3, confirmed: true,
     })
     expect(paused.presentation).toEqual({ type: 'NONE' })
@@ -696,11 +743,10 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     admit(0)
     admit(1)
     runtime({ command: 'START', expectedRunRevision: 0, confirmed: true })
-    runtime({ command: 'SET_SCENE', expectedRunRevision: 1, expectedPresentationRevision: 0, targetScene: 'PROGRAM_SUPPORT', confirmed: true })
     const ids = database.prepare('SELECT id FROM v2_program_catalog ORDER BY sort_order LIMIT 3').pluck().all() as string[]
     database.prepare("UPDATE v2_program_catalog SET kind = 'INTERLUDE' WHERE id IN (?, ?, ?)").run(ids[0], ids[1], ids[2])
 
-    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 2, expectedInteractionRevision: 0, programId: ids[0], confirmed: true })
+    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 1, expectedInteractionRevision: 0, programId: ids[0], confirmed: true })
     runtime({ command: 'OPEN_BUZZER', expectedInteractionRevision: 1, segmentCode: 'A', prompt: '歌名 decoder · 立即抢答', confirmed: true })
     const countdown = readV2ScreenSnapshot(database, NOW).liveInteraction
     expect(countdown.opensAt).toBe(new Date(NOW.getTime() + commandCounter * 1000 + 3000).toISOString())
@@ -712,7 +758,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     expectParticipantError(() => participantCommand(1, { command: 'BUZZ_IN', expectedParticipantRevision: 2 }), 'SCENE_ACTION_INVALID')
 
     runtime({ command: 'CLOSE_LIVE_INTERACTION', expectedInteractionRevision: 3, confirmed: true })
-    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 2, expectedInteractionRevision: 4, programId: ids[1], confirmed: true })
+    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 1, expectedInteractionRevision: 4, programId: ids[1], confirmed: true })
     runtime({ command: 'OPEN_AUDIENCE_VOTE', expectedInteractionRevision: 5, candidates: ['1号选手', '2号选手'], prompt: '谁是卧底 · 现场投票', confirmed: true })
     const candidates = readV2ScreenSnapshot(database, NOW).liveInteraction.voteCandidates as Array<{candidateId: string}>
     expect(database.prepare('SELECT COUNT(*) FROM v2_raffle_draws').pluck().get()).toBe(0)
@@ -727,50 +773,131 @@ describe('V2-04 three-scene runtime and participant actions', () => {
     expect(revealed.voteCandidates.reduce((sum, item) => sum + (item.voteCount ?? 0), 0)).toBe(2)
   })
 
+  it('arms interaction A from an OBS mix, opens after ten seconds, and resumes after a wrong answer', () => {
+    admit(0)
+    runtime({ command: 'SET_MODE', expectedRunRevision: 0, targetMode: 'LIVE', confirmed: true })
+    runtime({ command: 'START', expectedRunRevision: 1, confirmed: true })
+    const ids = database.prepare('SELECT id FROM v2_program_catalog ORDER BY sort_order LIMIT 3').pluck().all() as string[]
+    database.prepare("UPDATE v2_program_catalog SET kind = 'INTERLUDE' WHERE id IN (?, ?, ?)").run(...ids)
+    const programId = ids[0]!
+    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 2, expectedInteractionRevision: 0, programId, confirmed: true })
+
+    const inputUuid = 'input:b2-eason'
+    recordAudioHeartbeat(database, {
+      connected: true,
+      tracks: [{ trackId: 'b2-eason', inputUuid, available: true }],
+    }, new Date(NOW.getTime() + commandCounter * 1000))
+    expect(audioBridgeStatus(database, new Date(NOW.getTime() + commandCounter * 1000)).tracks[0]).toMatchObject({
+      trackId: 'b2-eason', answer: '十年、爱情转移、红玫瑰',
+    })
+    expect(JSON.stringify(readV2ScreenSnapshot(database, NOW))).not.toContain('爱情转移')
+    runtime({
+      command: 'ARM_AUDIO_BUZZER', expectedInteractionRevision: 1,
+      segmentCode: 'A',
+      trackId: 'b2-eason', inputUuid, prompt: '听前奏，十秒后抢答', confirmed: true,
+    })
+    const arm = database.prepare('SELECT id FROM v2_interaction_audio_arms WHERE reset_epoch = 2 ORDER BY rowid DESC LIMIT 1').get() as { id: string }
+    const startedAt = new Date(NOW.getTime() + (commandCounter + 1) * 1000)
+    const started = handleV2AudioBridgeEvent(database, {
+      resetEpoch: 2, roundNumber: 1, armId: arm.id, eventId: 'obs-start-b2-1',
+      event: 'STARTED', trackId: 'b2-eason', inputUuid,
+    }, startedAt)
+    expect(started).toMatchObject({ accepted: true, state: 'COUNTDOWN' })
+    expect(readV2ScreenSnapshot(database, startedAt).liveInteraction).toMatchObject({
+      phase: 'BUZZER_OPEN', audio: { status: 'COUNTDOWN' },
+      opensAt: new Date(startedAt.getTime() + 10_000).toISOString(),
+    })
+    expect(() => participantCommand(0, {
+      command: 'BUZZ_IN',
+      expectedParticipantRevision: readV2ParticipantSnapshot(database, manifest(0).id, startedAt).participant.participantRevision,
+    })).toThrowError(V2ParticipantCommandError)
+
+    commandCounter += 12
+    const ready = readV2ParticipantSnapshot(database, manifest(0).id, startedAt)
+    const first = participantCommand(0, {
+      command: 'BUZZ_IN', expectedParticipantRevision: ready.participant.participantRevision,
+    })
+    expect(first.liveInteraction).toMatchObject({ phase: 'BUZZER_LOCKED', audio: { status: 'PAUSED' } })
+    expect(readV2AudioBridgeActions(database, 2)).toMatchObject([{ action: 'PAUSE', inputUuid }])
+
+    const wrong = runtime({
+      command: 'MARK_BUZZER_WRONG',
+      expectedInteractionRevision: Number(database.prepare('SELECT interaction_revision FROM v2_screen_interaction_state WHERE id = 1').pluck().get()),
+      segmentCode: 'A', confirmed: true,
+    })
+    expect(wrong.interactionRevision).toBeGreaterThan(first.liveInteraction.revision)
+    expect(readV2ScreenSnapshot(database, startedAt).liveInteraction).toMatchObject({
+      phase: 'BUZZER_OPEN', audio: { status: 'COUNTDOWN' },
+    })
+    expect(readV2AudioBridgeActions(database, 2)).toMatchObject([{ action: 'RESUME', inputUuid }])
+    commandCounter += 1
+    const second = participantCommand(0, {
+      command: 'BUZZ_IN',
+      expectedParticipantRevision: readV2ParticipantSnapshot(database, manifest(0).id, NOW).participant.participantRevision,
+    })
+    expect(second.liveInteraction.phase).toBe('BUZZER_LOCKED')
+    expect(database.prepare("SELECT answer_status FROM v2_buzzer_entries WHERE reset_epoch = 2 ORDER BY response_sequence").pluck().all()).toEqual(['WRONG', 'PENDING'])
+
+    const ended = handleV2AudioBridgeEvent(database, {
+      resetEpoch: 2, roundNumber: 1, armId: arm.id, eventId: 'obs-end-b2-1',
+      event: 'ENDED', trackId: 'b2-eason', inputUuid,
+    }, new Date(startedAt.getTime() + 30_000))
+    expect(ended).toMatchObject({ accepted: true, state: 'ENDED' })
+    expect(readV2ScreenSnapshot(database, startedAt).liveInteraction).toMatchObject({
+      phase: 'BUZZER_LOCKED', audio: { status: 'ENDED' },
+    })
+    expect(readV2AudioBridgeActions(database, 2)).toEqual([])
+    runtime({
+      command: 'CLOSE_LIVE_INTERACTION',
+      expectedInteractionRevision: Number(database.prepare('SELECT interaction_revision FROM v2_screen_interaction_state WHERE id = 1').pluck().get()),
+      confirmed: true,
+    })
+    expect(readV2ScreenSnapshot(database, startedAt).liveInteraction.phase).toBe('IDLE')
+  })
+
   it('caps full starship appearances at two batches per programme without dropping gifts', () => {
     admit(0)
     admit(1)
     runtime({ command: 'START', expectedRunRevision: 0, confirmed: true })
-    runtime({ command: 'SET_SCENE', expectedRunRevision: 1, expectedPresentationRevision: 0, targetScene: 'PROGRAM_SUPPORT', confirmed: true })
     const ids = database.prepare("SELECT id FROM v2_program_catalog WHERE kind = 'PERFORMANCE' ORDER BY sort_order LIMIT 2").pluck().all() as string[]
-    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 2, expectedInteractionRevision: 0, programId: ids[0], confirmed: true })
+    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 1, expectedInteractionRevision: 0, programId: ids[0], confirmed: true })
     for (const quantity of [2, 2, 1]) {
       const current = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
       participantCommand(0, { command: 'SEND_GIFT', expectedParticipantRevision: current.participant.participantRevision, programId: ids[0], giftId: 'gift-starship', quantity })
     }
     const events = () => (database.prepare("SELECT payload_json FROM v2_domain_events WHERE stream_id = 'public' AND event_name = 'gift.sent' ORDER BY stream_seq").pluck().all() as string[]).map(row => JSON.parse(row).gift)
-    expect(events().map(gift => gift.showStarship)).toEqual([true, true, false])
+    expect(events().map(gift => gift.showStarship)).toEqual([true, true, true])
     expect(events().map(gift => gift.quantity)).toEqual([2, 2, 1])
     const first = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
     expect(first.participant.powerBalance).toBe(0)
     expect(first.participant.starlight).toBe(0)
     expect(first.currentProgram?.giftCatalog.find(gift => gift.id === 'gift-starship')?.sentCount).toBe(5)
-    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 2, expectedInteractionRevision: first.interaction.interactionRevision, programId: ids[1], confirmed: true })
+    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 1, expectedInteractionRevision: first.interaction.interactionRevision, programId: ids[1], confirmed: true })
     participantCommand(1, { command: 'SEND_GIFT', expectedParticipantRevision: 2, programId: ids[1], giftId: 'gift-starship', quantity: 1 })
-    expect(events().map(gift => gift.showStarship)).toEqual([true, true, false, true])
+    expect(events().map(gift => gift.showStarship)).toEqual([true, true, true, true])
   })
 
   it('sends a gift batch atomically, publishes personal star color and builds the closing ledger', () => {
     const admitted = admit(0)
     runtime({ command: 'START', expectedRunRevision: 0, confirmed: true })
-    runtime({ command: 'SET_SCENE', expectedRunRevision: 1, expectedPresentationRevision: 0, targetScene: 'PROGRAM_SUPPORT', confirmed: true })
     const programId = database.prepare('SELECT id FROM v2_program_catalog ORDER BY sort_order LIMIT 1').pluck().get() as string
-    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 2, expectedInteractionRevision: 0, programId, confirmed: true })
+    runtime({ command: 'SET_PROGRAM', expectedRunRevision: 1, expectedInteractionRevision: 0, programId, confirmed: true })
     const before = readV2ParticipantSnapshot(database, manifest(0).id, NOW)
     const gift = before.currentProgram!.giftCatalog[0]!
     const sent = participantCommand(0, { command: 'SEND_GIFT', expectedParticipantRevision: 2, programId, giftId: gift.id, quantity: 5 })
     const publicGift = JSON.parse(database.prepare("SELECT payload_json FROM v2_domain_events WHERE event_name='gift.sent' AND stream_id='public' ORDER BY stream_seq DESC LIMIT 1").pluck().get() as string).gift
     expect(publicGift.displayColor).toBe(admitted.participant.displayColor)
     expect(publicGift.quantity).toBe(5)
-    for (const key of ['identityId', 'participantId', 'studentNumber', 'displayName', 'publicStarId']) expect(publicGift).not.toHaveProperty(key)
+    for (const key of ['identityId', 'participantId', 'studentNumber', 'displayName']) expect(publicGift).not.toHaveProperty(key)
+    expect(publicGift.publicStarId).toBe(admitted.participant.ownPublicStarId)
     expect(sent.participant.powerBalance).toBe(before.participant.powerBalance - gift.powerCost * 5)
     expect(database.prepare('SELECT COUNT(*) FROM v2_gift_transactions WHERE program_id = ? AND gift_id = ?').pluck().get(programId, gift.id)).toBe(5)
     expect(readV2ScreenSnapshot(database, NOW).currentProgram).toMatchObject({ id: programId, heat: gift.powerCost * 5 })
 
     const posted = participantCommand(0, { command: 'POST_BARRAGE', expectedParticipantRevision: 3, text: '今晚一起发光', colorStyle: 'personal' })
     expect(posted.participant.displayColor).toBe(admitted.participant.displayColor)
-    runtime({ command: 'SET_SCENE', expectedRunRevision: 2, expectedPresentationRevision: 0, targetScene: 'COOPERATIVE_LIGHT', confirmed: true })
-    runtime({ command: 'PREVIEW_FINALE', expectedRunRevision: 3, expectedPresentationRevision: 0, confirmed: true })
+    runtime({ command: 'SET_SCENE', expectedRunRevision: 1, expectedPresentationRevision: 0, targetScene: 'COOPERATIVE_LIGHT', confirmed: true })
+    runtime({ command: 'PREVIEW_FINALE', expectedRunRevision: 2, expectedPresentationRevision: 0, confirmed: true })
     const recap = readV2ScreenSnapshot(database, NOW).closingRecap
     expect(recap).toMatchObject({ barrageCount: 1, totalGiftQuantity: 5, totalGiftPower: gift.powerCost * 5 })
     expect(recap.giftTotals.find(({ giftId }) => giftId === gift.id)).toMatchObject({ quantity: 5, totalPower: gift.powerCost * 5 })
@@ -780,7 +907,7 @@ describe('V2-04 three-scene runtime and participant actions', () => {
   it('retains every eligible closing barrage beyond the live window and honors moderation after completion', () => {
     admit(0)
     admit(1)
-    setLiveAndStart()
+    restoreLegacyAssembly()
     runtime({ command: 'ADVANCE', expectedRunRevision: 2, expectedPresentationRevision: 0,
       confirmed: true, overrideReadinessWarnings: true })
     const texts = Array.from({ length: 12 }, (_, index) => `合成谢幕回响第${index + 1}束光`)

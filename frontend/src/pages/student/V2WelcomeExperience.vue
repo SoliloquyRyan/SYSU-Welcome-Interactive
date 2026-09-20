@@ -33,12 +33,8 @@ import GiftSignalIcon from './GiftSignalIcon.vue'
 import PersonalJourneyStage from './PersonalJourneyStage.vue'
 import ProgramStageBackground from '../../components/ProgramStageBackground.vue'
 import StellarIcon from '../../components/StellarIcon.vue'
-import { starCityTheme, starCityStyle, programBackground } from '../../rendering/star-city-theme'
-import { programVisual } from '../../rendering/program-visuals'
-import MobileProgramOpening from './MobileProgramOpening.vue'
-import { createMobileProgramOpeningGate } from '../../rendering/mobile-program-opening'
+import { starCityTheme, starCityStyle } from '../../rendering/star-city-theme'
 import PersonalMemento from './PersonalMemento.vue'
-import OpeningMusic from './OpeningMusic.vue'
 import MobileBarrage from './MobileBarrage.vue'
 import GiftSkyEffects from '../../components/GiftSkyEffects.vue'
 import { CINEMA_TIMING } from '../../rendering/cinema-timing'
@@ -89,16 +85,19 @@ const ARCHIVE_METRIC_HELP = Object.freeze({
 const root = ref(null)
 const journeyStage = ref(null)
 const snapshot = ref(null)
-const entryState = ref('checking')
+const entryState = ref('activation')
+const restoringSession = ref(true)
+const EMPTY_SKY_ITEMS = Object.freeze([])
+// A new fallback [] on each render makes sky-points -> parent render ->
+// new stars -> sky-points loop indefinitely before the entry page can paint.
+const backgroundStars = computed(() => snapshot.value?.publicStars ?? EMPTY_SKY_ITEMS)
+const backgroundEffects = computed(() => admitted.value && !completed.value ? giftFlights.value : EMPTY_SKY_ITEMS)
 const activeTab = ref('scene')
 const colorPickerOpen = ref(false)
 const mainDockBody = ref(null)
 const tabScroll = {}
 const cinematic = ref('')
-const mobileProgramOpening = ref(false)
 const pageHidden = ref(document.hidden)
-const mobileOpeningGate = createMobileProgramOpeningGate()
-function finishMobileProgramOpening() { mobileProgramOpening.value = false }
 const displayName = ref('')
 const studentNumber = ref('')
 const colorKelvin = ref(STAR_TEMPERATURE_DEFAULT)
@@ -120,7 +119,7 @@ function clearGiftFlights() {
   giftFlightQueue.clear()
 }
 function launchGiftFlight(gift) {
-  if (realtime.state.value !== 'online' || activeTab.value !== 'scene' || mobileProgramOpening.value || snapshot.value?.liveInteraction?.phase !== 'IDLE') return
+  if (realtime.state.value !== 'online' || activeTab.value !== 'scene' || snapshot.value?.liveInteraction?.phase !== 'IDLE') return
   if (snapshot.value?.stage?.mode && snapshot.value.stage.mode !== 'PROGRAM' || runtime.value?.status !== 'RUNNING' || runtime.value?.currentScene !== 'PROGRAM_SUPPORT' || snapshot.value?.presentation?.type !== 'NONE' || currentProgram.value?.id !== gift.programId) return
   if (document.hidden || seenGiftFlights.has(gift.giftEventId)) return
   seenGiftFlights.add(gift.giftEventId)
@@ -194,7 +193,6 @@ const modalOpen = computed(() => giftOpen.value || barrageConfirmOpen.value)
 const headerUnavailable = computed(() => modalOpen.value || Boolean(cinematic.value))
 const sceneCopy = computed(() => mobileSceneCopy(snapshot.value))
 const currentProgram = computed(() => snapshot.value?.currentProgram ?? null)
-const phoneVisual = computed(() => programVisual(currentProgram.value, snapshot.value?.stage))
 const phoneSkyPoints = ref([])
 const liveInteraction = computed(() => snapshot.value?.liveInteraction ?? null)
 const buzzerCountdown = useBuzzerCountdown(liveInteraction, computed(() => snapshot.value?.generatedAt))
@@ -277,8 +275,6 @@ const journeyPhase = computed(() => {
   return PERSONAL_JOURNEY_PHASES.ORBIT
 })
 const journeyPlaying = computed(() => ['discovering', 'color-confirm', 'orbit-handoff'].includes(cinematic.value))
-const programBackgroundVisible = computed(() => admitted.value && !completed.value
-  && runtime.value?.currentScene === 'PROGRAM_SUPPORT' && !journeyPlaying.value)
 const galaxyCapacityValid = computed(() => (snapshot.value?.publicStars?.length ?? 0) <= 400)
 const connectionMessage = computed(() => {
   // The memento remains quiet while the read-only connection watches for a new round.
@@ -475,7 +471,6 @@ function waitForStableDocumentVisibility() {
 }
 
 function clearSession() {
-  finishMobileProgramOpening()
   clearLiveBarrages()
   clearGiftFlights()
   seenGiftFlights.clear()
@@ -543,7 +538,7 @@ async function refreshSnapshot() {
   const controller = new AbortController()
   snapshotControllers.add(controller)
   try {
-    const next = await v2ParticipantApi.snapshot({ signal: controller.signal })
+    const next = await v2ParticipantApi.snapshot({ signal: controller.signal, timeoutMs: 8000 })
     if (
       !mounted ||
       requestGeneration !== sessionGeneration ||
@@ -565,7 +560,9 @@ async function refreshSnapshot() {
     if (error?.name === 'AbortError') return null
     if (error instanceof ApiError && Number.isSafeInteger(error.resetEpoch) && error.resetEpoch > admissionEpoch) admissionEpoch = error.resetEpoch
     if (error instanceof ApiError && ['AUTH_REQUIRED', 'STALE_RESET_EPOCH'].includes(error.code)) {
-      clearSession()
+      // An anonymous boot probe must not erase the form already being typed.
+      if (snapshot.value) clearSession()
+      else entryState.value = 'activation'
     }
     throw error
   } finally {
@@ -579,20 +576,7 @@ async function onPublicEvent(frame) {
   current.publicSeq = Math.max(current.publicSeq, frame.streamSeq)
   const payload = frame.payload
   if (frame.name === 'runtime.changed') {
-    const playOpening = mobileOpeningGate.consume({
-      previous: current.runtime, next: payload.runtime, resetEpoch: frame.resetEpoch,
-      online: realtime.state.value === 'online', admitted: admitted.value,
-      reduced: reducedMotion.value, hidden: document.hidden, cinematic: cinematic.value,
-      presentation: current.presentation.type,
-    })
-    if (playOpening) mobileProgramOpening.value = true
-    const next = await refreshSnapshot().catch(error => { finishMobileProgramOpening(); throw error })
-    if (playOpening && mounted && next?.runtime.runRevision === payload.runtime.runRevision
-      && next.runtime.currentScene === 'PROGRAM_SUPPORT' && next.runtime.status === 'RUNNING'
-      && next.presentation.type === 'NONE' && realtime.state.value === 'online'
-      && admitted.value && !reducedMotion.value && !document.hidden && !cinematic.value) {
-      mobileProgramOpening.value = true
-    } else finishMobileProgramOpening()
+    await refreshSnapshot()
     return
   }
   if (frame.name === 'presentation.changed') {
@@ -645,12 +629,7 @@ const realtime = useV2ParticipantRealtime({ snapshot, refresh: refreshSnapshot, 
 // public event; replacing that snapshot must not erase the confirmed animation.
 watch([() => runtime.value?.status, () => runtime.value?.currentScene, () => snapshot.value?.currentProgram?.id,
   () => snapshot.value?.stage?.mode, () => snapshot.value?.liveInteraction?.phase, () => snapshot.value?.presentation.type,
-  () => realtime.state.value, () => activeTab.value, () => mobileProgramOpening.value], clearGiftFlights)
-watch(() => [runtime.value?.status, runtime.value?.currentScene, snapshot.value?.presentation.type, realtime.state.value], () => {
-  if (runtime.value?.status !== 'RUNNING' || runtime.value?.currentScene !== 'PROGRAM_SUPPORT'
-    || snapshot.value?.presentation.type !== 'NONE' || realtime.state.value !== 'online') finishMobileProgramOpening()
-})
-
+  () => realtime.state.value, () => activeTab.value], clearGiftFlights)
 function definitive(error) {
   return error instanceof ApiError && error.status >= 400 && error.status < 500
 }
@@ -738,6 +717,7 @@ async function activate(method, fields) {
 }
 
 function activateAssisted() {
+  if (restoringSession.value) return
   const name = displayName.value.trim()
   if (!name || visibleCharacterCount(name) > 40) {
     persistentError.value = '请输入姓名。'
@@ -942,7 +922,6 @@ function trapDialog(event) {
 
 function onEscape(event) {
   if (event.key !== 'Escape') return
-  finishMobileProgramOpening()
   if (giftOpen.value) void closeGift()
   else if (barrageConfirmOpen.value) void closePremiumBarrage()
   else archiveMetricHelp.value = ''
@@ -995,13 +974,12 @@ watch(() => runtime.value?.status, (next, previous) => {
 
 watch(reducedMotion, (next) => {
   clearGiftFlights()
-  if (next) { finishCinematic(); finishMobileProgramOpening() }
+  if (next) finishCinematic()
 })
 
 function onVisibilityChange() {
   pageHidden.value = document.hidden
   if (document.hidden) {
-    finishMobileProgramOpening()
     clearLiveBarrages()
     clearGiftFlights()
   }
@@ -1020,7 +998,30 @@ onMounted(async () => {
   const initialInvitationToken = takePendingInvitationToken()
   invitationToken = initialInvitationToken
   try {
-    const initialSnapshot = await refreshSnapshot()
+    const startupTimeout = Symbol('startup-timeout')
+    const initialSnapshotRequest = refreshSnapshot()
+    const initialSnapshot = await Promise.race([
+      initialSnapshotRequest,
+      new Promise((resolve) => window.setTimeout(() => resolve(startupTimeout), 2500)),
+    ])
+    if (initialSnapshot === startupTimeout) {
+      // A slow snapshot must not hide the only useful phone action. The
+      // request continues in the background and can still promote an existing
+      // session to the authoritative state when it completes.
+      restoringSession.value = false
+      entryState.value = 'activation'
+      void initialSnapshotRequest.then(async (next) => {
+        if (!mounted || !next) return
+        if (!galaxyCapacityValid.value) realtime.suspend('星系容量数据异常，已停止写入。')
+        else await realtime.connect()
+        if (mounted) titleMotionEnabled.value = true
+      }).catch((error) => {
+        if (!mounted || (error instanceof ApiError && error.code === 'AUTH_REQUIRED')) return
+        persistentError.value = publicErrorMessage(error)
+        entryState.value = 'activation'
+      })
+      return
+    }
     if (!mounted || !initialSnapshot) return
     if (!galaxyCapacityValid.value) {
       realtime.suspend('星系容量数据异常，已停止写入。')
@@ -1037,6 +1038,8 @@ onMounted(async () => {
       entryState.value = 'activation'
       return
     }
+  } finally {
+    restoringSession.value = false
   }
   if (initialInvitationToken) {
     // The anonymous snapshot probe intentionally clears any stale local
@@ -1050,7 +1053,6 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  finishMobileProgramOpening()
   titleObserver?.disconnect()
   clearLiveBarrages()
   clearGiftFlights()
@@ -1065,6 +1067,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onEscape)
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
+// Initial admission opens a new realtime subscription; its connecting state must
+// not cancel the arrival animation in the same render tick.
+watch(() => realtime.state.value, (value, previous) => { if (previous === 'online' && value !== 'online') entryMeteor.value = false })
 watch([pageHidden, reducedMotion], () => { if (pageHidden.value || reducedMotion.value) entryMeteor.value = false })
 watch(() => snapshot.value?.resetEpoch, (value, old) => { if (old !== undefined && value !== old) entryMeteor.value = false })
 </script>
@@ -1075,10 +1080,11 @@ watch(() => snapshot.value?.resetEpoch, (value, old) => { if (old !== undefined 
     class="v2-welcome"
     :class="{
       'is-keyboard': compactKeyboard && dockTextInputFocused,
-      'is-content-page': navigationAvailable && (activeTab !== 'scene' || runtime?.currentScene === 'PROGRAM_SUPPORT'),
-      'is-live-chat': admitted && activeTab === 'scene' && runtime?.currentScene === 'PROGRAM_SUPPORT' && runtime?.status === 'RUNNING' && snapshot?.presentation.type === 'NONE',
+      'is-content-page': !studentVerification && navigationAvailable && (activeTab !== 'scene' || runtime?.currentScene === 'PROGRAM_SUPPORT'),
+      'is-live-chat': !studentVerification && admitted && activeTab === 'scene' && runtime?.currentScene === 'PROGRAM_SUPPORT' && runtime?.status === 'RUNNING' && snapshot?.presentation.type === 'NONE',
       'is-onboarding': snapshot && !admitted,
-      'is-single-entry': !snapshot || studentVerification,
+      'is-single-entry': !snapshot && !studentVerification,
+      'is-student-verification': Boolean(snapshot && studentVerification),
       'is-completed': runtime?.status === 'COMPLETED',
       'is-discovery-active': discoveryActive,
       'is-discovery-pending': cinematic === 'discovery-pending',
@@ -1089,14 +1095,11 @@ watch(() => snapshot.value?.resetEpoch, (value, old) => { if (old !== undefined 
     :style="welcomeStyle"
     data-visual-palette="orbital-signal-spectrum"
     data-ui-theme="personal-star-city"
-    :data-program-opening="mobileProgramOpening ? 'playing' : 'settled'"
+    data-program-opening="settled"
   >
-    <OpeningMusic :scene="runtime?.currentScene" :status="runtime?.status" />
-    <ProgramStageBackground v-if="!programBackgroundVisible || mobileProgramOpening" compact :stars="[]" :reduced="reducedMotion" :paused="pageHidden" theme="program" variant="theme" class="personal-neon-entry" :class="{'is-opening-galaxy': mobileProgramOpening && programBackgroundVisible}" />
-    <div v-if="!programBackgroundVisible && !completed" class="entry-personal-light" :style="{'--personal-color': participant?.displayColor || selectedColor}" aria-label="我的星色"><span>✦</span><small>{{ admitted ? personalStarCode : '你的专属星色' }}</small></div>
+    <ProgramStageBackground compact mobile-unified :stars="backgroundStars" :effects="backgroundEffects" :own-star-id="participant?.ownPublicStarId" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED'" theme="program" variant="theme" class="mobile-unified-background" @sky-points="phoneSkyPoints = $event" />
+    <div v-if="admitted && !completed" class="entry-personal-light" :style="{'--personal-color': participant?.displayColor || selectedColor}" aria-label="我的星色"><span>✦</span><small>{{ personalStarCode }}</small></div>
     <PersonalEntryMeteor v-if="entryMeteor && !reducedMotion && !pageHidden" :color="participant?.displayColor || selectedColor" @finish="entryMeteor = false" />
-    <ProgramStageBackground v-if="admitted && !completed" :class="{ 'is-preloaded-background': !programBackgroundVisible, 'is-opening-city': mobileProgramOpening && programBackgroundVisible }" compact :stars="snapshot?.publicStars ?? []" :effects="giftFlights" :own-star-id="participant?.ownPublicStarId" :visual="phoneVisual" :variant="programBackground(currentProgram, snapshot?.stage)" :theme="starCityTheme({ program: currentProgram, stage: snapshot?.stage, presentation: snapshot?.presentation, liveInteraction: snapshot?.liveInteraction }).id" :reduced="reducedMotion" :paused="pageHidden || !programBackgroundVisible || runtime?.status === 'PAUSED'" @sky-points="phoneSkyPoints = $event" />
-    <MobileProgramOpening v-if="mobileProgramOpening && programBackgroundVisible" @finish="finishMobileProgramOpening" />
     <GiftSkyEffects compact :points="phoneSkyPoints" :effects="giftFlights" :aggregate="giftAggregate" :reduced="reducedMotion" />
 
     <header
@@ -1230,15 +1233,15 @@ watch(() => snapshot.value?.resetEpoch, (value, old) => { if (old !== undefined 
         <span aria-hidden="true"></span><p>正在核验身份，找回你的星…</p>
       </div>
 
-      <form v-else-if="!snapshot || studentVerification" class="dock-body entry-form" novalidate @submit.prevent="activateAssisted">
-        <div class="entry-form-heading"><strong>{{ guestEntry && !studentVerification ? '游客参与' : '欢迎入场' }}</strong><span :style="{color: selectedColor}">✦</span></div>
+      <form v-else-if="!snapshot || studentVerification" class="dock-body entry-form" data-testid="student-verification-form" novalidate @submit.prevent="activateAssisted">
+        <div class="entry-form-heading"><strong>{{ studentVerification ? '核验学生身份' : guestEntry ? '游客参与' : '欢迎入场' }}</strong><span :style="{color: selectedColor}">✦</span></div>
         <label>{{ guestEntry && !studentVerification ? '昵称' : '姓名' }}<input v-model="displayName" autocomplete="name" :maxlength="guestEntry && !studentVerification ? 20 : 40" :placeholder="guestEntry && !studentVerification ? '你的昵称' : '你的姓名'" /></label>
         <label v-if="!guestEntry || studentVerification">8 位学号<input v-model="studentNumber" inputmode="numeric" autocomplete="off" maxlength="8" pattern="[0-9]{8}" placeholder="请输入 8 位学号" /></label>
         <div class="entry-color"><label for="entry-star-color">选择星色 <span :style="{color:selectedColor}">✦</span></label><input id="entry-star-color" v-model.number="colorKelvin" type="range" :min="STAR_TEMPERATURE_MIN" :max="STAR_TEMPERATURE_MAX" :step="STAR_TEMPERATURE_STEP" :aria-valuetext="`${colorKelvin} 开尔文`"><div class="temperature-scale"><span>暖红</span><span>日光</span><span>冷蓝</span></div></div>
-        <button class="dock-primary" type="submit" :disabled="busy === 'activation'">{{ busy === 'activation' ? '正在进入…' : '确认星色并进入' }}</button>
-        <p class="entry-hint">{{ guestEntry && !studentVerification ? '游客可聊天和送礼，应援不计入节目排名。' : '星色本轮锁定；再次进入会恢复原星色。' }}</p>
+        <button class="dock-primary" data-testid="student-verification-submit" type="submit" :disabled="restoringSession || busy === 'activation'">{{ restoringSession ? '正在恢复入场状态…' : busy === 'activation' ? '正在进入…' : '确认星色并进入' }}</button>
         <button v-if="!studentVerification" class="entry-switch" type="button" @click="guestEntry = !guestEntry; persistentError = ''">{{ guestEntry ? '姓名学号入场' : '游客参与' }}</button>
-        <button v-else class="entry-switch" type="button" @click="studentVerification = false">返回游客应援</button>
+        <button v-else class="entry-switch" type="button" @click="studentVerification = false; persistentError = ''">返回档案</button>
+        <p class="entry-hint">{{ guestEntry && !studentVerification ? '游客可聊天和送礼，应援不计入节目排名。' : '星色本轮锁定；再次进入会恢复原星色。' }}</p>
       </form>
 
       <div
@@ -1300,7 +1303,6 @@ watch(() => snapshot.value?.resetEpoch, (value, old) => { if (old !== undefined 
 
       <template v-else>
         <div ref="mainDockBody" :key="viewRevealKey" class="dock-body admitted-panel page-reveal">
-          <p v-if="participant?.accountType === 'GUEST'" class="staff-entry-note">游客应援 · 不计入节目排名 <button type="button" @click="studentVerification = true; guestEntry = false; displayName = ''; studentNumber = ''">核验学生身份</button></p>
           <template v-if="activeTab === 'scene'">
             <PersonalMemento v-if="runtime?.status === 'COMPLETED'" :participant="participant" :star-code="personalStarCode" :color="selectedColor" @open-archive="selectTab('archive')" @open-programs="selectTab('programs')" />
             <div v-else-if="runtime?.status === 'PAUSED'" class="terminal-copy">
@@ -1309,15 +1311,8 @@ watch(() => snapshot.value?.resetEpoch, (value, old) => { if (old !== undefined 
             <div v-else-if="runtime?.status === 'READY'" class="terminal-copy">
               <strong>你的星色，已为今晚点亮</strong><p>入场已完成，稍后一起启程。</p>
             </div>
-            <button
-              v-else-if="runtime?.currentScene === 'ASSEMBLY' && actionAllowed(snapshot, 'START_STAR')"
-              class="dock-primary"
-              type="button"
-              :disabled="!writesReady || Boolean(busy)"
-              @click="startStar"
-            >{{ busy === 'START_STAR' ? '正在启动…' : '启动我的星' }}</button>
             <div v-else-if="runtime?.currentScene === 'ASSEMBLY'" class="terminal-copy">
-              <strong>{{ participant.started ? '星星已启动' : '已进入星海集结' }}</strong><p>等待现场进入下一环节。</p>
+              <strong>2026迎新晚会</strong><p>以星光作序，与未来相逢。</p>
             </div>
 
             <section v-else-if="snapshot.presentation.type === 'RAFFLE'" class="phone-raffle" aria-label="正在抽取上台观众"><span class="phone-raffle__star" aria-hidden="true">✦</span><small>互动环节二</small><h3>正在抽取上台观众</h3><p></p><span class="phone-raffle__code">{{ personalStarCode }}</span></section>
@@ -1363,10 +1358,16 @@ watch(() => snapshot.value?.resetEpoch, (value, old) => { if (old !== undefined 
                 <input
                   id="v2-barrage"
                   v-model="barrageDraft"
+                  type="text"
+                  inputmode="text"
+                  enterkeyhint="send"
+                  autocomplete="off"
+                  maxlength="40"
+                  aria-describedby="barrage-composer-help"
                   :disabled="!actionAllowed(snapshot, 'POST_BARRAGE') || snapshot.interaction.barragePaused"
                   :placeholder="snapshot.interaction.barragePaused ? '现场暂停接收弹幕' : '发送弹幕…'"
                 />
-                <button ref="barrageSend" class="dock-primary dock-primary--compact" type="submit" :disabled="!writesReady || !actionAllowed(snapshot, 'POST_BARRAGE') || snapshot.interaction.barragePaused || Boolean(busy)"><StellarIcon name="send" />发送</button>
+                <button ref="barrageSend" class="dock-primary dock-primary--compact" type="submit" :disabled="!writesReady || !actionAllowed(snapshot, 'POST_BARRAGE') || snapshot.interaction.barragePaused || Boolean(busy)"><StellarIcon name="send" />发送弹幕</button>
               </div>
               <div class="composer-tools">
                 <div class="composer-identity"><button class="style-trigger" type="button" aria-controls="barrage-style-picker" :aria-expanded="colorPickerOpen" @click="colorPickerOpen = !colorPickerOpen">星色 <span :style="{ background: barrageSwatch(selectedBarrageStyle) }"></span></button><small>{{ personalStarCode }} · {{ barrageLength }} / 40</small></div>
@@ -1381,6 +1382,7 @@ watch(() => snapshot.value?.resetEpoch, (value, old) => { if (old !== undefined 
                   @click="openGift"
                 ><span>送礼物</span><small>余额 {{ participant.powerBalance }}</small></button>
               </div>
+              <p id="barrage-composer-help" class="barrage-composer-help" role="status">{{ snapshot.interaction.barragePaused ? '现场暂时停止接收弹幕' : writesReady ? '按发送或键盘回车即可发布' : '连接恢复后即可发送' }}</p>
             </form>
 
             <section v-else-if="runtime?.currentScene === 'COOPERATIVE_LIGHT'" class="terminal-copy"><strong>今夜，因你们而闪耀</strong><p>请看大屏，和我们一起留下今晚的纪念。</p></section>
@@ -1398,6 +1400,10 @@ watch(() => snapshot.value?.resetEpoch, (value, old) => { if (old !== undefined 
           </section>
 
           <section v-else class="archive" aria-labelledby="view-title" :style="{ '--identity-color': selectedColor }">
+            <div v-if="participant?.accountType === 'GUEST'" class="archive-verification">
+              <p class="staff-entry-note">游客应援 · 不计入节目排名</p>
+              <button class="dock-secondary" type="button" @click="studentVerification = true; guestEntry = false; displayName = ''; studentNumber = ''; persistentError = ''">核验学生身份</button>
+            </div>
             <header>
               <div><small>这一束光，属于</small><strong class="archive-owner">{{ participantDisplayName }}</strong></div>
               <strong>{{ personalStarCode }}</strong>
@@ -2864,8 +2870,8 @@ textarea:focus-visible {
 .v2-welcome.is-live-chat .operation-dock::before { opacity: .28; }
 .v2-welcome.is-live-chat .operation-dock::after { opacity: 0; }
 .v2-welcome.is-content-page .admitted-panel { flex: 1; min-height: 0; max-height: none; padding: 18px 16px; }
-.v2-welcome.is-live-chat .admitted-panel { display: flex; overflow: hidden; padding: 14px 12px 8px; }
-.v2-welcome.is-live-chat .program-composer { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 8px; }
+.v2-welcome.is-live-chat .admitted-panel { display: flex; flex-direction: column; min-width:0; overflow: hidden; padding: 14px 12px 8px; }
+.v2-welcome.is-live-chat .program-composer { display: flex; flex-direction: column; flex: 1; min-width:0; width:100%; min-height: 0; gap: 8px; }
 .v2-welcome.is-live-chat .now-playing { flex: 0 0 auto; color: #9eafc9; font-size: 12px; margin: 0; padding: 0 4px 8px; border-bottom: 1px solid #a3bdd51a; }
 .current-program-gifts { flex: 0 0 auto; min-width: 0; padding: 1px 4px 3px; color: #8ea3bf; font-size: 10px; }
 .current-program-gifts > span { display: block; margin-bottom: 5px; letter-spacing: .08em; }
@@ -2990,6 +2996,10 @@ textarea:focus-visible {
 .v2-welcome.is-live-chat :deep(.mobile-chat-stack){gap:4px;padding-block:6px}
 .v2-welcome.is-live-chat :deep(.mobile-chat-sender){display:inline;margin-right:7px;font-size:10px}
 .composer-row input,.composer-row .dock-primary{min-height:44px;border-radius:5px}
+.v2-welcome.is-live-chat .composer-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;gap:8px;width:100%;min-width:0}
+.v2-welcome.is-live-chat .composer-row input{width:100%;box-sizing:border-box;min-width:0}
+.v2-welcome.is-live-chat .composer-row .dock-primary--compact{min-width:92px;padding-inline:12px;white-space:nowrap}
+.barrage-composer-help{margin:0;padding-inline:4px;color:#8298b4;font-size:11px;line-height:1.4}
 .live-interaction-card{flex:0 0 auto;display:grid;grid-template-columns:1fr auto;gap:6px 12px;margin:2px 0;padding:11px 12px;border:1px solid #a4bdd127;border-left:2px solid #a4c4d9;border-radius:4px;background:rgba(6,15,27,.88);box-shadow:none;max-height:210px;overflow:auto}
 .live-interaction-card>small{grid-column:1/-1;color:#8b9eae;font-size:9px;letter-spacing:.08em;font-weight:400}
 .live-interaction-card h3{font-size:13px;line-height:1.45;font-weight:500;max-width:230px}
@@ -3058,26 +3068,30 @@ textarea:focus-visible {
 .v2-welcome.is-completed .operation-dock{background:linear-gradient(150deg,rgba(20,37,55,.55),rgba(3,10,20,.5));border-radius:18px}
 
 
-/* The old galaxy stays mounted until the new city has completed its handoff. */
-.is-preloaded-background{opacity:0;visibility:hidden}.is-opening-galaxy{z-index:2;animation:d108-galaxy-out 2.4s both}.is-opening-city{animation:d108-city-in 2.4s both}
-[data-program-opening="playing"] .program-composer{animation:d108-content-in 2.4s both}
 .v2-welcome :is(h1,h2,h3,.dock-view-title,.archive-owner,.program-list strong){font-weight:700}
-@keyframes d108-galaxy-out{0%,12%{opacity:1}80%,100%{opacity:0}}
-@keyframes d108-city-in{0%,8%{opacity:0}82%,100%{opacity:1}}
-@keyframes d108-content-in{0%,48%{opacity:0}100%{opacity:1}}
-@media(prefers-reduced-motion:reduce){.is-opening-galaxy{display:none}.is-opening-city,[data-program-opening="playing"] .program-composer{animation:none}}
 .staff-entry-note{font:500 12px/1.6 var(--font-family-ui);color:#c9bbd9;margin:0 0 12px}
 </style>
 
 <style scoped src="./star-city-mobile.css"></style>
 
 <style scoped>
-.personal-neon-entry{position:absolute;inset:0}.entry-personal-light{position:absolute;left:50%;top:29%;transform:translateX(-50%);display:grid;justify-items:center;gap:12px;pointer-events:none;color:var(--personal-color);z-index:1}.entry-personal-light>span{font-size:74px;text-shadow:0 0 35px var(--personal-color)}.entry-personal-light>small{color:#ded9ec;font-size:12px;letter-spacing:.12em}
-.entry-form-heading{display:flex;align-items:center;justify-content:space-between;font-size:22px;font-weight:800}.entry-form-heading>span{font-size:30px}.entry-form .entry-color{display:grid;gap:2px}.entry-form input[type=range]{width:100%;min-height:44px;accent-color:var(--selected-color);background:var(--temperature-spectrum)}.entry-hint{font-size:11px;color:#c5bfd5;text-align:center;margin:0}.entry-switch{background:transparent;color:#d3c7ed;border:0;min-height:44px;font:inherit;font-size:13px}.entry-form .entry-color label{display:flex;justify-content:space-between}.staff-entry-note button{min-height:44px;border:1px solid #a898c355;background:#242234;color:#efebfa;border-radius:8px;font:inherit;font-size:12px;padding:6px 10px}
-.is-single-entry .v2-welcome__main{justify-content:flex-start;padding-top:8px}.is-single-entry .entry-copy h2{font-size:28px}.is-single-entry .entry-copy .kicker{display:none}.is-single-entry .entry-copy>p{font-size:12px;margin:4px 0}.is-single-entry .entry-form{gap:10px;padding:18px 22px}.is-single-entry .v2-welcome__dock{max-height:calc(var(--visual-height,100dvh) - 140px);overflow:auto}.is-single-entry .entry-form input:not([type=range]){min-height:44px}
-@media(max-height:720px){.is-single-entry .entry-form{gap:5px;padding:12px 18px}.is-single-entry .entry-copy>p{display:none}.is-single-entry .entry-form-heading{font-size:18px}.is-single-entry .v2-welcome__dock{max-height:calc(var(--visual-height,100dvh) - 100px)}}
+.entry-personal-light{position:absolute;left:50%;top:29%;transform:translateX(-50%);display:grid;justify-items:center;gap:12px;pointer-events:none;color:var(--personal-color);z-index:1}.entry-personal-light>span{font-size:74px;text-shadow:0 0 35px var(--personal-color)}.entry-personal-light>small{color:#ded9ec;font-size:12px;letter-spacing:.12em}
+.is-content-page .entry-personal-light{top:96px;left:auto;right:25px;transform:none;display:flex;gap:6px}.is-content-page .entry-personal-light>span{font-size:18px}.is-content-page .entry-personal-light>small{font-size:10px}
+.entry-form-heading{display:flex;align-items:center;justify-content:space-between;font-size:22px;font-weight:800}.entry-form-heading>span{font-size:30px}.entry-form .entry-color{display:grid;gap:2px}.entry-form input[type=range]{width:100%;min-height:44px;accent-color:var(--selected-color);background:var(--temperature-spectrum)}.entry-hint{font-size:11px;color:#c5bfd5;text-align:center;margin:0}.entry-switch{min-height:44px;padding:0 8px;border:0;background:transparent;color:#d3c7ed;font:inherit;font-size:12px;opacity:.82}.entry-form .entry-color label{display:flex;justify-content:space-between}.staff-entry-note button{min-height:44px;border:1px solid #a898c355;background:#242234;color:#efebfa;border-radius:8px;font:inherit;font-size:12px;padding:6px 10px}
+.is-single-entry .v2-welcome__main{justify-content:flex-start;padding-top:8px}.is-single-entry .entry-copy h2{font-size:28px}.is-single-entry .entry-copy .kicker{display:none}.is-single-entry .entry-copy>p{font-size:12px;margin:4px 0}.is-single-entry .operation-dock{max-height:calc(var(--visual-height,100dvh) - 112px);overflow:hidden}.is-single-entry .operation-dock .entry-form{max-height:none;overflow:visible;gap:10px;padding:18px 22px}.is-single-entry .entry-form input:not([type=range]){min-height:44px}
+@media(max-height:720px){.is-single-entry .operation-dock{max-height:calc(var(--visual-height,100dvh) - 78px);bottom:max(6px,env(safe-area-inset-bottom))}.is-single-entry .entry-form{gap:5px;padding:12px 18px}.is-single-entry .entry-copy>p{display:none}.is-single-entry .entry-form-heading{font-size:18px}}
 </style>
 
 <style scoped>
 .personal-neon-entry :deep(.city-panorama){background-size:auto 58%;background-position:15% 50px;background-repeat:no-repeat;opacity:.85}.personal-neon-entry :deep(.city-readability){background:linear-gradient(180deg,#201c3240,transparent 36%,#17172530 70%,#171725b3)}.is-single-entry .entry-personal-light{top:30%;gap:8px}.is-single-entry .entry-personal-light>span{font-size:52px}.entry-personal-light>small{font-family:var(--font-family-cjk)}
+.v2-welcome.is-student-verification .v2-welcome__main{visibility:hidden;pointer-events:none}
+.v2-welcome.is-student-verification .entry-copy,.v2-welcome.is-student-verification .entry-personal-light{opacity:.08;transform:scale(.82);transform-origin:top center}
+.archive-verification{display:grid;gap:8px;margin-bottom:16px}.archive-verification .staff-entry-note{margin:0}.archive-verification button{min-height:44px;width:100%}
+.v2-welcome.is-student-verification .operation-dock{top:76px;bottom:max(8px,env(safe-area-inset-bottom));max-height:none;overflow:visible;z-index:12;background:#1b1b30ed;border-radius:16px}
+.v2-welcome.is-student-verification .operation-dock .entry-form{box-sizing:border-box;min-height:0;max-height:calc(var(--visual-height,100dvh) - 24px);overflow-y:auto;overscroll-behavior:contain;padding:16px 18px calc(16px + env(safe-area-inset-bottom));gap:10px}
+.v2-welcome.is-student-verification .entry-form input:not([type=range]),.v2-welcome.is-student-verification .entry-form button{min-height:44px}
+@media(max-height:720px){.v2-welcome.is-student-verification .operation-dock{bottom:max(6px,env(safe-area-inset-bottom));max-height:calc(var(--visual-height,100dvh) - 12px)}.v2-welcome.is-student-verification .operation-dock .entry-form{max-height:calc(var(--visual-height,100dvh) - 12px);padding-block:10px}}
+.v2-welcome.is-keyboard.is-student-verification .operation-dock{top:58px;bottom:max(6px,env(safe-area-inset-bottom));max-height:none}
+.v2-welcome.is-student-verification .operation-dock .entry-form{flex:1;max-height:none;min-width:0;border-radius:16px}
+.v2-welcome.is-keyboard.is-student-verification .operation-dock .entry-form{max-height:none}
 </style>

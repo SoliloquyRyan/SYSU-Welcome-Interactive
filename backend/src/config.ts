@@ -27,6 +27,7 @@ const EnvironmentSchema = z.object({
     .min(1)
     .max(1_000)
     .default(300),
+  OBS_AUDIO_BRIDGE_TOKEN: z.preprocess(value => value === '' ? undefined : value, z.string().min(16).optional()),
 })
 
 export interface AppConfig {
@@ -40,6 +41,7 @@ export interface AppConfig {
   seedParticipantCount: number
   secureCookies?: boolean
   trustLoopbackProxy?: boolean
+  obsAudioBridgeToken?: string | null
 }
 
 function resolveBackendPath(value: string): string {
@@ -66,5 +68,6 @@ export function loadConfig(
     seedParticipantCount: parsed.DEMO_SEED_PARTICIPANT_COUNT,
     secureCookies: parsed.DEMO_SECURE_COOKIES === '1',
     trustLoopbackProxy: parsed.DEMO_TRUST_LOOPBACK_PROXY === '1',
+    obsAudioBridgeToken: parsed.OBS_AUDIO_BRIDGE_TOKEN ?? null,
   }
 }

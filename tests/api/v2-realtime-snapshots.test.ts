@@ -330,7 +330,7 @@ describe('V2-05 snapshots and split-stream realtime', () => {
     })
     expect(adminResponse.statusCode).toBe(200)
     expect(adminResponse.json()).toMatchObject({
-      status: 'ok', protocolVersion: '2', runtime: { status: 'RUNNING', currentScene: 'ASSEMBLY' },
+      status: 'ok', protocolVersion: '2', runtime: { status: 'RUNNING', currentScene: 'PROGRAM_SUPPORT' },
     })
     expect((await app.inject({ method: 'POST', url: '/api/admin/runtime', headers: HEADERS, payload: {} })).statusCode).toBe(409)
   })

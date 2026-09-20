@@ -4,6 +4,7 @@ import { createGiftSkyQueue } from '../../rendering/gift-sky-queue'
 import { useBuzzerCountdown } from '../../composables/useBuzzerCountdown'
 import GiftSignalIcon from '../student/GiftSignalIcon.vue'
 import ArrivalCount from '../../components/ArrivalCount.vue'
+import ScreenArrivalMeteor from '../../components/ScreenArrivalMeteor.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useReducedMotion } from '../../composables/useReducedMotion'
@@ -26,7 +27,7 @@ import { createRaffleReveal } from './raffle-reveal'
 import { screenPresentationCanReplace, screenSnapshotCanReplace } from './v2-screen-state'
 
 const sceneCopy = {
-  ASSEMBLY: { title: '星海集结', subtitle: '每一颗抵达的星，正在汇入同一片星河' },
+  ASSEMBLY: { title: '2026迎新晚会', subtitle: '以星光作序，与未来相逢' },
   PROGRAM_SUPPORT: { title: '节目共振', subtitle: '此刻的欢呼，正在现场发生' },
   COOPERATIVE_LIGHT: { title: '今夜，因你们而闪耀', subtitle: '感谢每一次登场，也感谢每一束来自台下的光' },
 }
@@ -53,7 +54,7 @@ const systemReducedMotion = useReducedMotion()
 const motionPreference = computed(() => ['system', 'reduced'].includes(route.query.motion) ? route.query.motion : 'full')
 const reducedMotion = computed(() => motionPreference.value === 'reduced'
   || (motionPreference.value === 'system' && systemReducedMotion.value))
-const showScreenSettings = computed(() => route.query.settings === '1')
+const showScreenSettings = computed(() => route.query.settings === '1' && !completed.value)
 const gsapReady = ref(false)
 const sceneTransition = ref(null)
 const finalePlayed = ref(false)
@@ -115,12 +116,19 @@ const raffle = computed(() => snapshot.value?.raffle)
 const liveInteraction = computed(() => snapshot.value?.liveInteraction ?? { phase: 'IDLE', voteCandidates: [] })
 const cityTheme = computed(() => starCityTheme({ program: snapshot.value?.currentProgram, stage: snapshot.value?.stage, presentation: presentation.value, liveInteraction: liveInteraction.value }))
 const audioAvailable = ref(false)
-const audioEnabled = computed(() => route.query.audio !== 'off' && realtime.state.value === 'online' && currentScene.value === 'PROGRAM_SUPPORT' && runtime.value?.status === 'RUNNING' && ceremonyStage.value.mode === 'PROGRAM' && presentation.value.type === 'NONE' && liveInteraction.value.phase === 'IDLE' && !sceneTransition.value && !completed.value)
+const audioEnabled = computed(() => route.query.audio !== 'off' && realtime.state.value === 'online' && currentScene.value === 'PROGRAM_SUPPORT' && runtime.value?.status === 'RUNNING' && ceremonyStage.value.mode === 'PROGRAM' && presentation.value.type === 'NONE' && liveInteraction.value.phase === 'IDLE' && snapshot.value?.currentProgram?.kind === 'PERFORMANCE' && !sceneTransition.value && !completed.value)
 const buzzerCountdown = useBuzzerCountdown(liveInteraction, computed(() => snapshot.value?.generatedAt))
 const giftRoomStats = computed(() => snapshot.value?.currentProgram?.kind === 'PERFORMANCE'
   ? (snapshot.value.currentProgram.giftCatalog ?? [])
   : [])
 const ceremonyStage = computed(() => snapshot.value?.stage ?? { mode: 'PROGRAM', revision: 0, revealed: false, page: 0, totalPages: 1, award: null })
+const openingPresenceActive = ref(true)
+const arrivalMeteors = ref([])
+const startFlash = ref(false)
+let startFlashTimer = null
+let openingResetEpoch = null
+let arrivalMeteorSerial = 0
+const showArrivalCount = computed(() => Boolean(snapshot.value && openingPresenceActive.value && !completed.value && presentation.value.type === 'NONE'))
 const ceremonyVisible = computed(() => currentScene.value === 'PROGRAM_SUPPORT' && !openingProgram.value && !completed.value
   && presentation.value.type === 'NONE' && liveInteraction.value.phase === 'IDLE'
   && (ceremonyStage.value.mode !== 'PROGRAM' || !snapshot.value?.currentProgram))
@@ -132,6 +140,42 @@ const interactionVisible = computed(() =>
   && !ceremonyVisible.value
   && !sceneTransition.value,
 )
+const interactionIdleTitle = computed(() => {
+  const code = snapshot.value?.currentProgram?.displayCode
+  if (code === 'A') return { title: '歌名 decoder', subtitle: '听见旋律，准备抢答' }
+  if (code === 'B') return { title: '谁是卧底', subtitle: '现场投票即将开始' }
+  if (code === 'C') return { title: '谁是最“人”', subtitle: '现场互动' }
+  return null
+})
+
+function syncOpeningPresence(next) {
+  if (!next) return
+  if (openingResetEpoch !== next.resetEpoch) {
+    openingResetEpoch = next.resetEpoch
+    openingPresenceActive.value = true
+    arrivalMeteors.value = []
+  }
+  const runtimeState = next.runtime
+  if (next.currentProgram || runtimeState?.status === 'COMPLETED' || runtimeState?.currentScene === 'COOPERATIVE_LIGHT'
+    || (runtimeState?.status === 'RUNNING' && runtimeState.currentScene === 'PROGRAM_SUPPORT' && next.stage?.mode !== 'HOST')) {
+    openingPresenceActive.value = false
+    arrivalMeteors.value = []
+  }
+}
+
+function launchArrivalMeteor(star) {
+  if (!showArrivalCount.value || reducedMotion.value || pageHidden.value || !star?.publicStarId) return
+  const id = `${star.publicStarId}-${++arrivalMeteorSerial}`
+  arrivalMeteors.value = [...arrivalMeteors.value, {
+    id,
+    color: star.displayColor || '#b8dfff',
+    seed: star.formationSlot || star.publicStarId,
+  }].slice(-3)
+}
+
+function finishArrivalMeteor(id) {
+  arrivalMeteors.value = arrivalMeteors.value.filter(item => item.id !== id)
+}
 const scene = computed(() => sceneCopy[currentScene.value] ?? sceneCopy.ASSEMBLY)
 const activeVisual = computed(() => programVisual(snapshot.value?.currentProgram, ceremonyStage.value))
 const stageStars = computed(() => sceneTransition.value ? [] : snapshot.value?.publicStars ?? [])
@@ -178,13 +222,14 @@ function putSnapshot(next, { reconnect = false } = {}) {
     if (newEpoch) seenGiftFlights.clear()
   }
   snapshot.value = next
+  syncOpeningPresence(next)
   syncRaffleDisplay(hadSnapshot && !reconnect && !newEpoch)
   renderer?.setCooperativeProgress(next.aggregate)
   renderer?.setStars(next.publicStars)
   if (!sceneTransition.value) renderer?.setMode(next.runtime.currentScene, { animate: false })
   if (!hadSnapshot || reconnect || newEpoch) snapStageBackdrop(next.runtime.currentScene)
   if (hadSnapshot && !reconnect && !newEpoch && !wasCompleted && next.runtime.status === 'COMPLETED') {
-    void playFinale()
+    finaleMotion.value = false
   }
 }
 
@@ -289,9 +334,9 @@ function visualCopy(sceneName) {
 }
 
 function sceneTransitionDuration(fromScene, toScene) {
-  return fromScene === 'ASSEMBLY' && toScene === 'PROGRAM_SUPPORT'
-    ? PROGRAM_OPENING_TRANSITION_MS
-    : DEFAULT_SCENE_TRANSITION_MS
+  // D-110: the server-confirmed scene is rendered immediately. The old
+  // explosion/supernova handoff is intentionally retired from the public screen.
+  return 0
 }
 
 function prepareSceneTransition(fromScene, toScene, nextRuntime) {
@@ -305,9 +350,10 @@ function prepareSceneTransition(fromScene, toScene, nextRuntime) {
     || presentation.value.type !== 'NONE'
   ) return null
 
+  const durationMs = sceneTransitionDuration(fromScene, toScene)
+  if (durationMs <= 0) return null
   const previousCopy = visualCopy(fromScene)
   const transitionId = ++sceneTransitionSerial
-  const durationMs = sceneTransitionDuration(fromScene, toScene)
   sceneTransition.value = {
     id: transitionId,
     fromScene,
@@ -536,9 +582,18 @@ async function onLiveEvent(frame) {
   const payload = frame.payload
   if (frame.name === 'runtime.changed') {
     const previousScene = currentScene.value
+    const wasReady = snapshot.value.runtime?.status === 'READY'
     const nextScene = payload.runtime.currentScene ?? 'ASSEMBLY'
+    if (wasReady && payload.runtime.status === 'RUNNING') {
+      openingPresenceActive.value = false
+      arrivalMeteors.value = []
+      startFlash.value = true
+      clearTimeout(startFlashTimer)
+      startFlashTimer = setTimeout(() => { startFlash.value = false }, 800)
+    }
     const transitionId = prepareSceneTransition(previousScene, nextScene, payload.runtime)
     snapshot.value.runtime = payload.runtime
+    syncOpeningPresence(snapshot.value)
     renderer?.setMode(nextScene, {
       animate: Boolean(transitionId),
       durationMs: sceneTransition.value?.durationMs ?? DEFAULT_SCENE_TRANSITION_MS,
@@ -548,7 +603,7 @@ async function onLiveEvent(frame) {
     if (payload.runtime.status === 'COMPLETED') {
       await refresh()
       clearFlyingBarrages()
-      await playFinale()
+      finaleMotion.value = false
     }
   } else if (frame.name === 'presentation.changed') {
     const leavingFinalePreview = previewingFinale.value && payload.presentation.type !== 'FINALE_PREVIEW'
@@ -573,6 +628,7 @@ async function onLiveEvent(frame) {
     if (index === -1) snapshot.value.publicStars.push(star)
     else snapshot.value.publicStars[index] = star
     renderer?.upsertStar(star)
+    launchArrivalMeteor(star)
   } else if (frame.name === 'aggregate.changed') {
     snapshot.value.aggregate = payload.aggregate
     snapshot.value.aggregateRevision = payload.aggregateRevision
@@ -618,6 +674,7 @@ async function onLiveEvent(frame) {
     snapshot.value.liveInteraction = payload.liveInteraction
     clearFlyingBarrages()
     clearGiftFlights()
+    arrivalMeteors.value = []
   }
 }
 
@@ -631,6 +688,7 @@ watch(() => realtime.state.value, (next) => {
     clearFinaleMotionStyles()
     clearFlyingBarrages()
     clearGiftFlights()
+    arrivalMeteors.value = []
     renderer?.setMode(currentScene.value, { animate: false })
     raffleReveal.sync(raffle.value?.winners ?? [])
   }
@@ -657,6 +715,7 @@ watch(currentScene, (next) => {
 })
 watch(completed, (next) => {
   document.documentElement.classList.toggle('v2-program-overlay', currentScene.value === 'PROGRAM_SUPPORT' && !next)
+  renderer?.setReduced(next || reducedMotion.value)
 })
 
 watch(reducedMotion, (next) => {
@@ -666,6 +725,7 @@ watch(reducedMotion, (next) => {
 watch(reducedMotion, (next) => {
   renderer?.setReduced(next)
   clearFlyingBarrages()
+  if (next) arrivalMeteors.value = []
   if (next) {
     finaleMotion.value = false
     stopSceneTransition()
@@ -688,6 +748,7 @@ function onVisibilityChange() {
     clearFinaleMotionStyles()
     clearFlyingBarrages()
     clearGiftFlights()
+    arrivalMeteors.value = []
     raffleReveal.sync(raffle.value?.winners ?? [])
   }
 }
@@ -710,6 +771,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   clearTimeout(programCueTimer)
+  clearTimeout(startFlashTimer)
   disposed = true
   document.documentElement.classList.remove('v2-screen-active', 'v2-program-overlay')
   document.documentElement.classList.remove('v2-stage-motion-full')
@@ -744,22 +806,29 @@ onBeforeUnmount(() => {
     :data-motion-policy="motionPreference"
     :data-motion-state="reducedMotion ? 'static' : 'full'"
     :data-system-reduced-motion="String(systemReducedMotion)"
-    data-program-transition-style="stellar-collapse-supernova-reveal"
-    data-transition-architecture="native-webgl2-supernova-with-canvas2d-fallback"
+    data-program-transition-style="direct-state-cut"
+    data-transition-architecture="state-confirmed"
     data-screen-palette="orbital-signal-spectrum"
     data-visual-palette="orbital-signal-spectrum"
     :data-city-theme="cityTheme.id"
   >
+    <ArrivalCount v-if="showArrivalCount" :count="snapshot?.aggregate?.admittedCount ?? 0" :reduced="reducedMotion" />
+    <ScreenArrivalMeteor
+      v-for="meteor in arrivalMeteors"
+      :key="meteor.id"
+      :color="meteor.color"
+      :seed="meteor.seed"
+      :reduced="reducedMotion"
+      @finish="finishArrivalMeteor(meteor.id)"
+    />
+    <Transition name="start-flash"><div v-if="startFlash" class="start-flash" data-testid="start-flash" aria-hidden="true"><span>✦</span><strong>2026 迎新晚会</strong></div></Transition>
     <div ref="stageBackdrop" class="v2-stage-backdrop" aria-hidden="true"></div>
     <ProgramStageBackground v-if="sceneTransition?.fromScene === 'PROGRAM_SUPPORT' && sceneTransition.toScene !== 'PROGRAM_SUPPORT' && !transparentMedia" class="city-outgoing" :theme="cityTheme.id" paused :branded="false" />
-    <ProgramStageBackground v-if="currentScene === 'PROGRAM_SUPPORT' && !completed && !transparentMedia && !ceremonyVisible"
+    <ProgramStageBackground v-if="(currentScene === 'PROGRAM_SUPPORT' || currentScene === 'ASSEMBLY') && !completed && !transparentMedia && !ceremonyVisible"
       class="v2-program-stage" :stars="stageStars" :effects="giftFlights" :visual="activeVisual" :theme="cityTheme.id" :variant="programBackground(snapshot?.currentProgram, ceremonyStage)" :audio="audioEnabled" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED' || Boolean(sceneTransition)" @sky-points="skyPoints = $event" @audio-status="audioAvailable = $event" />
     <StarCityAtmosphere v-if="currentScene === 'PROGRAM_SUPPORT' && transparentMedia && !completed && !ceremonyVisible" overlay :stars="stageStars" :effects="giftFlights" :visual="activeVisual" :audio="audioEnabled" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED' || Boolean(sceneTransition)" @sky-points="skyPoints = $event" @audio-status="audioAvailable = $event" />
     <Transition name="ceremony-fade"><AwardStage v-if="ceremonyVisible" :stage="ceremonyStage" :stars="stageStars" :audio="audioEnabled" :title="snapshot?.currentProgram?.kind === 'SPEECH' ? snapshot.currentProgram.title : '2026迎新晚会'" :reduced="reducedMotion" :paused="pageHidden || runtime?.status === 'PAUSED'" @audio-status="audioAvailable = $event" /></Transition>
-    <canvas ref="canvas" class="v2-galaxy" aria-hidden="true"></canvas>
-    <ArrivalCount v-if="snapshot && currentScene === 'ASSEMBLY' && !completed && presentation.type === 'NONE'"
-      :count="snapshot.aggregate.admittedCount" :reduced="reducedMotion" />
-    <GiftSkyEffects :points="skyPoints" :protected-areas="activeVisual.protectedAreas" :effects="giftFlights" :aggregate="giftAggregate" :reduced="reducedMotion" />
+    <GiftSkyEffects v-if="!completed" :points="skyPoints" :protected-areas="activeVisual.protectedAreas" :effects="giftFlights" :aggregate="giftAggregate" :reduced="reducedMotion" />
 
     <aside v-if="showScreenSettings" class="v2-screen-settings" aria-label="大屏动效设置">
       <label for="screen-motion-policy">大屏动效</label>
@@ -784,7 +853,7 @@ onBeforeUnmount(() => {
       <button type="button" @click="router.replace({ query: { ...route.query, settings: undefined } })">隐藏设置</button>
     </aside>
 
-    <p v-if="connectionLabel || errorMessage" class="v2-signal" role="status">
+    <p v-if="!completed && (connectionLabel || errorMessage)" class="v2-signal" role="status">
       <span aria-hidden="true">✦ </span>{{ errorMessage || connectionLabel }}
     </p>
 
@@ -802,7 +871,12 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="completed || previewingFinale" ref="finaleLayer" class="v2-finale">
+      <div v-if="completed && !previewingFinale" class="v2-final-thanks" role="status" aria-live="polite">
+        <ProgramStageBackground theme="host" :branded="false" reduced />
+        <h1>感谢你的参与</h1>
+      </div>
+
+      <div v-else-if="previewingFinale" ref="finaleLayer" class="v2-finale">
         <ClosingCredits :key="`${snapshot.resetEpoch}-${completed ? 'complete' : 'preview'}`"
           :programs="snapshot.programs ?? []" :aggregate="snapshot.aggregate"
           :recap="snapshot.closingRecap" :background-visual="activeVisual"
@@ -827,6 +901,7 @@ onBeforeUnmount(() => {
       <div v-else-if="liveInteraction.phase !== 'IDLE'" class="v2-live-interaction" :class="`is-${liveInteraction.phase.toLowerCase()}`">
         <div class="v2-live-interaction__rings" aria-hidden="true"><i></i><i></i><i></i></div>
         <div class="v2-live-interaction__content">
+          <p v-if="interactionIdleTitle" class="v2-live-interaction__title">{{ interactionIdleTitle.title }}</p>
           <p class="v2-kicker">{{ interactionLabel(liveInteraction.segmentCode) }} · 第 {{ liveInteraction.roundNumber }} 轮</p>
           <h1>{{ liveInteraction.prompt }}</h1>
           <template v-if="liveInteraction.phase === 'BUZZER_OPEN'">
@@ -853,6 +928,12 @@ onBeforeUnmount(() => {
         <h1>{{ scene.title }}</h1>
         <p>{{ scene.subtitle }}</p>
 
+      </div>
+
+      <div v-else-if="liveInteraction.phase === 'IDLE' && interactionIdleTitle" class="v2-interaction-idle" role="status">
+        <p class="v2-kicker">互动环节 {{ snapshot.currentProgram.displayCode }}</p>
+        <h1>{{ interactionIdleTitle.title }}</h1>
+        <p>{{ interactionIdleTitle.subtitle }}</p>
       </div>
 
       <ProgramStageTitle v-if="showPersistentCredits" :key="snapshot.currentProgram.id" :program="snapshot.currentProgram" :visual="activeVisual" :reduced="reducedMotion" />
@@ -940,14 +1021,18 @@ html.v2-program-overlay,html.v2-program-overlay body,html.v2-program-overlay .ap
 @keyframes v2-program-outgoing{0%,4%{opacity:1;transform:translateY(0) scale(1)}14%{opacity:.82;transform:translateY(-2px) scale(.998)}32%,100%{opacity:0;transform:translateY(-10px) scale(.985)}}
 @keyframes v2-barrage-flight{0%{opacity:0;transform:translateX(calc(100vw + 40px))}4%{opacity:1}96%{opacity:1}100%{opacity:0;transform:translateX(-110%)}}
 .v2-raffle{position:absolute;z-index:7;inset:0;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 50% 46%,rgba(27,48,94,.94),rgba(3,7,17,.985) 68%);text-align:center}.v2-raffle__content{position:relative;z-index:2;width:min(1280px,88vw)}.v2-raffle h1{margin:0;font-family:var(--font-family-display);font-size:clamp(48px,5vw,92px);letter-spacing:.08em}.v2-raffle__hint{margin:22px 0 8px;color:var(--color-orbit-text-secondary);font-size:clamp(18px,1.4vw,28px)}.v2-raffle__code{display:block;margin:12px 0 28px;color:#ffe8a4;font:700 clamp(74px,11vw,190px)/1 var(--font-family-data);letter-spacing:.08em;text-shadow:0 0 22px rgba(255,217,119,.55),0 0 72px rgba(83,150,255,.4)}.v2-raffle.is-rolling .v2-raffle__code{filter:blur(1px);opacity:.85}.v2-raffle.is-revealed.is-live-reveal .v2-raffle__code{animation:raffle-reveal .75s cubic-bezier(.2,.8,.2,1)}.v2-raffle__meta{display:flex;justify-content:center;gap:36px;color:var(--color-orbit-text-tertiary);font-family:var(--font-family-data);font-size:18px}.v2-raffle__history{list-style:none;display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin:30px 0 0;padding:0}.v2-raffle__history li{padding:8px 15px;border:1px solid rgba(145,178,226,.3);color:var(--color-orbit-text-tertiary);background:rgba(7,14,29,.5);font-family:var(--font-family-data)}.v2-raffle__history li.current{border-color:rgba(255,222,139,.75);color:#ffe7a6}.v2-raffle__orbit{position:absolute;width:min(76vw,1180px);aspect-ratio:1;border-radius:50%;border:1px solid rgba(117,168,242,.12);animation:raffle-orbit 20s linear infinite}.v2-raffle__orbit i{position:absolute;width:9px;height:9px;border-radius:50%;background:#ffe4a0;box-shadow:0 0 24px #ffe4a0}.v2-raffle__orbit i:nth-child(1){top:11%;left:22%}.v2-raffle__orbit i:nth-child(2){top:59%;right:2%}.v2-raffle__orbit i:nth-child(3){bottom:7%;left:34%}@keyframes raffle-orbit{to{transform:rotate(360deg)}}@keyframes raffle-reveal{0%{transform:scale(.78);opacity:.35}65%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
-.v2-live-interaction{position:absolute;z-index:7;inset:0;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 50% 42%,rgba(19,58,113,.94),rgba(2,7,18,.99) 69%);text-align:center}.v2-live-interaction::before{position:absolute;inset:0;background:linear-gradient(110deg,transparent 20%,rgba(119,187,255,.055) 46%,transparent 67%);content:'';animation:live-scan 5.5s ease-in-out infinite}.v2-live-interaction__rings{position:absolute;width:min(78vw,1200px);aspect-ratio:1;border:1px solid rgba(130,190,255,.14);border-radius:50%;box-shadow:0 0 90px rgba(64,145,255,.08);animation:live-ring 16s linear infinite}.v2-live-interaction__rings i{position:absolute;inset:13%;border:1px solid rgba(159,210,255,.12);border-radius:50%}.v2-live-interaction__rings i:nth-child(2){inset:28%;border-color:rgba(255,214,143,.13)}.v2-live-interaction__rings i:nth-child(3){inset:42%;background:#d9edff;border:0;box-shadow:0 0 28px #9ccbff,0 0 90px #4e9bff;border-radius:50%}.v2-live-interaction__content{position:relative;z-index:2;width:min(1180px,86vw)}.v2-live-interaction h1{max-width:1000px;margin:0 auto 4vh;font:520 clamp(44px,5vw,88px)/1.25 var(--font-family-display);letter-spacing:.06em}.v2-buzzer-status{display:block;color:#e8f5ff;font:650 clamp(52px,7vw,116px)/1 var(--font-family-data);letter-spacing:.14em;text-shadow:0 0 22px rgba(123,194,255,.9),0 0 84px rgba(63,136,255,.6);animation:buzzer-breathe 1.05s ease-in-out infinite alternate}.v2-live-interaction__content>p:last-child{color:#aebfd6;font-size:clamp(18px,1.5vw,28px);letter-spacing:.08em}.v2-buzzer-winner{display:block;margin:12px 0 18px;color:#fff0c8;font:700 clamp(76px,11vw,180px)/1 var(--font-family-data);letter-spacing:.1em;text-shadow:0 0 24px rgba(255,223,145,.74),0 0 90px rgba(72,151,255,.48);animation:winner-arrival .8s cubic-bezier(.15,.85,.22,1.18) both}.v2-vote-count{font-size:clamp(20px,1.6vw,30px)!important}.v2-vote-count strong{color:#f5d998;font:600 clamp(34px,3vw,58px) var(--font-family-data)}.v2-vote-board{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 34px;margin:28px auto;width:min(980px,88vw)}.v2-vote-board article{display:grid;grid-template-columns:150px minmax(120px,1fr) 52px;align-items:center;gap:14px;text-align:left}.v2-vote-board article>span{color:var(--candidate-color,#cfe2ff);font-family:var(--font-family-data);font-size:clamp(16px,1.25vw,24px)}.v2-vote-board article>i{height:7px;overflow:hidden;border-radius:99px;background:rgba(145,180,226,.13)}.v2-vote-board article>i>b{display:block;width:100%;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--candidate-color,#74b4ff),#f5da9d);box-shadow:0 0 16px var(--candidate-color,#74b4ff);transform-origin:left;transition:transform .65s cubic-bezier(.2,.8,.2,1)}.v2-vote-board article>strong{color:#eef6ff;font-family:var(--font-family-data);font-size:22px;text-align:right}@keyframes live-scan{0%,100%{transform:translateX(-24%);opacity:.25}50%{transform:translateX(24%);opacity:1}}@keyframes live-ring{to{transform:rotate(360deg)}}@keyframes buzzer-breathe{to{filter:brightness(1.2);transform:scale(1.025)}}@keyframes winner-arrival{from{opacity:0;transform:scale(.72)}to{opacity:1;transform:scale(1)}}
+.v2-live-interaction{position:absolute;z-index:7;inset:0;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 50% 42%,rgba(19,58,113,.94),rgba(2,7,18,.99) 69%);text-align:center}.v2-live-interaction::before{position:absolute;inset:0;background:linear-gradient(110deg,transparent 20%,rgba(119,187,255,.055) 46%,transparent 67%);content:'';animation:live-scan 5.5s ease-in-out infinite}.v2-live-interaction__rings{position:absolute;width:min(78vw,1200px);aspect-ratio:1;border:1px solid rgba(130,190,255,.14);border-radius:50%;box-shadow:0 0 90px rgba(64,145,255,.08);animation:live-ring 16s linear infinite}.v2-live-interaction__rings i{position:absolute;inset:13%;border:1px solid rgba(159,210,255,.12);border-radius:50%}.v2-live-interaction__rings i:nth-child(2){inset:28%;border-color:rgba(255,214,143,.13)}.v2-live-interaction__rings i:nth-child(3){inset:42%;background:#d9edff;border:0;box-shadow:0 0 28px #9ccbff,0 0 90px #4e9bff;border-radius:50%}.v2-live-interaction__content{position:relative;z-index:2;width:min(1180px,86vw)}.v2-live-interaction__title{margin:0 0 1.2vh;color:#d6e8f4;font:500 clamp(24px,2.2vw,42px)/1.3 var(--font-family-ui);letter-spacing:.16em;text-shadow:0 2px 12px rgba(0,0,0,.5)}.v2-live-interaction h1{max-width:1000px;margin:0 auto 4vh;font:520 clamp(44px,5vw,88px)/1.25 var(--font-family-display);letter-spacing:.06em}.v2-buzzer-status{display:block;color:#e8f5ff;font:650 clamp(52px,7vw,116px)/1 var(--font-family-data);letter-spacing:.14em;text-shadow:0 0 22px rgba(123,194,255,.9),0 0 84px rgba(63,136,255,.6);animation:buzzer-breathe 1.05s ease-in-out infinite alternate}.v2-live-interaction__content>p:last-child{color:#aebfd6;font-size:clamp(18px,1.5vw,28px);letter-spacing:.08em}.v2-buzzer-winner{display:block;margin:12px 0 18px;color:#fff0c8;font:700 clamp(76px,11vw,180px)/1 var(--font-family-data);letter-spacing:.1em;text-shadow:0 0 24px rgba(255,223,145,.74),0 0 90px rgba(72,151,255,.48);animation:winner-arrival .8s cubic-bezier(.15,.85,.22,1.18) both}.v2-vote-count{font-size:clamp(20px,1.6vw,30px)!important}.v2-vote-count strong{color:#f5d998;font:600 clamp(34px,3vw,58px) var(--font-family-data)}.v2-vote-board{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 34px;margin:28px auto;width:min(980px,88vw)}.v2-vote-board article{display:grid;grid-template-columns:150px minmax(120px,1fr) 52px;align-items:center;gap:14px;text-align:left}.v2-vote-board article>span{color:var(--candidate-color,#cfe2ff);font-family:var(--font-family-data);font-size:clamp(16px,1.25vw,24px)}.v2-vote-board article>i{height:7px;overflow:hidden;border-radius:99px;background:rgba(145,180,226,.13)}.v2-vote-board article>i>b{display:block;width:100%;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--candidate-color,#74b4ff),#f5da9d);box-shadow:0 0 16px var(--candidate-color,#74b4ff);transform-origin:left;transition:transform .65s cubic-bezier(.2,.8,.2,1)}.v2-vote-board article>strong{color:#eef6ff;font-family:var(--font-family-data);font-size:22px;text-align:right}@keyframes live-scan{0%,100%{transform:translateX(-24%);opacity:.25}50%{transform:translateX(24%);opacity:1}}@keyframes live-ring{to{transform:rotate(360deg)}}@keyframes buzzer-breathe{to{filter:brightness(1.2);transform:scale(1.025)}}@keyframes winner-arrival{from{opacity:0;transform:scale(.72)}to{opacity:1;transform:scale(1)}}
 .v2-gift-room-stats{position:absolute;z-index:5;right:4.5vw;bottom:8vh;width:min(300px,24vw);padding:18px 20px;border:1px solid rgba(157,201,255,.2);border-radius:12px;background:linear-gradient(145deg,rgba(8,22,45,.84),rgba(4,11,25,.68));box-shadow:0 18px 60px rgba(0,5,16,.38);backdrop-filter:blur(10px)}.v2-gift-room-stats>p{margin:0 0 12px;color:#87b8f0;font:600 11px var(--font-family-signal);letter-spacing:.22em}.v2-gift-room-stats ul{display:grid;gap:9px;margin:0;padding:0;list-style:none}.v2-gift-room-stats li{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid rgba(151,190,236,.12);overflow:hidden;animation:gift-count-pop .46s cubic-bezier(.2,.9,.25,1.2)}.v2-gift-room-stats li span{color:#bdcce0;font-size:clamp(13px,1vw,17px)}.v2-gift-room-stats li strong{color:#f4dcaa;font:600 clamp(19px,1.5vw,28px) var(--font-family-data);font-variant-numeric:tabular-nums}.v2-gift-room-stats li i{position:absolute;right:0;bottom:0;width:38%;height:1px;background:linear-gradient(90deg,transparent,#e8ca8e);box-shadow:0 0 10px #7fb7ff}@keyframes gift-count-pop{from{opacity:.45;transform:translateX(9px) scale(.98)}to{opacity:1;transform:none}}
 .v2-finale{position:absolute;z-index:8;inset:0;overflow:hidden;background:transparent}
 .v2-screen-settings{position:absolute;z-index:12;top:24px;left:24px;display:grid;gap:10px;box-sizing:border-box;width:min(320px,calc(100vw - 48px));max-height:calc(100dvh - 48px);overflow:auto;padding:22px;color:#f2f6ff;background:#0b16248a;backdrop-filter:blur(22px) saturate(140%);border:1px solid #96afc447;border-radius:20px;box-shadow:0 18px 70px #0005;font-size:16px}.v2-screen-settings label{font-weight:650}.v2-screen-settings p{margin:0}.v2-screen-settings select,.v2-screen-settings button{min-height:44px;padding:8px 12px;border:1px solid #75869f;border-radius:12px;color:#f2f6ff;background:#1c2d45;font:inherit}
 .is-reduced-motion .v2-scene-transition{display:none}.v2-screen.is-reduced-motion *{animation:none!important;transition:none!important}.is-reduced-motion .v2-barrage-stream__item{left:6.5vw;max-width:87vw;opacity:1;transform:none;white-space:normal;will-change:auto}.is-reduced-motion .v2-live-interaction::before{display:none}.is-reduced-motion .v2-live-interaction__rings{opacity:.38}.is-reduced-motion .v2-gift-room-stats li{animation:none}
+.v2-final-thanks{position:absolute;z-index:8;inset:0;display:grid;place-content:center;justify-items:center;gap:18px;text-align:center;background:linear-gradient(180deg,rgba(23,21,38,.18),rgba(10,12,24,.38));pointer-events:none}
+.v2-final-thanks h1{position:relative;z-index:1;margin:0;color:#f0e9fb;font-family:var(--font-family-display);font-size:clamp(64px,8vw,144px);font-weight:800;letter-spacing:.08em;text-shadow:0 0 28px rgba(203,177,224,.36)}
+.v2-final-thanks p:last-child{margin:0;color:#cbbddd;font-size:clamp(18px,1.6vw,30px);letter-spacing:.16em}
+.start-flash{position:absolute;z-index:20;inset:0;display:grid;place-content:center;justify-items:center;gap:18px;background:radial-gradient(circle at 50% 50%,rgba(255,235,176,.32),rgba(7,12,25,.84) 42%,rgba(3,6,14,.96) 78%);pointer-events:none}.start-flash span{color:#fff0b4;font-size:clamp(92px,13vw,220px);line-height:.8;text-shadow:0 0 24px #fff0ad,0 0 90px #9bcfff;animation:start-star-pulse .8s ease-out both}.start-flash strong{color:#f7efff;font:600 clamp(28px,3.3vw,64px)/1.2 var(--font-family-display);letter-spacing:.18em;text-shadow:0 0 24px #cab3eb}.start-flash-enter-active,.start-flash-leave-active{transition:opacity .18s ease}.start-flash-enter-from,.start-flash-leave-to{opacity:0}@keyframes start-star-pulse{0%{opacity:0;transform:scale(.25)}38%{opacity:1;transform:scale(1.18)}100%{opacity:0;transform:scale(1.5)}}
 
 
-/* The existing galaxy opening reveals the shared stage underneath its canvas. */
+/* The opening handoff reveals the shared stage without restoring the retired galaxy background. */
 .v2-program-stage{z-index:0}
 .is-opening-program .v2-program-stage{animation:program-stage-reveal var(--opening-duration) linear both}
 @keyframes program-stage-reveal{0%,55%{opacity:0}80%{opacity:.5}100%{opacity:1}}

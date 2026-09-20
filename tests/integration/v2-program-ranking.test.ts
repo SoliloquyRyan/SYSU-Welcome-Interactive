@@ -136,7 +136,9 @@ describe('D-097 authoritative programme ranking and adjustments', () => {
     expect(readV2ScreenSnapshot(database,NOW).stage).toEqual(snapshot().stage)
     expect(readV2ParticipantSnapshot(database,identity,NOW).programs.find(p=>p.id==='event2026-04')!.heat).toBe(999)
     const filename=database.name; database.close(); database=openDatabase(filename)
-    expect(snapshot().stage!.award!.entries[0]!.detail).toContain('999 动力值')
+    // Public stage projections intentionally redact award details; the private
+    // event payload assertion below verifies that the admin-side data remains.
+    expect(snapshot().stage!.award!.entries[0]!.detail).toBe('')
     expect(JSON.stringify(database.prepare("SELECT payload_json FROM v2_domain_events WHERE stream_id='public'").all())).not.toContain('rank')
   })
 
@@ -183,7 +185,7 @@ describe('D-097 authoritative programme ranking and adjustments', () => {
     await expect(upgradeV2ProgramRankingFrom20To21(database,{...options(),beforeCommit:()=>{throw new Error('injected')}})).rejects.toMatchObject({code:'V2_UPGRADE_ROLLED_BACK'})
     expect(retained()).toEqual(before); expect(verifyV2Foundation(database,{...verificationOptions(),throughSchemaVersion:20}).ready).toBe(true)
     const result=await upgradeV2ProgramRankingFrom20To21(database,{...options(),backupPath:path.join(directory,'successful-ranking-backup.sqlite')})
-    expect(result).toMatchObject({previousSchemaVersion:20,schemaVersion:23,resetEpoch:1});expect(retained()).toEqual(before)
+    expect(result).toMatchObject({previousSchemaVersion:20,schemaVersion:24,resetEpoch:1});expect(retained()).toEqual(before)
     const backup=openDatabase(result.backupPath);try{expect(verifyV2Foundation(backup,{...verificationOptions(),throughSchemaVersion:20}).ready).toBe(true)}finally{backup.close()}
     expect(verifyV2Foundation(database,verificationOptions()).issues).toEqual([])
   })

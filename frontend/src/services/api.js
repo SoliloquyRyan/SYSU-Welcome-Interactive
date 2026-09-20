@@ -64,7 +64,7 @@ export async function apiRequest(path, options = {}) {
   const timeoutId = globalThis.setTimeout(() => {
     timedOut = true
     requestController.abort()
-  }, 15_000)
+  }, options.timeoutMs ?? 15_000)
   try {
     const response = await fetch(applicationPath(path), {
       method: options.method ?? 'GET',
@@ -249,6 +249,7 @@ async function v2Response(responsePromise, context) {
 }
 
 export const v2AdminApi = {
+  audioStatus() { return apiRequest('/api/v2/admin/audio-status') },
   login(body) {
     return v2Response(apiRequest('/api/v2/admin/login', { method: 'POST', body }), 'v2 admin login')
   },

@@ -2,29 +2,35 @@
 import { computed } from 'vue'
 import StageCollegeBrand from './StageCollegeBrand.vue'
 import StarCityAtmosphere from './StarCityAtmosphere.vue'
+import worthItObsUrl from '../assets/star-city/worth-it-obs.jpg'
 import { STAR_CITY_THEMES, starCityStyle } from '../rendering/star-city-theme'
 import { DEFAULT_PROGRAM_VISUAL, programVisualStyle } from '../rendering/program-visuals'
-const props = defineProps({ compact: Boolean, reduced: Boolean, paused: Boolean, overlay: Boolean, audio: Boolean,
+const props = defineProps({ compact: Boolean, mobileUnified: Boolean, reduced: Boolean, paused: Boolean, overlay: Boolean, audio: Boolean,
   stars: { type: Array, default: () => [] }, effects: { type: Array, default: () => [] }, ownStarId: String, visual: Object,
   theme: { type: String, default: 'program' }, variant: { type: String, default: 'theme' }, branded: { type: Boolean, default: true } })
 defineEmits(['audio-status', 'sky-points'])
 const themeStyle = computed(() => ({ ...starCityStyle(STAR_CITY_THEMES[props.theme] ?? STAR_CITY_THEMES.program), ...programVisualStyle(props.visual) }))
 const assets = import.meta.glob('../assets/star-city/d105/*.webp', { eager: true, query: '?url', import: 'default' })
 const effectiveVisual = computed(() => props.visual ?? DEFAULT_PROGRAM_VISUAL)
+const customArtwork = computed(() => !props.mobileUnified && effectiveVisual.value.art === 'worth-it' ? worthItObsUrl : undefined)
 const artwork = computed(() => {
-  const name = !effectiveVisual.value.art || effectiveVisual.value.art === 'theme' ? 'night-flight' : effectiveVisual.value.art
+  if (props.mobileUnified) return undefined
+  if (customArtwork.value) return customArtwork.value
+  const name = props.mobileUnified && props.compact
+    ? 'night-flight'
+    : (!effectiveVisual.value.art || effectiveVisual.value.art === 'theme' ? 'night-flight' : effectiveVisual.value.art)
   return assets['../assets/star-city/d105/' + name + (props.compact ? '-mobile.webp' : '-screen.webp')]
 })
 </script>
 <template>
-  <div class="program-stage-background" :class="{ 'is-compact': compact, 'is-static': reduced, 'is-paused': paused, 'is-overlay': overlay }"
+  <div class="program-stage-background" :class="{ 'is-compact': compact, 'is-mobile-unified': mobileUnified, 'is-static': reduced, 'is-paused': paused, 'is-overlay': overlay }"
     :style="themeStyle" aria-hidden="true" data-testid="program-stage-background" data-background-system="mist-star-city"
     :data-theme="theme" :data-program-art="effectiveVisual.art" :data-background-variant="variant" :data-motion="reduced ? 'static' : paused ? 'paused' : 'ambient'">
     <template v-if="!overlay">
       <Transition name="program-art"><div :key="artwork || variant" class="city-panorama" :class="{ 'has-artwork': artwork }" :style="artwork ? { backgroundImage: 'url(' + artwork + ')' } : undefined"></div></Transition>
       <div class="city-color-wash"></div><div class="city-mist"></div>
       <div v-if="artwork" class="city-rim-glow"></div>
-      <svg v-else class="city-contours" viewBox="0 0 1920 1080" :preserveAspectRatio="compact ? 'none' : 'xMidYMid slice'">
+      <svg v-else-if="!mobileUnified" class="city-contours" viewBox="0 0 1920 1080" :preserveAspectRatio="compact ? 'none' : 'xMidYMid slice'">
         <g class="city-silhouettes">
           <path d="M22 780V450h54V342h6v108h39v330 M1780 890V590h48V510h8v80h47v300 M145 490V285h7v205 M159 320h28m-21-12v25" />
           <path d="M0 630h76v25h89v90h58v184 M1920 400h-50v145h-48v260" />
@@ -85,6 +91,13 @@ const artwork = computed(() => {
 [data-background-variant="rhythm"] .city-neon{opacity:calc(.42 + var(--city-audio)*.18)}
 [data-background-variant="instrumental"] .city-color-wash{background:linear-gradient(130deg,#739cc431,#93a3bf0d)}
 .is-compact .city-contours{opacity:.65}.is-compact .city-neon{animation:none}
+.is-mobile-unified{background:linear-gradient(180deg,#171525 0%,#24233b 48%,#101321 100%)}
+.is-mobile-unified .city-panorama{background-image:url('../assets/star-city/phone-unified-d114.png');background-position:center;background-size:cover;opacity:.86}
+.is-mobile-unified .city-panorama{filter:saturate(.85) contrast(.96);opacity:.86}
+.is-mobile-unified .city-color-wash{opacity:.78;background:linear-gradient(165deg,rgba(117,103,151,.22),transparent 46%,rgba(58,95,125,.2)),linear-gradient(180deg,rgba(19,18,39,.42),rgba(14,16,29,.6))}
+.is-mobile-unified .city-mist{opacity:.62;background:radial-gradient(ellipse at 16% 40%,rgba(222,156,203,.18),transparent 42%),radial-gradient(ellipse at 82% 60%,rgba(105,172,201,.16),transparent 44%)}
+.is-mobile-unified .city-readability{background:linear-gradient(180deg,rgba(13,14,27,.42),transparent 36%,rgba(11,13,24,.78))}
+.is-mobile-unified .city-rim-glow{opacity:.08}
 .is-paused .city-neon{animation-play-state:paused}.is-static .city-neon{animation:none}
 @keyframes city-neon-breathe{from{opacity:calc(.27 + var(--city-audio)*.16)}to{opacity:calc(.43 + var(--city-audio)*.16)}}
 @keyframes city-mist-drift{from{transform:translate3d(-.6%,.4%,0)}to{transform:translate3d(.6%,-.4%,0)}}

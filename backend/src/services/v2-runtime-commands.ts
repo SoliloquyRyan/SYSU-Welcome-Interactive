@@ -1,5 +1,5 @@
 import { applyV2ProgramHeat } from './v2-program-ranking.js'
-import { applyV2CeremonyCommand, selectV2ProgramStage } from './v2-ceremony.js'
+import { applyV2CeremonyCommand, selectV2ProgramStage, readV2Stage } from './v2-ceremony.js'
 import { applyV2ProgramCatalog, readCurrentV2Program, readProgramCatalogInfo } from './v2-program-catalog.js'
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 
@@ -11,6 +11,7 @@ import {
 import type { SqliteDatabase } from '../db/open-database.js'
 import { readProtocolRuntime } from '../db/v2-foundation.js'
 import { currentInteractionCode, readLiveInteractionRow, readV2LiveInteraction } from './v2-live-interactions.js'
+import { audioInputReady } from './v2-audio-bridge-state.js'
 
 const EXPIRY = '9999-12-31T23:59:59.999Z'
 
@@ -273,14 +274,25 @@ function setLiveInteraction(
     roundNumber: number
     prompt: string
     openedAt: string | null
+    opensAt?: string | null
+    audioTrackId?: string | null
+    audioInputUuid?: string | null
+    audioStatus?: 'IDLE' | 'ARMED' | 'COUNTDOWN' | 'PAUSED' | 'ENDED'
+    audioArmedAt?: string | null
+    audioTriggerEventId?: string | null
   },
   timestamp: string,
 ) {
   const interactionRevision = interaction(database, runtime.resetEpoch).interactionRevision + 1
   database.prepare(`UPDATE v2_live_interaction_state SET segment_code = ?, phase = ?,
-    round_number = ?, prompt = ?, revision = ?, opened_at = ?, updated_at = ?
+    round_number = ?, prompt = ?, revision = ?, opened_at = ?, updated_at = ?,
+    opens_at = ?, audio_track_id = ?, audio_input_uuid = ?, audio_status = ?,
+    audio_armed_at = ?, audio_trigger_event_id = ?
     WHERE reset_epoch = ?`).run(next.segmentCode, next.phase, next.roundNumber,
-    next.prompt, interactionRevision, next.openedAt, timestamp, runtime.resetEpoch)
+    next.prompt, interactionRevision, next.openedAt, timestamp,
+    next.opensAt ?? null, next.audioTrackId ?? null, next.audioInputUuid ?? null,
+    next.audioStatus ?? 'IDLE', next.audioArmedAt ?? null,
+    next.audioTriggerEventId ?? null, runtime.resetEpoch)
   database.prepare(`UPDATE v2_screen_interaction_state SET interaction_revision = ?,
     updated_at = ? WHERE reset_epoch = ?`).run(interactionRevision, timestamp, runtime.resetEpoch)
   appendInteractionEvent(database, runtime, interactionRevision, 'live.interaction.changed', {
@@ -290,9 +302,152 @@ function setLiveInteraction(
   return interactionRevision
 }
 
+export interface V2AudioBridgeEvent {
+  resetEpoch: number
+  roundNumber: number
+  armId: string
+  eventId: string
+  event: 'STARTED' | 'ENDED'
+  trackId: string
+  inputUuid: string
+}
+
+function setLiveAudioState(
+  database: SqliteDatabase,
+  runtime: RuntimeRow,
+  values: {
+    trackId: string | null
+    inputUuid: string | null
+    status: 'IDLE' | 'ARMED' | 'COUNTDOWN' | 'PAUSED' | 'ENDED'
+    armedAt?: string | null
+    triggerEventId?: string | null
+  },
+  timestamp: string,
+) {
+  const interactionRevision = interaction(database, runtime.resetEpoch).interactionRevision + 1
+  database.prepare(`UPDATE v2_live_interaction_state
+    SET revision = ?, audio_track_id = ?, audio_input_uuid = ?, audio_status = ?,
+        audio_armed_at = ?, audio_trigger_event_id = ?, updated_at = ?
+    WHERE reset_epoch = ?`).run(interactionRevision, values.trackId, values.inputUuid,
+    values.status, values.armedAt ?? null, values.triggerEventId ?? null, timestamp, runtime.resetEpoch)
+  database.prepare(`UPDATE v2_screen_interaction_state SET interaction_revision = ?,
+    updated_at = ? WHERE reset_epoch = ?`).run(interactionRevision, timestamp, runtime.resetEpoch)
+  appendInteractionEvent(database, runtime, interactionRevision, 'live.interaction.changed', {
+    interactionRevision,
+    liveInteraction: readV2LiveInteraction(database, runtime.resetEpoch),
+  }, timestamp)
+  return interactionRevision
+}
+
+function insertAudioAction(
+  database: SqliteDatabase,
+  resetEpoch: number,
+  roundNumber: number,
+  inputUuid: string,
+  action: 'PAUSE' | 'RESUME',
+  timestamp: string,
+) {
+  database.prepare(`UPDATE v2_interaction_audio_actions SET acknowledged_at = ?
+    WHERE reset_epoch = ? AND acknowledged_at IS NULL`).run(timestamp, resetEpoch)
+  database.prepare(`INSERT INTO v2_interaction_audio_actions
+    (id, reset_epoch, round_number, input_uuid, action, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)`).run(randomUUID(), resetEpoch, roundNumber, inputUuid, action, timestamp)
+}
+
+/**
+ * Handles the narrow, token-protected OBS bridge event. The bridge can only
+ * trigger an already armed round; it cannot choose a question or open a
+ * buzzer by itself.
+ */
+export function handleV2AudioBridgeEvent(
+  database: SqliteDatabase,
+  event: V2AudioBridgeEvent,
+  now: Date = new Date(),
+) {
+  const ownsTransaction = !database.inTransaction
+  if (ownsTransaction) database.exec('BEGIN IMMEDIATE')
+  try {
+    const runtime = readRuntime(database)
+    const timestamp = now.toISOString()
+    const live = readLiveInteractionRow(database, runtime.resetEpoch)
+    const arm = database.prepare(`SELECT id, status, prompt FROM v2_interaction_audio_arms
+      WHERE reset_epoch = ? AND round_number = ? AND id = ? AND track_id = ? AND input_uuid = ?`)
+      .get(event.resetEpoch, event.roundNumber, event.armId, event.trackId, event.inputUuid) as { id: string; status: string; prompt: string } | undefined
+    if (event.resetEpoch !== runtime.resetEpoch || event.roundNumber !== live.roundNumber ||
+        !arm || runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' ||
+        runtime.presentationType !== 'NONE' || currentInteractionCode(database) !== 'A' || readV2Stage(database).mode !== 'PROGRAM' ||
+        live.audioTrackId !== event.trackId || live.audioInputUuid !== event.inputUuid) {
+      if (ownsTransaction) database.exec('COMMIT')
+      return { accepted: false, reason: 'STALE_AUDIO_ROUND' as const }
+    }
+    if (event.event === 'ENDED') {
+      if (arm.status === 'TRIGGERED' && live.phase !== 'IDLE' && live.audioStatus !== 'ENDED') {
+        setLiveAudioState(database, runtime, {
+          trackId: live.audioTrackId, inputUuid: live.audioInputUuid, status: 'ENDED',
+          armedAt: live.audioArmedAt, triggerEventId: live.audioTriggerEventId,
+        }, timestamp)
+      }
+      if (ownsTransaction) database.exec('COMMIT')
+      return { accepted: arm.status === 'TRIGGERED', state: 'ENDED' as const }
+    }
+    if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' ||
+        runtime.presentationType !== 'NONE' || currentInteractionCode(database) !== 'A' || live.phase !== 'IDLE') {
+      if (ownsTransaction) database.exec('COMMIT')
+      return { accepted: false, reason: 'ROUND_NOT_READY' as const }
+    }
+    if (arm.status !== 'ARMED' || live.audioStatus !== 'ARMED' ||
+        !audioInputReady(database, event.trackId, event.inputUuid, now) ||
+        database.prepare('SELECT 1 FROM v2_interaction_audio_arms WHERE trigger_event_id = ?').get(event.eventId)) {
+      if (ownsTransaction) database.exec('COMMIT')
+      return { accepted: false, reason: 'AUDIO_NOT_ARMED' as const }
+    }
+    database.prepare(`UPDATE v2_interaction_audio_arms SET status = 'TRIGGERED',
+      triggered_at = ?, trigger_event_id = ? WHERE id = ? AND status = 'ARMED'`)
+      .run(timestamp, event.eventId, arm.id)
+    setLiveInteraction(database, runtime, {
+      segmentCode: 'A', phase: 'BUZZER_OPEN', roundNumber: live.roundNumber,
+      prompt: arm.prompt, openedAt: timestamp,
+      opensAt: new Date(now.getTime() + 10_000).toISOString(),
+      audioTrackId: event.trackId, audioInputUuid: event.inputUuid,
+      audioStatus: 'COUNTDOWN', audioArmedAt: live.audioArmedAt,
+      audioTriggerEventId: event.eventId,
+    }, timestamp)
+    if (ownsTransaction) database.exec('COMMIT')
+    return { accepted: true, state: 'COUNTDOWN' as const, opensAt: new Date(now.getTime() + 10_000).toISOString() }
+  } catch (error) {
+    if (ownsTransaction && database.inTransaction) database.exec('ROLLBACK')
+    throw error
+  }
+}
+
+export function readV2AudioBridgeActions(database: SqliteDatabase, resetEpoch: number) {
+  return database.prepare(`SELECT id, reset_epoch AS resetEpoch, round_number AS roundNumber,
+      input_uuid AS inputUuid, action, created_at AS createdAt
+    FROM v2_interaction_audio_actions
+    WHERE reset_epoch = ? AND acknowledged_at IS NULL
+      AND round_number = (SELECT round_number FROM v2_live_interaction_state WHERE id = 1)
+      AND input_uuid = (SELECT audio_input_uuid FROM v2_live_interaction_state WHERE id = 1)
+      AND (SELECT status FROM v2_runtime_state WHERE id = 1) = 'RUNNING'
+      AND (SELECT audio_status FROM v2_live_interaction_state WHERE id = 1) <> 'ENDED'
+      AND ((action = 'PAUSE' AND (SELECT phase FROM v2_live_interaction_state WHERE id = 1) = 'BUZZER_LOCKED')
+        OR (action = 'RESUME' AND (SELECT phase FROM v2_live_interaction_state WHERE id = 1) = 'BUZZER_OPEN'))
+    ORDER BY rowid DESC LIMIT 1`).all(resetEpoch) as Array<{
+      id: string; resetEpoch: number; roundNumber: number; inputUuid: string; action: 'PAUSE' | 'RESUME'; createdAt: string
+    }>
+}
+
+export function acknowledgeV2AudioBridgeAction(database: SqliteDatabase, resetEpoch: number, actionId: string, now: Date = new Date()) {
+  return database.prepare(`UPDATE v2_interaction_audio_actions SET acknowledged_at = ?
+    WHERE id = ? AND reset_epoch = ? AND acknowledged_at IS NULL`).run(now.toISOString(), actionId, resetEpoch).changes === 1
+}
+
 function closeLiveInteractionIfActive(database: SqliteDatabase, runtime: RuntimeRow, timestamp: string) {
   const live = readLiveInteractionRow(database, runtime.resetEpoch)
-  if (live.phase === 'IDLE') return
+  if (live.phase === 'IDLE' && live.audioStatus === 'IDLE') return
+  database.prepare(`UPDATE v2_interaction_audio_arms SET status = 'CLOSED'
+    WHERE reset_epoch = ? AND status IN ('ARMED', 'TRIGGERED')`).run(runtime.resetEpoch)
+  database.prepare(`UPDATE v2_interaction_audio_actions SET acknowledged_at = ?
+    WHERE reset_epoch = ? AND acknowledged_at IS NULL`).run(timestamp, runtime.resetEpoch)
   setLiveInteraction(database, runtime, {
     segmentCode: null,
     phase: 'IDLE',
@@ -466,6 +621,9 @@ export function executeV2RuntimeCommand(
     ) {
       throw new V2RuntimeCommandError('REVISION_CONFLICT', '公共互动状态已变化。', 409)
     }
+    if (request.command === 'ADVANCE_PROGRAM' && request.expectedStageRevision !== readV2Stage(database).revision) {
+      throw new V2RuntimeCommandError('REVISION_CONFLICT', '舞台状态已变化，请刷新后重试。', 409)
+    }
     const beforeRunRevision = runtime.runRevision
     const beforePresentationRevision = runtime.presentationRevision
     const funnel = readFunnel(database, runtime.resetEpoch, now)
@@ -500,7 +658,8 @@ export function executeV2RuntimeCommand(
     } else if (['SAVE_AWARD', 'SET_STAGE_MODE', 'SELECT_AWARD', 'REVEAL_AWARD', 'HIDE_AWARD', 'SET_AWARD_PAGE'].includes(request.command)) {
       updateRuntimeTuple = false
       applyV2CeremonyCommand(database, request, runtime, (code, message) => { throw new V2RuntimeCommandError(code, message, 409) })
-      const revision = currentInteraction.interactionRevision + 1
+      if (readV2Stage(database).mode !== 'PROGRAM') closeLiveInteractionIfActive(database, runtime, timestamp)
+      const revision = interaction(database, runtime.resetEpoch).interactionRevision + 1
       database.prepare('UPDATE v2_screen_interaction_state SET interaction_revision = ?, updated_at = ? WHERE id = 1').run(revision, timestamp)
       appendProgramChanged(database, runtime, readCurrentV2Program(database), revision, timestamp)
       appendAdminInvalidation(database, runtime, now)
@@ -508,7 +667,7 @@ export function executeV2RuntimeCommand(
       updateRuntimeTuple = false
       const live = readLiveInteractionRow(database, runtime.resetEpoch)
       if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' ||
-          runtime.presentationType !== 'NONE' || request.segmentCode !== 'A' || live.phase !== 'IDLE' || currentInteractionCode(database) !== 'A') {
+          runtime.presentationType !== 'NONE' || request.segmentCode !== 'A' || live.phase !== 'IDLE' || live.audioStatus !== 'IDLE' || currentInteractionCode(database) !== 'A' || readV2Stage(database).mode !== 'PROGRAM') {
         throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', `只有互动环节 ${request.segmentCode} 进行中时才能开放本轮抢答。`, 409)
       }
       setLiveInteraction(database, runtime, {
@@ -517,7 +676,53 @@ export function executeV2RuntimeCommand(
         roundNumber: live.roundNumber + 1,
         prompt: request.prompt,
         openedAt: timestamp,
+        opensAt: new Date(now.getTime() + 3_000).toISOString(),
+        audioStatus: 'IDLE',
       }, timestamp)
+      appendAdminInvalidation(database, runtime, now)
+    } else if (request.command === 'ARM_AUDIO_BUZZER') {
+      updateRuntimeTuple = false
+      const live = readLiveInteractionRow(database, runtime.resetEpoch)
+      if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' ||
+          runtime.presentationType !== 'NONE' || currentInteractionCode(database) !== 'A' || live.phase !== 'IDLE' || live.audioStatus !== 'IDLE' || readV2Stage(database).mode !== 'PROGRAM') {
+        throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '仅互动一空闲时可布置音频抢答。', 409)
+      }
+      if (!audioInputReady(database, request.trackId, request.inputUuid, now)) {
+        throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '自动触发不可用，请检查 OBS 桥接与本题 mix 音源。', 409)
+      }
+      const roundNumber = live.roundNumber + 1
+      database.prepare(`INSERT INTO v2_interaction_audio_arms
+          (id, reset_epoch, round_number, segment_code, track_id, input_uuid, prompt, status, armed_at)
+          VALUES (?, ?, ?, 'A', ?, ?, ?, 'ARMED', ?)`).run(
+          randomUUID(), runtime.resetEpoch, roundNumber, request.trackId, request.inputUuid,
+          request.prompt, timestamp,
+        )
+      setLiveInteraction(database, runtime, {
+        segmentCode: null, phase: 'IDLE', roundNumber, prompt: '', openedAt: null,
+        audioTrackId: request.trackId, audioInputUuid: request.inputUuid,
+        audioStatus: 'ARMED', audioArmedAt: timestamp,
+      }, timestamp)
+      appendAdminInvalidation(database, runtime, now)
+    } else if (request.command === 'MARK_BUZZER_WRONG') {
+      updateRuntimeTuple = false
+      const live = readLiveInteractionRow(database, runtime.resetEpoch)
+      if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' ||
+          runtime.presentationType !== 'NONE' || live.phase !== 'BUZZER_LOCKED' || live.segmentCode !== 'A' || currentInteractionCode(database) !== 'A') {
+        throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '当前没有可判错的互动一抢答。', 409)
+      }
+      const pending = database.prepare(`SELECT id FROM v2_buzzer_entries
+        WHERE reset_epoch = ? AND round_number = ? AND answer_status = 'PENDING'
+        ORDER BY response_sequence DESC LIMIT 1`).get(runtime.resetEpoch, live.roundNumber) as { id: string } | undefined
+      if (!pending) throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '当前没有待判定的抢答记录。', 409)
+      database.prepare(`UPDATE v2_buzzer_entries SET answer_status = 'WRONG' WHERE id = ?`).run(pending.id)
+      setLiveInteraction(database, runtime, {
+        segmentCode: 'A', phase: 'BUZZER_OPEN', roundNumber: live.roundNumber,
+        prompt: live.prompt, openedAt: timestamp, opensAt: timestamp,
+        audioTrackId: live.audioTrackId, audioInputUuid: live.audioInputUuid,
+        audioStatus: live.audioStatus === 'ENDED' ? 'ENDED' : live.audioInputUuid ? 'COUNTDOWN' : 'IDLE',
+        audioArmedAt: live.audioArmedAt, audioTriggerEventId: live.audioTriggerEventId,
+      }, timestamp)
+      if (live.audioInputUuid && live.audioStatus !== 'ENDED') insertAudioAction(database, runtime.resetEpoch, live.roundNumber, live.audioInputUuid, 'RESUME', timestamp)
       appendAdminInvalidation(database, runtime, now)
     } else if (request.command === 'OPEN_AUDIENCE_VOTE') {
       updateRuntimeTuple = false
@@ -549,11 +754,13 @@ export function executeV2RuntimeCommand(
     } else if (request.command === 'CLOSE_LIVE_INTERACTION') {
       updateRuntimeTuple = false
       const live = readLiveInteractionRow(database, runtime.resetEpoch)
-      if (live.phase === 'IDLE') throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '当前没有开放的互动轮次。', 409)
-      setLiveInteraction(database, runtime, {
-        segmentCode: null, phase: 'IDLE', roundNumber: live.roundNumber,
-        prompt: '', openedAt: null,
-      }, timestamp)
+      if (live.phase === 'IDLE' && live.audioStatus === 'IDLE') throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '当前没有开放的互动轮次。', 409)
+      if (request.answerAccepted) {
+        if (live.phase !== 'BUZZER_LOCKED') throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '没有待判定的抢答。', 409)
+        database.prepare(`UPDATE v2_buzzer_entries SET answer_status = 'ACCEPTED'
+          WHERE reset_epoch = ? AND round_number = ? AND answer_status = 'PENDING'`).run(runtime.resetEpoch, live.roundNumber)
+      }
+      closeLiveInteractionIfActive(database, runtime, timestamp)
       appendAdminInvalidation(database, runtime, now)
     } else if (request.command === 'SET_BARRAGE_PAUSED') {
       updateRuntimeTuple = false
@@ -856,7 +1063,12 @@ export function executeV2RuntimeCommand(
       if (nextMode !== runtime.mode) nextRunRevision += 1
     } else if (request.command === 'START') {
       if (runtime.status !== 'READY' || runtime.currentScene !== null) throw new V2RuntimeCommandError('SCENE_TRANSITION_INVALID', '只能从 READY 启动。', 409)
-      nextStatus = 'RUNNING'; nextScene = 'ASSEMBLY'; nextRunRevision += 1
+      // D-111: starting the event opens the program control stage directly.
+      // ASSEMBLY remains a readable legacy scene, but is no longer generated by
+      // the live flow or used as a gate for the first program.
+      nextStatus = 'RUNNING'; nextScene = 'PROGRAM_SUPPORT'; nextRunRevision += 1
+      database.prepare('UPDATE v2_program_catalog_state SET current_program_id = NULL, updated_at = ? WHERE id = 1').run(timestamp)
+      selectV2ProgramStage(database)
     } else if (request.command === 'UPDATE_PROGRAM_CATALOG') {
       updateRuntimeTuple = false
       if (runtime.status !== 'READY' || runtime.currentScene !== null) {
@@ -881,7 +1093,7 @@ export function executeV2RuntimeCommand(
         .run(interactionRevision, timestamp, runtime.resetEpoch)
       appendProgramChanged(database, runtime, null, interactionRevision, timestamp)
       appendAdminInvalidation(database, runtime, now)
-    } else if (request.command === 'SET_PROGRAM') {
+    } else if (request.command === 'SET_PROGRAM' || request.command === 'ADVANCE_PROGRAM') {
       updateRuntimeTuple = false
       if (runtime.status !== 'RUNNING' || runtime.currentScene !== 'PROGRAM_SUPPORT' || runtime.presentationType !== 'NONE') {
         throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '只有节目支持场景可以切换当前节目。', 409)
@@ -889,21 +1101,30 @@ export function executeV2RuntimeCommand(
       if (readLiveInteractionRow(database, runtime.resetEpoch).phase !== 'IDLE') {
         throw new V2RuntimeCommandError('SCENE_ACTION_INVALID', '请先结束当前互动轮次，再切换节目或互动环节。', 409)
       }
-      const program = database.prepare(
-        `SELECT id, title, heat FROM v2_program_catalog WHERE id = ? AND enabled = 1`,
-      ).get(request.programId) as { id: string; title: string; heat: number } | undefined
-      if (!program) {
-        throw new V2RuntimeCommandError('RESOURCE_NOT_FOUND', '节目不存在或尚未启用。', 404)
-      }
-      const previousProgramId = database.prepare(
+      const currentProgramId = database.prepare(
         'SELECT current_program_id FROM v2_program_catalog_state WHERE id = 1',
       ).pluck().get() as string | null
+      const program = request.command === 'ADVANCE_PROGRAM'
+        ? database.prepare(
+          `SELECT next.id, next.title, next.heat FROM v2_program_catalog next
+           LEFT JOIN v2_program_catalog current ON current.id = ?
+           WHERE next.enabled = 1 AND (current.id IS NULL OR next.sort_order > current.sort_order)
+           ORDER BY next.sort_order LIMIT 1`,
+        ).get(currentProgramId) as { id: string; title: string; heat: number } | undefined
+        : database.prepare(
+          `SELECT id, title, heat FROM v2_program_catalog WHERE id = ? AND enabled = 1`,
+        ).get(request.programId) as { id: string; title: string; heat: number } | undefined
+      if (!program) {
+        throw new V2RuntimeCommandError(request.command === 'ADVANCE_PROGRAM' ? 'SCENE_ACTION_INVALID' : 'RESOURCE_NOT_FOUND', request.command === 'ADVANCE_PROGRAM' ? '已到节目目录末尾。' : '节目不存在或尚未启用。', 409)
+      }
+      const previousProgramId = currentProgramId
       if (previousProgramId !== program.id) {
+        closeLiveInteractionIfActive(database, runtime, timestamp)
         database.prepare(
           `UPDATE v2_program_catalog_state SET current_program_id = ?, updated_at = ? WHERE id = 1`,
         ).run(program.id, timestamp)
         selectV2ProgramStage(database)
-        const interactionRevision = currentInteraction.interactionRevision + 1
+        const interactionRevision = interaction(database, runtime.resetEpoch).interactionRevision + 1
         database.prepare(
           `UPDATE v2_screen_interaction_state SET interaction_revision = ?, updated_at = ?
            WHERE reset_epoch = ?`,
@@ -978,6 +1199,7 @@ export function executeV2RuntimeCommand(
           presentation: { type: 'NONE' }, presentationRevision: nextPresentationRevision,
         }, timestamp)
       }
+      closeLiveInteractionIfActive(database, runtime, timestamp)
       nextStatus = 'COMPLETED'; nextScene = 'COOPERATIVE_LIGHT'; nextRunRevision += 1
       completedAt = timestamp
     }

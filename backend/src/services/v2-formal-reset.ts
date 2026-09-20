@@ -55,7 +55,7 @@ export async function archiveAndResetRound(database: SqliteDatabase, input: unkn
         DELETE FROM synthetic_identities WHERE account_kind='GUEST';
         DELETE FROM v2_runtime_state;
         UPDATE v2_identity_slots SET reserved_reset_epoch=NULL, reserved_at=NULL;
-        UPDATE v2_awards SET confirmed=0, revision=revision+1;
+        UPDATE v2_awards SET confirmed=0, revision=revision+1 WHERE group_code='PROGRAM';
         UPDATE v2_awards SET entries_json='[]' WHERE group_code='PROGRAM';`)
       initializeV2Runtime(database, nextEpoch, timestamp)
       database.prepare('UPDATE v2_runtime_state SET mode=? WHERE id=1').run(current.mode)

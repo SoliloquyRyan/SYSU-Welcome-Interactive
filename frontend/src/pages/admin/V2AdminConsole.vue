@@ -66,6 +66,27 @@ const catalogSavedSignal = ref(0)
 const awardSavedSignal = ref(0)
 const heatSavedSignal = ref(0)
 const buzzerPrompt = ref('准备抢答')
+const audioTrackId = ref('b2-eason')
+const audioBridge = ref({available:false,tracks:[],arm:null})
+const selectedAudio = computed(() => audioBridge.value.tracks.find(t => t.trackId === audioTrackId.value && t.available))
+let audioPollBusy = false
+const audioPollTimer = setInterval(async () => {
+  if (audioPollBusy || authState.value !== 'active') return
+  audioPollBusy = true
+  const generation = sessionGeneration.capture()
+  try { const value = await v2AdminApi.audioStatus(); if(sessionGeneration.isCurrent(generation)) audioBridge.value = value }
+  catch { audioBridge.value = {available:false,tracks:[],arm:null} }
+  finally { audioPollBusy = false }
+}, 800)
+onBeforeUnmount(() => clearInterval(audioPollTimer))
+const AUDIO_TRACKS = [
+  { id: 'b2-eason', label: 'B2 · 陈奕迅 · mix', answer: '十年、爱情转移、红玫瑰' },
+  { id: 'r2-jj', label: 'R2 · 林俊杰 · mix', answer: '江南、修炼爱情、可惜没如果、小酒窝' },
+  { id: 'r3-gem', label: 'R3 · 邓紫棋 · mix', answer: '泡沫、倒数、句号' },
+]
+const selectedAudioAnswer = computed(() => selectedAudio.value?.answer
+  ?? AUDIO_TRACKS.find(item => item.id === audioTrackId.value)?.answer
+  ?? '答案索引未同步')
 const votePrompt = ref('谁是卧底 · 现场投票')
 const voteCandidateCount = ref(6)
 const candidatePage=ref(0)
@@ -86,7 +107,11 @@ const liveInteraction = computed(() => snapshot.value?.liveInteraction ?? { phas
 const buzzerCountdown = useBuzzerCountdown(liveInteraction, computed(() => snapshot.value?.generatedAt))
 const barrages = computed(() => snapshot.value?.publishedBarrages ?? [])
 const canWrite = computed(() => realtime.state.value === 'online' && !busy.value && !workflowBusy.value)
-const nextProgram = computed(() => snapshot.value?.programs.find(item => item.state === 'NEXT') ?? (!currentProgram.value ? snapshot.value?.programs[0] : null))
+const nextProgram = computed(() => {
+  const programs = snapshot.value?.programs ?? []
+  const index = currentProgram.value ? programs.findIndex(item => item.id === currentProgram.value.id) : -1
+  return index < 0 ? programs[0] ?? null : programs[index + 1] ?? null
+})
 const preparedProgram = computed(() => snapshot.value?.programs.find(item => item.id === selectedProgramId.value))
 const canFinishInteraction = computed(() => canStageWrite.value && runtime.value?.status === 'RUNNING' && runtime.value?.currentScene === 'PROGRAM_SUPPORT'
   && presentation.value?.type === 'NONE' && ['BUZZER_LOCKED', 'VOTE_REVEALED'].includes(liveInteraction.value.phase) && Boolean(nextProgram.value))
@@ -96,12 +121,18 @@ const canStageWrite = computed(() => roleWrite('STAGE_CONTROLLER'))
 const canReviewWrite = computed(() => roleWrite('REVIEWER'))
 const canDemoWrite = computed(() => roleWrite('DEMO_ADMIN'))
 
+watch([() => currentProgram.value?.kind, currentInteractionCode], ([kind, code]) => {
+  if (code) activePanel.value = 'interaction'
+  else if (kind === 'AWARD') activePanel.value = 'awards'
+  else if (kind === 'PERFORMANCE' || kind === 'SPEECH') activePanel.value = 'programs'
+})
+
 const canSelectProgram = computed(() => canStageWrite.value && runtime.value?.status === 'RUNNING' && runtime.value.currentScene === 'PROGRAM_SUPPORT' && presentation.value?.type === 'NONE' && liveInteraction.value.phase === 'IDLE')
 const resetReason = computed(() => !snapshot.value?.roles.includes('ALL') ? '需要主控管理权限' : runtime.value?.status === 'RUNNING' ? '先暂停活动，再归档重置' : !canWrite.value ? '等待连接或当前操作完成' : '归档后全部人员重新入场，保留名单和配置')
 const obsCue = computed(() => {
   const item=preparedProgram.value ?? currentProgram.value
-  if (!item || item.kind!=='PERFORMANCE') return '完整主题背景；OBS 手动停止上一段媒体，并按主持口令切场。'
-  return programVisual(item).mode==='overlay' ? '透明叠层：在 OBS 准备节目视频／图片，按口令手动播放并执行网页节目。' : '完整节目背景：在 OBS 准备伴奏／现场音源，按口令手动开始。'
+  if (!item || item.kind!=='PERFORMANCE') return '对应节目背景；网页确认切换后，OBS 桥接自动同步对应场景。'
+  return programVisual(item).mode==='overlay' ? '透明叠层：网页确认切换后，OBS 桥接自动同步对应场景；节目媒体仍按主持口令播放。' : '完整节目背景：网页确认切换后，OBS 桥接自动同步对应场景；现场音源按主持口令开始。'
 })
 const accountSummary=computed(()=>['STUDENT','STAFF','GUEST'].map(kind=>snapshot.value?.accountCounts.find(item=>item.kind===kind)??{kind,total:0,admitted:0}))
 const barragePages=computed(()=>Math.max(1,Math.ceil(barrages.value.length/4)))
@@ -201,7 +232,7 @@ function base(command) {
 // refresh, compare the revision family this command owns and echo it back.
 const RUN_REVISION_COMMANDS = new Set(['START', 'ADVANCE', 'PAUSE', 'RESUME', 'COMPLETE'])
 const PRESENTATION_COMMANDS = new Set(['PREVIEW_FINALE', 'CLEAR_PRESENTATION', 'OPEN_RAFFLE', 'DRAW_RAFFLE', 'CLOSE_RAFFLE', 'CLEAR_RAFFLE'])
-const INTERACTION_COMMANDS = new Set(['UPDATE_PROGRAM_CATALOG', 'SET_PROGRAM', 'SET_PROGRAM_HEAT', 'SET_BARRAGE_PAUSED', 'REMOVE_BARRAGE', 'BLOCK_BARRAGE_SOURCE', 'CLEAR_BARRAGES', 'OPEN_BUZZER', 'OPEN_AUDIENCE_VOTE', 'REVEAL_AUDIENCE_VOTE', 'CLOSE_LIVE_INTERACTION'])
+const INTERACTION_COMMANDS = new Set(['UPDATE_PROGRAM_CATALOG', 'SET_PROGRAM', 'ADVANCE_PROGRAM', 'SET_PROGRAM_HEAT', 'SET_BARRAGE_PAUSED', 'REMOVE_BARRAGE', 'BLOCK_BARRAGE_SOURCE', 'CLEAR_BARRAGES', 'OPEN_BUZZER', 'ARM_AUDIO_BUZZER', 'MARK_BUZZER_WRONG', 'OPEN_AUDIENCE_VOTE', 'REVEAL_AUDIENCE_VOTE', 'CLOSE_LIVE_INTERACTION'])
 
 function revisionSnapshot() {
   return {
@@ -268,7 +299,7 @@ async function setMode(mode) {
 async function start() {
   if (!canStageWrite.value || runtime.value.status !== 'READY') return
   const targetMode = startMode.value, epoch = snapshot.value.resetEpoch
-  if (!await askAction('以' + (targetMode === 'LIVE' ? '现场' : '排练') + '模式开始活动并进入“星海集结”？')) return
+  if (!await askAction('以' + (targetMode === 'LIVE' ? '现场' : '排练') + '模式开始活动并显示晚会报幕背景？')) return
   if (!canStageWrite.value || snapshot.value.resetEpoch !== epoch) return
   const ready = s => s.runtime.status === 'READY' && s.runtime.currentScene === null
   const steps = []
@@ -277,7 +308,7 @@ async function start() {
     matches: s => ready(s) && s.runtime.mode === targetMode })
   steps.push({ label: '开始活动', canRun: s => ready(s) && s.runtime.mode === targetMode,
     build: s => ({ ...base('START'), expectedRunRevision: s.runtime.runRevision, confirmed: true }),
-    matches: s => s.runtime.mode === targetMode && s.runtime.status === 'RUNNING' && s.runtime.currentScene === 'ASSEMBLY' })
+    matches: s => s.runtime.mode === targetMode && s.runtime.status === 'RUNNING' && s.runtime.currentScene === 'PROGRAM_SUPPORT' })
   await runWorkflow('开始活动', steps)
 }
 
@@ -298,7 +329,7 @@ async function runWorkflow(name, steps) {
 async function finishInteractionAndNext() {
   if (!canFinishInteraction.value) return
   const source = currentProgram.value.id, target = nextProgram.value.id, title = nextProgram.value.title, epoch = snapshot.value.resetEpoch
-  if (!await askAction('收起已完成的互动，并将当前节目切换为“' + title + '”？请同步操作 OBS。')) return
+  if (!await askAction('收起已完成的互动，并将当前节目切换为“' + title + '”？网页确认后 OBS 桥接会自动同步对应场景。')) return
   if (!canFinishInteraction.value || snapshot.value.resetEpoch !== epoch) return
   const same = s => s.runtime.status === 'RUNNING' && s.runtime.currentScene === 'PROGRAM_SUPPORT'
     && s.presentation.type === 'NONE' && s.currentProgram?.id === source && s.programs.find(item => item.state === 'NEXT')?.id === target
@@ -307,9 +338,15 @@ async function finishInteractionAndNext() {
       build: s => ({ ...base('CLOSE_LIVE_INTERACTION'), expectedInteractionRevision: s.interaction.interactionRevision, confirmed: true }),
       matches: s => same(s) && s.liveInteraction.phase === 'IDLE' },
     { label: '切换下一项', canRun: s => same(s) && s.liveInteraction.phase === 'IDLE',
-      build: s => ({ ...base('SET_PROGRAM'), expectedRunRevision: s.runtime.runRevision, expectedInteractionRevision: s.interaction.interactionRevision, programId: target, confirmed: true }),
+      build: s => ({ ...base('ADVANCE_PROGRAM'), expectedRunRevision: s.runtime.runRevision, expectedInteractionRevision: s.interaction.interactionRevision, expectedStageRevision: s.stage.revision, confirmed: true }),
       matches: s => s.currentProgram?.id === target && s.runtime.status === 'RUNNING' && s.runtime.currentScene === 'PROGRAM_SUPPORT' },
   ])
+}
+function advanceProgram() {
+  if (!nextProgram.value || !canSelectProgram.value) return
+  return runCommand({ ...base('ADVANCE_PROGRAM'), expectedRunRevision: runtime.value.runRevision,
+    expectedInteractionRevision: snapshot.value.interaction.interactionRevision,
+    expectedStageRevision: snapshot.value.stage.revision, confirmed: true }, '下一项已按节目单执行。')
 }
 function setScene(scene) {
   return runCommand({ ...base('SET_SCENE'), expectedRunRevision: runtime.value.runRevision, expectedPresentationRevision: snapshot.value.presentationRevision, targetScene: scene, confirmed: true }, '排练场景已切换。')
@@ -322,7 +359,7 @@ function setProgram() {
     expectedInteractionRevision: snapshot.value.interaction.interactionRevision,
     programId: selectedProgramId.value,
     confirmed: true,
-  }, '当前节目已更新。')
+  }, '当前节目已更新，OBS 正在同步对应场景。')
 }
 function selectProgram(id) {
   selectedProgramId.value = id
@@ -356,7 +393,7 @@ async function confirmProgress(command, message, success) {
 }
 function advance() {
   if (runtime.value.currentScene !== 'ASSEMBLY') return
-  return confirmProgress('ADVANCE', '确认结束星海集结并进入节目应援？', '已进入节目应援。')
+  return confirmProgress('ADVANCE', '确认进入节目控制阶段？', '已进入节目控制阶段。')
 }
 function pause() { return runCommand({ ...base('PAUSE'), expectedRunRevision: runtime.value.runRevision, expectedPresentationRevision: snapshot.value.presentationRevision, confirmed: true }, '全场已暂停。') }
 function resume() { return runCommand({ ...base('RESUME'), expectedRunRevision: runtime.value.runRevision, confirmed: true }, '全场已恢复。') }
@@ -375,7 +412,7 @@ async function previewFinale() {
 }
 
 function complete() {
-  return confirmProgress('COMPLETE', '确认结束晚会并播放约 165 秒片尾？结束后立即停止送礼、弹幕与投票，并锁定为只读。', '活动已完成并锁定终章。')
+  return confirmProgress('COMPLETE', '确认结束晚会？大屏将显示“感谢你的参与”，送礼、弹幕与投票立即停止，活动锁定为只读。', '活动已完成并锁定终章。')
 }
 function clearPresentation() { return runCommand({ ...base('CLEAR_PRESENTATION'), expectedRunRevision: runtime.value.runRevision, expectedPresentationRevision: snapshot.value.presentationRevision, confirmed: true }, '活动投影已清除。') }
 function liveCommand(command, payload, success) {
@@ -393,6 +430,19 @@ function openBuzzer() {
     segmentCode: currentInteractionCode.value,
     prompt: buzzerPrompt.value.trim() || defaultPrompt,
   }, `${interactionLabel(currentInteractionCode.value)}抢答已开放。`)
+}
+function armAudioBuzzer() {
+  if (currentInteractionCode.value !== 'A' || !audioBridge.value.available || !selectedAudio.value) {
+    errorMessage.value = '自动触发不可用，请启动本机 OBS 桥接并核对 mix 音源。'
+    return
+  }
+  return liveCommand('ARM_AUDIO_BUZZER', {
+    segmentCode: 'A', trackId: audioTrackId.value, inputUuid: selectedAudio.value.inputUuid,
+    prompt: buzzerPrompt.value.trim() || '歌名 decoder · 立即抢答',
+  }, '已布置音频抢答，OBS 桥接会自动播放对应 mix，播放开始后倒数 10 秒。')
+}
+function markBuzzerWrong() {
+  return liveCommand('MARK_BUZZER_WRONG', { segmentCode: 'A' }, '已判错，原音频将续播并继续抢答。')
 }
 async function openAudienceVote() {
   if (!canStageWrite.value || liveInteraction.value.phase !== 'IDLE') return
@@ -458,6 +508,23 @@ async function resetDemo() {
   return runCommand({ ...base('RESET_DEMO'), confirmation: 'RESET DEMO', syntheticDataConfirmed: true }, 'Demo 已重置，管理会话已安全轮换。')
 }
 
+function openSurfaceWindow(surface) {
+  const target = new URL(surface === 'screen' ? 'screen' : 'welcome', window.location.href)
+  if (surface === 'screen') {
+    target.searchParams.set('motion', 'full')
+    target.searchParams.set('media', 'background')
+    target.searchParams.set('audio', 'off')
+  }
+  const name = surface === 'screen' ? 'sysu-welcome-screen' : 'sysu-welcome-web'
+  const opened = window.open(target.href, name, 'popup=yes,width=1920,height=1080,resizable=yes,noopener')
+  if (!opened) {
+    errorMessage.value = '浏览器拦截了新窗口，请允许控制台打开节目网页。'
+    return
+  }
+  opened.focus?.()
+  successMessage.value = surface === 'screen' ? '已打开最新版节目大屏窗口。' : '已打开观众网页窗口。'
+}
+
 void boot()
 </script>
 
@@ -476,6 +543,8 @@ void boot()
         <StatusPill v-if="snapshot" :tone="realtime.state.value === 'online' ? 'success' : 'warning'">
           {{ realtime.state.value === 'online' ? '实时已连接' : '正在恢复同步' }}
         </StatusPill>
+        <BaseButton v-if="snapshot" variant="secondary" size="sm" @click="openSurfaceWindow('screen')">打开节目大屏</BaseButton>
+        <BaseButton v-if="snapshot" variant="secondary" size="sm" @click="openSurfaceWindow('welcome')">打开观众网页</BaseButton>
         <BaseButton v-if="snapshot" variant="secondary" :disabled="Boolean(busy || workflowBusy)" @click="logout">退出</BaseButton>
       </div>
     </header>
@@ -496,23 +565,34 @@ void boot()
         <select v-model="startMode" aria-label="开始模式" :disabled="!canStageWrite || runtime.status!=='READY'"><option value="LIVE">现场</option><option value="REHEARSAL">排练</option></select>
         <BaseButton :disabled="!canStageWrite || runtime.status!=='READY'" title="待开始时可用" @click="start">开始活动</BaseButton>
         <BaseButton variant="secondary" :disabled="!canStageWrite || !['RUNNING','PAUSED'].includes(runtime.status)" @click="runtime.status==='PAUSED' ? resume() : pause()">{{ runtime.status==='PAUSED' ? '恢复运行' : '全场暂停' }}</BaseButton>
-        <BaseButton variant="secondary" :disabled="!canStageWrite || runtime.status!=='RUNNING' || runtime.currentScene!=='ASSEMBLY'" title="星海集结结束后进入节目" @click="runtime.mode==='LIVE' ? advance() : setScene('PROGRAM_SUPPORT')">进入节目</BaseButton>
       </section>
-      <section class="fixed-cue" aria-label="当前与下一项">
+      <section v-if="activePanel !== 'interaction'" class="fixed-cue" aria-label="当前与下一项">
         <div><small>正在进行 · 服务器已确认</small><h2 :title="currentProgram?.title">{{ currentProgram?.title || (runtime.currentScene ? sceneLabels[runtime.currentScene].slice(3) : '等待开场') }}</h2><span>{{ snapshot.stage?.mode==='HOST' ? '报幕／主题背景' : currentProgram?.durationLabel || '按主持口令推进' }}</span></div>
-        <div><small>待执行</small><strong>{{ preparedProgram?.title || '请在节目页选择' }}</strong><small>下一项 · {{ nextProgram?.title || '主持结束语 → 电影片尾' }}</small></div><p>{{ obsCue }}</p>
+        <div><small>待执行</small><strong>{{ preparedProgram?.title || '请在节目页选择' }}</strong><small>下一项 · {{ nextProgram?.title || '主持结束语 → 感谢卡' }}</small></div><p>{{ obsCue }}</p>
       </section>
-      <nav class="fixed-stage-actions" aria-label="常用舞台操作">
+      <nav v-if="activePanel !== 'interaction'" class="fixed-stage-actions" aria-label="常用舞台操作">
         <BaseButton variant="secondary" :disabled="!canSelectProgram || snapshot.stage?.mode==='HOST'" title="互动先收尾；报幕暂停送礼" @click="ceremonyCommand({command:'SET_STAGE_MODE',expectedStageRevision:snapshot.stage.revision,mode:'HOST'})">报幕／主题背景</BaseButton>
         <BaseButton variant="secondary" :disabled="!canSelectProgram || !currentProgram || ['AWARD','SPEECH'].includes(currentProgram.kind) || snapshot.stage?.mode==='PROGRAM'" @click="ceremonyCommand({command:'SET_STAGE_MODE',expectedStageRevision:snapshot.stage.revision,mode:'PROGRAM'})">返回节目</BaseButton>
         <BaseButton :disabled="!canSelectProgram || !preparedProgram || preparedProgram.id===currentProgram?.id" @click="setProgram">执行选中项</BaseButton>
-        <BaseButton variant="secondary" :disabled="!canSelectProgram || !nextProgram" title="开放中的互动须先完成" @click="selectProgram(nextProgram.id)">下一项</BaseButton>
-        <BaseButton variant="danger" :disabled="!canStageWrite || runtime.mode!=='LIVE' || runtime.status!=='RUNNING' || !['PROGRAM_SUPPORT','COOPERATIVE_LIGHT'].includes(runtime.currentScene) || liveInteraction.phase!=='IDLE'" title="主持结束语后确认，活动将锁定为只读" @click="complete">结束并播放片尾</BaseButton>
+        <BaseButton variant="secondary" :disabled="!canSelectProgram || !nextProgram" title="开放中的互动须先完成" @click="advanceProgram">下一项</BaseButton>
+        <BaseButton variant="danger" :disabled="!canStageWrite || runtime.mode!=='LIVE' || runtime.status!=='RUNNING' || !['PROGRAM_SUPPORT','COOPERATIVE_LIGHT'].includes(runtime.currentScene) || liveInteraction.phase!=='IDLE'" title="主持结束语后确认，活动将锁定为只读" @click="complete">结束晚会</BaseButton>
       </nav>
       <nav class="console-tabs" aria-label="控台工作区"><button v-for="tab in panelTabs" :key="tab.id" type="button" :aria-pressed="activePanel===tab.id" @click="activePanel=tab.id">{{ tab.label }}</button></nav>
       <div class="console-workspace">
-        <V2ProgramCatalog v-show="activePanel==='programs'" :snapshot="snapshot" :can-write="canWrite" :saved-signal="catalogSavedSignal" @prepare="selectedProgramId=$event" @select="selectProgram" @apply="applyProgramCatalog" />
-        <section v-show="activePanel==='interaction'" class="interaction-tab"><section v-if="!currentInteractionCode && liveInteraction.phase === 'IDLE'" class="context-summary"><h2>当前环节</h2><p>{{ currentProgram?.title || '星海集结' }}</p><span>{{ currentProgram?.giftsEnabled ? '礼物与现场聊天已就绪' : '按流程执行节目与舞台操作' }}</span></section>
+        <V2ProgramCatalog v-show="activePanel==='programs'" :snapshot="snapshot" :can-write="canWrite" :saved-signal="catalogSavedSignal" @prepare="selectedProgramId=$event" @select="selectProgram" @advance="advanceProgram" @apply="applyProgramCatalog" />
+        <section v-if="activePanel==='interaction'" class="interaction-tab" aria-label="互动完整控制区">
+          <BaseCard padding="md" class="interaction-control-panel" aria-label="互动主控面板">
+            <div class="panel-heading"><div><p class="interaction-code">当前节目</p><h2>{{ currentProgram?.title || '等待开场' }}</h2><p>下一项 · {{ nextProgram?.title || '主持结束语 → 感谢卡' }}</p></div><StatusPill>{{ snapshot.stage?.mode === 'HOST' ? '报幕／主题背景' : runtime.status }}</StatusPill></div>
+            <label class="interaction-program-choice">待执行节目<select v-model="selectedProgramId" aria-label="待执行节目" :disabled="!canSelectProgram"><option v-for="program in snapshot.programs" :key="program.id" :value="program.id">{{ program.displayCode }} · {{ program.title }}</option></select></label>
+            <nav class="interaction-stage-actions" aria-label="互动舞台操作">
+              <BaseButton variant="secondary" :disabled="!canSelectProgram || snapshot.stage?.mode==='HOST'" @click="ceremonyCommand({command:'SET_STAGE_MODE',expectedStageRevision:snapshot.stage.revision,mode:'HOST'})">报幕／主题背景</BaseButton>
+              <BaseButton variant="secondary" :disabled="!canSelectProgram || !currentProgram || ['AWARD','SPEECH'].includes(currentProgram.kind) || snapshot.stage?.mode==='PROGRAM'" @click="ceremonyCommand({command:'SET_STAGE_MODE',expectedStageRevision:snapshot.stage.revision,mode:'PROGRAM'})">返回节目</BaseButton>
+              <BaseButton :disabled="!canSelectProgram || !preparedProgram || preparedProgram.id===currentProgram?.id" @click="setProgram">执行选中项</BaseButton>
+              <BaseButton variant="secondary" :disabled="!canSelectProgram || !nextProgram" @click="advanceProgram">下一项</BaseButton>
+              <BaseButton v-if="['BUZZER_LOCKED', 'VOTE_REVEALED'].includes(liveInteraction.phase) && nextProgram" variant="secondary" :disabled="!canFinishInteraction" @click="finishInteractionAndNext">收起互动并进入下一项</BaseButton>
+            </nav>
+          </BaseCard>
+          <section v-if="!currentInteractionCode && liveInteraction.phase === 'IDLE'" class="context-summary"><h2>当前环节</h2><p>{{ currentProgram?.title || '等待开场' }}</p><span>{{ currentProgram?.giftsEnabled ? '礼物与现场聊天已就绪' : '按流程执行节目与舞台操作' }}</span></section>
 
       <BaseCard v-if="currentInteractionCode || liveInteraction.phase !== 'IDLE'" padding="md" class="live-control-card" :data-interaction="currentInteractionCode || 'NONE'">
         <div class="panel-heading">
@@ -528,12 +608,19 @@ void boot()
         </div>
 
         <section v-if="currentInteractionCode === 'A'" class="interaction-operation" aria-labelledby="buzzer-heading">
-          <div><h3 id="buzzer-heading">抢答</h3></div>
+          <div><h3 id="buzzer-heading">抢答 · OBS 音频自动倒数</h3><p>点击布置后自动播放对应 mix；播放开始，服务器立即进入 10 秒倒数。</p></div>
+          <label>本题音频<select v-model="audioTrackId" :disabled="liveInteraction.phase !== 'IDLE' || liveInteraction.audio?.status === 'ARMED'"><option v-for="track in AUDIO_TRACKS" :key="track.id" :value="track.id">{{ track.label }}</option></select></label>
+          <p role="status" class="audio-bridge-status">{{ audioBridge.available && selectedAudio ? 'OBS 已连接 · 本题 mix 已匹配' : '自动触发不可用 · 请检查本机桥接与 mix 素材' }}</p>
+          <p role="status" class="audio-answer"><strong>本题答案：</strong>{{ selectedAudioAnswer }}</p>
           <label>大屏提示<input v-model="buzzerPrompt" maxlength="120" :placeholder="currentInteractionCode === 'A' ? '歌名 decoder · 立即抢答' : '谁是最“人” · 立即抢答'"></label>
           <div class="control-actions">
-            <BaseButton v-if="liveInteraction.phase === 'IDLE'" :disabled="!canStageWrite || runtime.status !== 'RUNNING' || presentation.type !== 'NONE'" @click="openBuzzer">开始抢答</BaseButton>
-            <BaseButton v-else variant="secondary" :disabled="!canStageWrite" @click="closeLiveInteraction">关闭本轮互动</BaseButton>
+            <BaseButton :disabled="!canStageWrite || !audioBridge.available || !selectedAudio || snapshot.stage?.mode !== 'PROGRAM' || runtime.status !== 'RUNNING' || presentation.type !== 'NONE' || liveInteraction.phase !== 'IDLE' || liveInteraction.audio?.status !== 'IDLE'" @click="armAudioBuzzer">{{ liveInteraction.audio?.status === 'ARMED' ? '等待 OBS 播放 mix' : '布置 10 秒自动抢答' }}</BaseButton>
+            <BaseButton variant="secondary" :disabled="!canStageWrite || (liveInteraction.phase === 'IDLE' && liveInteraction.audio?.status !== 'ARMED')" @click="closeLiveInteraction">关闭本轮互动</BaseButton>
+            <BaseButton variant="secondary" :disabled="!canStageWrite || liveInteraction.phase !== 'BUZZER_LOCKED'" @click="markBuzzerWrong">答错，继续抢答</BaseButton>
+            <BaseButton :disabled="!canStageWrite || liveInteraction.phase !== 'BUZZER_LOCKED'" @click="liveCommand('CLOSE_LIVE_INTERACTION', {answerAccepted:true}, '回答正确，本轮已结束。')">答对，结束本轮</BaseButton>
           </div>
+          <p v-if="liveInteraction.audio?.status === 'ARMED'" class="open-notice" role="status">已布置：{{ AUDIO_TRACKS.find(item => item.id === audioBridge.arm?.trackId)?.label || audioBridge.arm?.trackId }} · OBS 将自动播放，播放后倒数 10 秒</p>
+          <p v-if="liveInteraction.audio?.status === 'ENDED'" role="status">音频已播放完毕；抢答仍按当前状态进行，请手动收题。</p>
           <div v-if="liveInteraction.phase === 'BUZZER_LOCKED'" class="buzzer-result" role="status"><span>第一响应</span><strong>{{ liveInteraction.leader?.publicStarId }}</strong></div>
           <p v-else-if="liveInteraction.phase === 'BUZZER_OPEN'" class="open-notice" role="status">{{ buzzerCountdown ? `倒计时 ${buzzerCountdown}` : '抢答开放' }}</p>
         </section>
@@ -562,7 +649,6 @@ void boot()
 
       </BaseCard>
 
-      <BaseButton v-if="['BUZZER_LOCKED', 'VOTE_REVEALED'].includes(liveInteraction.phase) && nextProgram" :disabled="!canFinishInteraction" @click="finishInteractionAndNext">收起互动并进入下一项</BaseButton>
       </section>
         <V2AwardsConsole v-show="activePanel==='awards'" :snapshot="snapshot" :can-write="canWrite" :saved-signal="awardSavedSignal" :heat-saved-signal="heatSavedSignal" @command="ceremonyCommand" @select="selectProgram" />
         <section v-show="activePanel==='barrages'"><BaseCard padding="md" class="moderation-panel">
@@ -597,7 +683,7 @@ void boot()
           <h2>现场与数据管理</h2><div class="account-counts"><div v-for="item in accountSummary" :key="item.kind"><span>{{ {STUDENT:'学生',STAFF:'工作人员',GUEST:'游客'}[item.kind] }}</span><strong>{{ item.admitted }} <small>/ {{ item.kind==='GUEST' ? 94 : item.total }}</small></strong><small>已入场</small></div></div>
           <p>已入场 {{ snapshot.funnel.admittedCount }} · 待选色 {{ snapshot.funnel.onboardingPendingCount }}</p>
           <div class="control-actions"><BaseButton variant="secondary" :disabled="!canStageWrite || runtime.mode!=='REHEARSAL' || runtime.status!=='RUNNING' || presentation.type!=='NONE'" @click="previewFinale">预览电影片尾</BaseButton><BaseButton variant="secondary" :disabled="!canWrite || presentation.type==='NONE' || runtime.status==='COMPLETED'" @click="clearPresentation">收起预览</BaseButton><BaseButton v-for="scene in Object.keys(sceneLabels)" :key="scene" variant="secondary" :disabled="!canStageWrite || runtime.mode!=='REHEARSAL' || runtime.status!=='RUNNING' || scene===runtime.currentScene" @click="setScene(scene)">{{ sceneLabels[scene] }}</BaseButton></div>
-          <p class="quiet">网页与 OBS 分别手动控制。排练工具只在排练模式可用。</p>
+          <p class="quiet">网页切换节目后，OBS 通过本机桥接自动同步对应场景；排练场景按钮只在排练模式可用。</p>
           <p v-for="warning in snapshot.readinessWarnings" :key="warning" class="quiet">{{ warningLabels[warning] }}</p>
           <details v-if="snapshot.roundArchives?.length"><summary>最近归档记录</summary><p v-for="item in snapshot.roundArchives.slice(0,3)" :key="item.sourceEpoch">第 {{ item.sourceEpoch }} 轮 · {{ new Date(item.at).toLocaleString('zh-CN') }} · 校验 {{ item.sha256.slice(0,12) }}</p></details>
           <BaseButton v-if="!protectedRuntime" variant="secondary" :disabled="!canDemoWrite" @click="resetDemo">重置合成 Demo</BaseButton>
@@ -1160,10 +1246,11 @@ void boot()
 .feedback-stack{position:relative;max-width:100%}.feedback{border-width:1px;background:#07111eee;box-shadow:0 10px 30px #0003;font-size:.88rem;line-height:1.6}.feedback p{margin:0}.receipt-details{margin-top:4px;font-size:.72rem;color:var(--color-text-secondary)}.receipt-details summary{cursor:pointer;min-height:28px;align-content:center}.receipt-details code{display:block;padding-block:4px;white-space:normal;overflow-wrap:anywhere}
 .runtime-facts{gap:12px}.runtime-facts>div{padding:14px;border:0;background:#9bc4eb07}.runtime-card>.control-actions{gap:10px;justify-content:flex-start}.control-actions,.candidate-actions{justify-content:flex-start}.runtime-card>.control-actions>button:first-child{margin-right:6px}
 .attendance-overview{border:1px solid #91b9e42b;border-radius:16px;background:#07122166;overflow:hidden}.attendance-overview>summary{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px 20px;min-height:48px;cursor:pointer;list-style:none}.attendance-overview>summary::after{content:'+';font-size:1.1rem;color:var(--color-text-secondary)}.attendance-overview[open]>summary::after{content:'−'}.attendance-overview>summary>span{margin-left:auto;color:var(--color-text-secondary);font-size:.8rem}.attendance-overview>summary>strong{font-size:.92rem;font-weight:500}.attendance-overview .v2-grid{gap:0;border-top:1px solid #91b9e41a}.attendance-overview :deep(.base-card){border:0;border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none}
-.live-control-card{background:linear-gradient(145deg,#102034bd,#08111ec7)}.interaction-operation{gap:16px}.interaction-operation>.control-actions{justify-content:flex-start}.panel-heading{gap:14px}.panel-heading p{font-size:.8rem}.interaction-code{letter-spacing:.08em}.vote-control{padding:18px;background:#9fc5ef08;border-color:#91b9e42b}.winner-list li{background:#9dc5ed08}.buzzer-result,.open-notice{background:#75aef00b}.maintenance-details>summary{cursor:pointer;font-size:.9rem;font-weight:500;min-height:28px}.maintenance-details>p{margin:14px 0;line-height:1.7;font-size:.82rem}.danger-card{border-color:#d6887c36;background:#36202524}
+.live-control-card{background:linear-gradient(145deg,#102034bd,#08111ec7)}.interaction-control-panel{background:linear-gradient(145deg,#172e49d9,#091522d9);border-color:#9fc5ef35}.interaction-stage-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.interaction-stage-actions>button{min-height:44px}.interaction-operation{gap:16px}.interaction-operation>.control-actions{justify-content:flex-start}.panel-heading{gap:14px}.panel-heading p{font-size:.8rem}.interaction-code{letter-spacing:.08em}.vote-control{padding:18px;background:#9fc5ef08;border-color:#91b9e42b}.winner-list li{background:#9dc5ed08}.buzzer-result,.open-notice{background:#75aef00b}.maintenance-details>summary{cursor:pointer;font-size:.9rem;font-weight:500;min-height:28px}.maintenance-details>p{margin:14px 0;line-height:1.7;font-size:.82rem}.danger-card{border-color:#d6887c36;background:#36202524}
 .v2-admin summary:focus-visible{outline:2px solid var(--color-orbit-focus);outline-offset:4px}
-@media(max-width:680px){.v2-admin{gap:14px}.v2-heading{align-items:center;gap:16px;padding-block:8px}.v2-heading-actions{width:100%;justify-content:space-between}.v2-admin :deep(.base-card){padding:18px}.runtime-facts{gap:8px}.runtime-facts>div{padding:10px}.runtime-facts strong{font-size:.9rem}.runtime-card>.control-actions>button{flex:1 1 130px;margin-right:0;white-space:normal;line-height:1.4;padding-block:10px}.panel-heading>.control-actions{width:100%}.panel-heading>.control-actions>button{flex:1 1 120px}.attendance-overview>summary{padding:13px 16px;flex-wrap:wrap;gap:6px}.attendance-overview>summary>span{font-size:.73rem}.feedback-stack{top:auto}.feedback{padding:10px 12px}.v2-admin .login-card{padding:22px}.interaction-operation input{box-sizing:border-box}.candidate-actions>button{flex:1;min-width:0}}
+@media(max-width:680px){.v2-admin{gap:14px}.v2-heading{align-items:center;gap:16px;padding-block:8px}.v2-heading-actions{width:100%;justify-content:space-between}.v2-admin :deep(.base-card){padding:18px}.runtime-facts{gap:8px}.runtime-facts>div{padding:10px}.runtime-facts strong{font-size:.9rem}.runtime-card>.control-actions>button{flex:1 1 130px;margin-right:0;white-space:normal;line-height:1.4;padding-block:10px}.panel-heading>.control-actions{width:100%}.panel-heading>.control-actions>button{flex:1 1 120px}.interaction-stage-actions{display:grid;grid-template-columns:1fr;gap:8px}.interaction-stage-actions>button{width:100%;white-space:normal}.attendance-overview>summary{padding:13px 16px;flex-wrap:wrap;gap:6px}.attendance-overview>summary>span{font-size:.73rem}.feedback-stack{top:auto}.feedback{padding:10px 12px}.v2-admin .login-card{padding:22px}.interaction-operation input{box-sizing:border-box}.candidate-actions>button{flex:1;min-width:0}}
 
+.audio-bridge-status,.audio-answer{font-size:12px!important}.audio-answer{padding:8px 10px;border-left:2px solid #9bc6eb70;background:#9bc6eb0d;color:#d8e9fb!important}.audio-answer strong{color:#fff}.interaction-operation select{min-height:36px;color:inherit;background:#1c2638;border:1px solid #93a8c340;border-radius:6px;padding:5px 10px}
 .vote-candidate-editor{border:0;padding:0;display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}.vote-candidate-editor label:last-child{grid-column:1/-1}
 </style>
 

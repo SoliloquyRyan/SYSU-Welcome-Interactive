@@ -30,7 +30,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // File collection
 // ---------------------------------------------------------------------------
 
-const EXCLUDED_SEGMENTS = new Set(['node_modules', 'dist', '.git', 'output']);
+// Protected recovery bundles are retained as byte-for-byte rollback material.
+// Their historical docs intentionally reference files from the original
+// release layout, so they are not part of the live repository link graph.
+const EXCLUDED_SEGMENTS = new Set(['node_modules', 'dist', '.git', 'output', '.welcome-recovery']);
 
 /** relPath is relative to ROOT and uses '/' separators. */
 function isExcludedPath(relPath) {

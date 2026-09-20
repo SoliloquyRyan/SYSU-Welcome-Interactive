@@ -13,7 +13,7 @@ const skyMask = computed(() => {
 const root = ref(null), bounds = ref({ width: 1920, height: 1080 }), anchors = new Map()
 let observer
 function anchorFor(effect) {
-  if (!anchors.has(effect.id)) anchors.set(effect.id, giftStarAnchor(props.points, effect.id))
+  if (!anchors.has(effect.id)) anchors.set(effect.id, giftStarAnchor(props.points, effect.id, effect.publicStarId))
   return anchors.get(effect.id)
 }
 function effectStyle(effect) {

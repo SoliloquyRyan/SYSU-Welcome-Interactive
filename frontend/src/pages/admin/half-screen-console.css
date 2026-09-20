@@ -14,3 +14,15 @@
 @media(max-height:760px){.v2-admin{padding:8px;gap:6px}.fixed-cue{padding:8px 10px}.fixed-cue h2{font-size:18px}.v2-heading h1{font-size:18px}.v2-admin :deep(.base-card){padding:9px}.manage-tab{gap:8px}.account-counts>div{padding:8px}}
 
 .interaction-tab .panel-heading p{display:none}.interaction-operation{gap:8px}.interaction-operation h3{font-size:14px;margin:0}.interaction-operation>div>p{font-size:11px;margin:0}.vote-candidate-editor{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:0;border:0}.vote-candidate-editor label{font-size:11px}.vote-candidate-editor label:last-child{grid-column:1/-1}.candidate-paging{display:flex;gap:8px}.live-control-card .panel-heading{flex:none}.live-control-card .vote-result{min-height:0;overflow:auto}.console-workspace .interaction-tab{display:flex;flex-direction:column;gap:6px}.console-workspace .interaction-tab .live-control-card{min-height:0;flex:1}.console-workspace .interaction-tab>.base-button{flex:none}
+
+/* D-119: one scrollable control region; cards must not each consume 100% height. */
+.console-workspace .interaction-tab{overflow-y:auto;overscroll-behavior:contain;border:1px solid #46505d;border-radius:7px;background:#292f38;padding:8px;gap:8px}
+.console-workspace .interaction-tab :deep(.base-card){height:auto;flex:none;border:0;padding:4px;background:transparent}
+.console-workspace .interaction-tab .live-control-card{flex:none;border-top:1px solid #46505d;padding-top:10px}
+.interaction-tab .interaction-control-panel .panel-heading p{display:block;margin:3px 0;font-size:12px}
+.interaction-program-choice{display:flex;align-items:center;gap:12px;margin-top:8px}
+.interaction-program-choice select{flex:1;min-width:0;min-height:44px;background:#303842;color:inherit;border:1px solid #586372;border-radius:6px;padding:6px}
+.interaction-tab .interaction-stage-actions{margin-top:8px;gap:6px}
+.v2-admin .interaction-tab :deep(.base-button),.v2-admin .interaction-tab input,.v2-admin .interaction-tab select{min-height:44px}
+.interaction-tab .audio-answer,.interaction-tab .audio-bridge-status{margin:3px 0}
+@media(max-width:600px){.v2-admin{padding:8px}.v2-heading-actions{flex-wrap:wrap}.fixed-runtime{flex-wrap:wrap}.interaction-program-choice{align-items:stretch;flex-direction:column;gap:5px}.interaction-tab .interaction-stage-actions{display:grid;grid-template-columns:1fr 1fr}.interaction-tab .vote-candidate-editor{grid-template-columns:1fr 1fr}.interaction-tab .control-actions{display:grid;grid-template-columns:1fr 1fr}}

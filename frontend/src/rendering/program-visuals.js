@@ -14,18 +14,23 @@ export const ART_SKY_REGIONS = Object.freeze({
   'light-years': [[[.12,.035],[.81,.035],[.82,.53],[.64,.59],[.35,.57],[.12,.41]]],
 })
 const collegeArea = { x: .03, y: .035, w: .27, h: .11 }
-const cueArea = id => id === 'event2026-17' || id === 'event2026-19'
-  ? { x: .045, y: .80, w: .49, h: .18 } : { x: .60, y: .035, w: .35, h: .24 }
+// D-115: every transient program cue uses one predictable lower-left safe zone.
+// Keeping the safe area in the visual preset also keeps gift/barrage protection
+// aligned with the rendered cue instead of relying on CSS defaults alone.
+const cueArea = () => ({ x: .06, y: .53, w: .56, h: .35 })
 const titleArea = layout => ({ x: layout === 'left' ? .12 : layout === 'right' ? .47 : .20, y: .30, w: layout === 'center' ? .60 : layout === 'left' ? .45 : .41, h: .48 })
 const preset = (id, art, genre, font, layout, accent, secondary, strength, extras = {}) => Object.freeze({
   id, art, genre, font, layout, accent, secondary, strength,
   mode: art ? 'background' : 'overlay',
   skyRegions: ART_SKY_REGIONS[art] ?? ART_SKY_REGIONS['night-flight'],
   // Faint video stars may cover the picture; bright gifts still use subject masks.
-  overlayUIAreas: [collegeArea, cueArea(id), { x: .80, y: .79, w: .19, h: .20 }],
+  // Overlay stars stay distributed over the video frame.  The transient cue
+  // remains a protected gift area below; faint stars may pass behind it so a
+  // video scene does not develop a visibly empty lower-left quadrant.
+  overlayUIAreas: [collegeArea, { x: .80, y: .79, w: .19, h: .20 }],
   backgroundUIAreas: [collegeArea, art ? titleArea(layout) : cueArea(id)],
   protectedAreas: [collegeArea, ...(art ? [titleArea(layout)] : [...(MEDIA_PROTECTION[id] ?? []), cueArea(id)])],
-  cue: !art ? (id === 'event2026-17' || id === 'event2026-19' ? { x: .045, y: .80, w: .49, bottom:.035 } : { x: .60, y: .035, w: .35 }) : null,
+  cue: !art ? { x: .06, y: .53, w: .56, bottom: .12 } : null,
   ...extras,
 })
 

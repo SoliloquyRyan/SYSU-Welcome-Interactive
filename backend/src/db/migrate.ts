@@ -305,8 +305,8 @@ export function migrateActiveV2DatabaseFrom12To15(
 
   const available = discoverMigrations(migrationsPath)
   const availableVersion = available.at(-1)?.version ?? 0
-  if (availableVersion !== 23) {
-    throw new Error(`Migration 0023 must be the repository tip, found ${availableVersion}`)
+  if (availableVersion !== 24) {
+    throw new Error(`Migration 0024 must be the repository tip, found ${availableVersion}`)
   }
   if (!databaseTableExists(database, '_schema_migrations')) {
     throw new Error('Migration table is missing')
@@ -320,14 +320,14 @@ export function migrateActiveV2DatabaseFrom12To15(
   }
   const pending = available.filter((migration) => migration.version > currentVersion)
   if (
-    pending.length !== 11 ||
+    pending.length !== 12 ||
     pending[0]?.version !== 13 ||
     pending[1]?.version !== 14 ||
     pending[2]?.version !== 15 || pending[3]?.version !== 16 ||
     pending[4]?.version !== 17 || pending[5]?.version !== 18 ||
-    pending[6]?.version !== 19 || pending[7]?.version !== 20 || pending[8]?.version !== 21 || pending[9]?.version !== 22 || pending[10]?.version !== 23
+    pending[6]?.version !== 19 || pending[7]?.version !== 20 || pending[8]?.version !== 21 || pending[9]?.version !== 22 || pending[10]?.version !== 23 || pending[11]?.version !== 24
   ) {
-    issues.push('The only permitted pending migrations are 0013 through 0023')
+    issues.push('The only permitted pending migrations are 0013 through 0024')
   }
   if (issues.length > 0) {
     throw new Error(issues.join('; '))
@@ -378,35 +378,35 @@ export function migrateActiveV2ProgramCatalogFrom14To15(
     throw new Error('The catalog migration requires an active verified v2 directory')
   }
   const history = verifyMigrationHistoryAtVersion(database, migrationsPath, 14)
-  if (!history.ready || history.availableVersion !== 23) throw new Error('The catalog upgrade requires exact schema 14 and repository tip 23')
+  if (!history.ready || history.availableVersion !== 24) throw new Error('The catalog upgrade requires exact schema 14 and repository tip 24')
   const migration = discoverMigrations(migrationsPath).find(({ version }) => version === 15)!
   database.exec(migration.sql)
   database.prepare('INSERT INTO _schema_migrations (version, filename, checksum, applied_at) VALUES (?, ?, ?, ?)')
     .run(migration.version, migration.filename, migration.checksum, now().toISOString())
   const final = migrateActiveV2InteractionsFrom15To16(database, migrationsPath, now)
-  return { ...final, applied: [15, 16, 17, 18, 19, 20, 21, 22, 23], previousVersion: 14 }
+  return { ...final, applied: [15, 16, 17, 18, 19, 20, 21, 22, 23, 24], previousVersion: 14 }
 }
 
 export function migrateActiveV2InteractionsFrom15To16(database: SqliteDatabase, migrationsPath: string, now: () => Date = () => new Date()): ActiveV2MigrationResult {
   if (!database.inTransaction) throw new Error('Interaction upgrade requires an existing transaction')
   const history = verifyMigrationHistoryAtVersion(database, migrationsPath, 15)
-  if (!history.ready || history.availableVersion !== 23) throw new Error('Interaction upgrade requires exact schema 15 and tip 23')
+  if (!history.ready || history.availableVersion !== 24) throw new Error('Interaction upgrade requires exact schema 15 and tip 24')
   const migration = discoverMigrations(migrationsPath).find(item => item.version === 16)!
   database.exec(migration.sql)
   database.prepare('INSERT INTO _schema_migrations (version, filename, checksum, applied_at) VALUES (?, ?, ?, ?)').run(16, migration.filename, migration.checksum, now().toISOString())
   const final = migrateActiveV2GiftExperienceFrom16To17(database, migrationsPath, now)
-  return { ...final, applied: [16, 17, 18, 19, 20, 21, 22, 23], previousVersion: 15 }
+  return { ...final, applied: [16, 17, 18, 19, 20, 21, 22, 23, 24], previousVersion: 15 }
 }
 
 export function migrateActiveV2GiftExperienceFrom16To17(database: SqliteDatabase, migrationsPath: string, now: () => Date = () => new Date()): ActiveV2MigrationResult {
   if (!database.inTransaction) throw new Error('Gift experience upgrade requires an existing transaction')
   const history = verifyMigrationHistoryAtVersion(database, migrationsPath, 16)
-  if (!history.ready || history.availableVersion !== 23) throw new Error('Gift experience upgrade requires exact schema 16 and tip 23')
+  if (!history.ready || history.availableVersion !== 24) throw new Error('Gift experience upgrade requires exact schema 16 and tip 24')
   const migration = discoverMigrations(migrationsPath).find(item => item.version === 17)!
   database.exec(migration.sql)
   database.prepare('INSERT INTO _schema_migrations (version, filename, checksum, applied_at) VALUES (?, ?, ?, ?)').run(17, migration.filename, migration.checksum, now().toISOString())
   const final = migrateActiveV2ProgramCreditsFrom17To18(database, migrationsPath, now)
-  return { ...final, applied: [17, 18, 19, 20, 21, 22, 23], previousVersion: 16 }
+  return { ...final, applied: [17, 18, 19, 20, 21, 22, 23, 24], previousVersion: 16 }
 }
 
 // Public catalogue metadata only. The verified maintenance caller owns the backup and transaction.
@@ -415,12 +415,12 @@ export function migrateActiveV2ProgramCreditsFrom17To18(database: SqliteDatabase
   const protocol = database.prepare('SELECT active_protocol_version AS version, activation_state AS state FROM protocol_runtime WHERE id = 1').get() as { version: string; state: string } | undefined
   if (protocol?.version !== '2' || protocol.state !== 'V2_ACTIVE') throw new Error('Programme credits upgrade requires active protocol v2')
   const history = verifyMigrationHistoryAtVersion(database, migrationsPath, 17)
-  if (!history.ready || history.availableVersion !== 23) throw new Error('Programme credits upgrade requires exact schema 17 and tip 23')
+  if (!history.ready || history.availableVersion !== 24) throw new Error('Programme credits upgrade requires exact schema 17 and tip 24')
   const migration = discoverMigrations(migrationsPath).find(item => item.version === 18)!
   database.exec(migration.sql)
   database.prepare('INSERT INTO _schema_migrations (version, filename, checksum, applied_at) VALUES (?, ?, ?, ?)').run(18, migration.filename, migration.checksum, now().toISOString())
   const final = migrateActiveV2LiveInteractionsFrom18To19(database, migrationsPath, now)
-  return { ...final, applied: [18, 19, 20, 21, 22, 23], previousVersion: 17 }
+  return { ...final, applied: [18, 19, 20, 21, 22, 23, 24], previousVersion: 17 }
 }
 
 export function migrateActiveV2LiveInteractionsFrom18To19(
@@ -432,12 +432,12 @@ export function migrateActiveV2LiveInteractionsFrom18To19(
   const protocol = database.prepare('SELECT active_protocol_version AS version, activation_state AS state FROM protocol_runtime WHERE id = 1').get() as { version: string; state: string } | undefined
   if (protocol?.version !== '2' || protocol.state !== 'V2_ACTIVE') throw new Error('Live interaction upgrade requires active protocol v2')
   const history = verifyMigrationHistoryAtVersion(database, migrationsPath, 18)
-  if (!history.ready || history.availableVersion !== 23) throw new Error('Live interaction upgrade requires exact schema 18 and tip 23')
+  if (!history.ready || history.availableVersion !== 24) throw new Error('Live interaction upgrade requires exact schema 18 and tip 24')
   const migration = discoverMigrations(migrationsPath).find(item => item.version === 19)!
   database.exec(migration.sql)
   database.prepare('INSERT INTO _schema_migrations (version, filename, checksum, applied_at) VALUES (?, ?, ?, ?)').run(19, migration.filename, migration.checksum, now().toISOString())
   const final = migrateActiveV2AwardsFrom19To20(database, migrationsPath, now)
-  return { ...final, applied: [19, 20, 21, 22, 23], previousVersion: 18 }
+  return { ...final, applied: [19, 20, 21, 22, 23, 24], previousVersion: 18 }
 }
 
 export function migrateActiveV2AwardsFrom19To20(database: SqliteDatabase, migrationsPath: string, now: () => Date = () => new Date()): ActiveV2MigrationResult {
@@ -445,12 +445,12 @@ export function migrateActiveV2AwardsFrom19To20(database: SqliteDatabase, migrat
   const protocol = database.prepare('SELECT active_protocol_version AS version, activation_state AS state FROM protocol_runtime WHERE id = 1').get() as { version: string; state: string } | undefined
   if (protocol?.version !== '2' || protocol.state !== 'V2_ACTIVE') throw new Error('Awards upgrade requires active protocol v2')
   const history = verifyMigrationHistoryAtVersion(database, migrationsPath, 19)
-  if (!history.ready || history.availableVersion !== 23) throw new Error('Awards upgrade requires exact schema 19 and tip 23')
+  if (!history.ready || history.availableVersion !== 24) throw new Error('Awards upgrade requires exact schema 19 and tip 24')
   const migration = discoverMigrations(migrationsPath).find(item => item.version === 20)!
   database.exec(migration.sql)
   database.prepare('INSERT INTO _schema_migrations (version, filename, checksum, applied_at) VALUES (?, ?, ?, ?)').run(20, migration.filename, migration.checksum, now().toISOString())
   const final = migrateActiveV2ProgramRankingFrom20To21(database, migrationsPath, now)
-  return { ...final, applied: [20, 21, 22, 23], previousVersion: 19 }
+  return { ...final, applied: [20, 21, 22, 23, 24], previousVersion: 19 }
 }
 
 export function migrateActiveV2ProgramRankingFrom20To21(database: SqliteDatabase, migrationsPath: string, now: () => Date = () => new Date()): ActiveV2MigrationResult {
@@ -458,12 +458,12 @@ export function migrateActiveV2ProgramRankingFrom20To21(database: SqliteDatabase
   const protocol = database.prepare('SELECT active_protocol_version AS version, activation_state AS state FROM protocol_runtime WHERE id = 1').get() as { version: string; state: string } | undefined
   if (protocol?.version !== '2' || protocol.state !== 'V2_ACTIVE') throw new Error('Programme ranking upgrade requires active protocol v2')
   const history = verifyMigrationHistoryAtVersion(database, migrationsPath, 20)
-  if (!history.ready || history.availableVersion !== 23) throw new Error('Programme ranking upgrade requires exact schema 20 and tip 23')
+  if (!history.ready || history.availableVersion !== 24) throw new Error('Programme ranking upgrade requires exact schema 20 and tip 24')
   const migration = discoverMigrations(migrationsPath).find(item => item.version === 21)!
   database.exec(migration.sql)
   database.prepare('INSERT INTO _schema_migrations (version, filename, checksum, applied_at) VALUES (?, ?, ?, ?)').run(21, migration.filename, migration.checksum, now().toISOString())
   const final = migrateActiveV2EventEntryFrom21To22(database, migrationsPath, now)
-  return { ...final, applied: [21, 22, 23], previousVersion: 20 }
+  return { ...final, applied: [21, 22, 23, 24], previousVersion: 20 }
 }
 
 /** Caller owns the stopped-service check, verified backup and write transaction. */
@@ -472,7 +472,7 @@ export function migrateActiveV2EventEntryFrom21To22(database: SqliteDatabase, mi
   const protocol = database.prepare('SELECT active_protocol_version AS version, activation_state AS state FROM protocol_runtime WHERE id = 1').get() as { version: string; state: string } | undefined
   if (protocol?.version !== '2' || protocol.state !== 'V2_ACTIVE') throw new Error('Event entry upgrade requires active protocol v2')
   const history = verifyMigrationHistoryAtVersion(database, migrationsPath, 21)
-  if (!history.ready || history.availableVersion !== 23) throw new Error('Event entry upgrade requires exact schema 21 and tip 23')
+  if (!history.ready || history.availableVersion !== 24) throw new Error('Event entry upgrade requires exact schema 21 and tip 24')
   const migration = discoverMigrations(migrationsPath).find(item => item.version === 22)!
   database.exec(migration.sql)
   if ((database.pragma('foreign_key_check') as unknown[]).length) throw new Error('Event entry upgrade failed foreign key validation')
@@ -481,7 +481,7 @@ export function migrateActiveV2EventEntryFrom21To22(database: SqliteDatabase, mi
   database.pragma('defer_foreign_keys = OFF')
   database.prepare('INSERT INTO _schema_migrations (version, filename, checksum, applied_at) VALUES (?, ?, ?, ?)').run(22, migration.filename, migration.checksum, now().toISOString())
   const final = migrateActiveV2GuestsFrom22To23(database, migrationsPath, now)
-  return { ...final, applied: [22, 23], previousVersion: 21 }
+  return { ...final, applied: [22, 23, 24], previousVersion: 21 }
 }
 
 /** Retention upgrade; the caller owns backup, stopped-service checks and transaction. */
@@ -490,9 +490,25 @@ export function migrateActiveV2GuestsFrom22To23(database: SqliteDatabase, migrat
   const protocol = database.prepare('SELECT active_protocol_version AS version, activation_state AS state FROM protocol_runtime WHERE id = 1').get() as { version: string; state: string } | undefined
   if (protocol?.version !== '2' || protocol.state !== 'V2_ACTIVE') throw new Error('Guest entry upgrade requires active protocol v2')
   const history = verifyMigrationHistoryAtVersion(database, migrationsPath, 22)
-  if (!history.ready || history.availableVersion !== 23) throw new Error('Guest entry upgrade requires exact schema 22 and tip 23')
+  if (!history.ready || history.availableVersion !== 24) throw new Error('Guest entry upgrade requires exact schema 22 and tip 24')
   const migration = discoverMigrations(migrationsPath).find(item => item.version === 23)!
   database.exec(migration.sql)
   database.prepare('INSERT INTO _schema_migrations (version, filename, checksum, applied_at) VALUES (?, ?, ?, ?)').run(23, migration.filename, migration.checksum, now().toISOString())
-  return { applied: [23], previousVersion: 22, currentVersion: 23, availableVersion: 23 }
+  const final = migrateActiveV2AudioFrom23To24(database, migrationsPath, now)
+  return { ...final, applied: [23, 24], previousVersion: 22 }
+}
+
+/** Caller owns verified backup, stopped-service checks and transaction. */
+export function migrateActiveV2AudioFrom23To24(database: SqliteDatabase, migrationsPath: string, now: () => Date = () => new Date()): ActiveV2MigrationResult {
+  if (!database.inTransaction) throw new Error('Audio buzzer upgrade requires an existing transaction')
+  const protocol = database.prepare('SELECT active_protocol_version AS version, activation_state AS state FROM protocol_runtime WHERE id = 1').get() as { version: string; state: string } | undefined
+  if (protocol?.version !== '2' || protocol.state !== 'V2_ACTIVE') throw new Error('Audio buzzer upgrade requires active protocol v2')
+  const history = verifyMigrationHistoryAtVersion(database, migrationsPath, 23)
+  if (!history.ready || history.availableVersion !== 24) throw new Error('Audio buzzer upgrade requires exact schema 23 and tip 24')
+  const audioMigration = discoverMigrations(migrationsPath).find(item => item.version === 24)!
+  database.exec(audioMigration.sql)
+  if ((database.pragma('foreign_key_check') as unknown[]).length) throw new Error('Audio buzzer upgrade failed foreign key validation')
+  database.pragma('defer_foreign_keys = OFF')
+  database.prepare('INSERT INTO _schema_migrations (version, filename, checksum, applied_at) VALUES (?, ?, ?, ?)').run(24, audioMigration.filename, audioMigration.checksum, now().toISOString())
+  return { applied: [24], previousVersion: 23, currentVersion: 24, availableVersion: 24 }
 }

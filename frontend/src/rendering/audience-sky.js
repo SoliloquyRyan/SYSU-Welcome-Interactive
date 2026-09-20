@@ -85,14 +85,18 @@ export function audienceSkyPoints(stars, options = {}) {
     return p ? [{ ...p, id: star.publicStarId, color: star.displayColor, slot: skyHash(star.formationSlot) }] : []
   })
 }
-export function giftStarAnchor(points, eventId) {
+export function giftStarAnchor(points, eventId, publicStarId = null) {
   const safe = points.filter(p => p.giftSafe !== false)
+  if (publicStarId) {
+    const senderStar = safe.find(p => p.id === publicStarId)
+    if (senderStar) return senderStar
+  }
   return safe.length ? safe[skyHash(eventId) % safe.length] : null
 }
 // At most four nearby real stars wake for each confirmed gift, never a full-frame flash.
 export function giftStarHighlights(points, effects) {
   return effects.filter(e => !e.static).flatMap(effect => {
-    const anchor = giftStarAnchor(points, effect.id)
+    const anchor = giftStarAnchor(points, effect.id, effect.publicStarId)
     if (!anchor) return []
     const neighbors = points.filter(p => p.giftSafe !== false)
       .map(p => ({ id: p.id, distance: Math.hypot(p.x-anchor.x, p.y-anchor.y) }))

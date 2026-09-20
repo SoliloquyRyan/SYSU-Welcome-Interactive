@@ -59,7 +59,7 @@ describe('D-065 protected star ID maintenance', () => {
     const csvBefore = parseProtectedNfcCsv(fs.readFileSync(options.nfcMapPath, 'utf8'))
     const invites = database.prepare('SELECT * FROM invitation_tokens ORDER BY id').all()
     const slots = database.prepare('SELECT identity_id, formation_slot FROM v2_identity_slots ORDER BY seed_index').all()
-    expect(previewProtectedStarIds(database, options)).toMatchObject({ changedCount: 2, participantCount: 2, schemaVersion: 23 })
+    expect(previewProtectedStarIds(database, options)).toMatchObject({ changedCount: 2, participantCount: 2, schemaVersion: 24 })
     expect(fs.existsSync(options.journalPath)).toBe(false)
     expect(updateProtectedStarIds(database, options)).toMatchObject({ changedCount: 2, state: 'applied' })
     expect(codes()).toEqual(['L-0001', 'Z-0002'])

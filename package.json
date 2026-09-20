@@ -8,6 +8,7 @@
     "node": "^22.18.0 || >=24.11.0"
   },
   "scripts": {
+    "db:v2:audio-upgrade": "tsx backend/src/cli/audio-buzzer-upgrade.ts",
     "obs:audio": "node scripts/obs-audio.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:formal": "node scripts/dev-formal.mjs",
@@ -62,7 +63,10 @@
     "db:v2:guest-upgrade": "tsx backend/src/cli/guest-entry-upgrade.ts",
     "db:v2:event-upgrade": "tsx backend/src/cli/event-entry-upgrade.ts",
     "db:v2:ranking-upgrade": "tsx backend/src/cli/program-ranking-upgrade.ts",
-    "db:v2:awards-upgrade": "tsx backend/src/cli/awards-upgrade.ts"
+    "db:v2:awards-upgrade": "tsx backend/src/cli/awards-upgrade.ts",
+    "db:campus-awards:import": "tsx backend/src/cli/import-campus-awards.ts",
+    "accounts:export": "node scripts/protected-accounts.mjs export",
+    "accounts:select": "node scripts/protected-accounts.mjs select"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

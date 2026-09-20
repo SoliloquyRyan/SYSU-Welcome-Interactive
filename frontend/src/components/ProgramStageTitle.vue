@@ -22,7 +22,7 @@ onBeforeUnmount(() => clearInterval(timer))
 </script>
 <template>
   <section class="program-stage-title" :class="['layout-' + visual.layout, 'font-' + visual.font, { 'is-transient': transient, 'is-static': reduced }]"
-    :style="programVisualStyle(visual)" :data-long-title="program.title.length > 24" :data-long-credits="programCredits(program).length > 80" :data-program-id="program.id" :data-title-persistent="!transient" :data-font-state="visual.font === 'cut' ? 'fangxian-local' : 'ready'" aria-label="当前节目与表演者">
+    :style="programVisualStyle(visual)" :data-cue-position="transient ? 'bottom-left' : undefined" :data-long-title="program.title.length > 24" :data-long-credits="programCredits(program).length > 80" :data-program-id="program.id" :data-title-persistent="!transient" :data-font-state="visual.font === 'cut' ? 'fangxian-local' : 'ready'" aria-label="当前节目与表演者">
     <div class="program-title-meta"><span class="program-title-index">{{ String(program.displayCode ?? '').padStart(2, '0') }}</span><i></i><span>{{ visual.genre || '现场节目' }}</span></div>
     <h2 :aria-label="program.title">{{ titleText }}</h2>
     <div class="program-title-rule" aria-hidden="true"><i></i><b></b><i></i></div>
@@ -44,7 +44,7 @@ onBeforeUnmount(() => clearInterval(timer))
 .layout-left :is(.program-title-meta,.program-title-rule){justify-content:flex-start}.layout-right :is(.program-title-meta,.program-title-rule){justify-content:flex-end}
 .is-transient{left:6%;top:auto;bottom:17%;width:min(64%,1180px);text-align:left;padding:18px 28px;border-left:1px solid var(--program-accent);background:linear-gradient(90deg,#34303cc9,#34303c12);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,0 100%);animation:program-title-cue 8.5s ease both}
 .is-transient .program-title-meta{justify-content:flex-start}.is-transient h2{font-size:clamp(36px,3.6vw,72px);margin:10px 0;letter-spacing:.075em}.is-transient .program-title-rule{display:none}.is-transient .program-title-performers{font-size:clamp(20px,1.3vw,28px);letter-spacing:.09em}
-.is-transient{left:var(--cue-x,6%);top:var(--cue-y,4%);bottom:var(--cue-bottom,auto);width:var(--cue-width,40%);padding:12px 20px;background:linear-gradient(90deg,#282630a6,#28263018)}
+.is-transient{left:6%;right:auto;top:auto;bottom:var(--cue-bottom,12%);width:var(--cue-width,56%);padding:12px 20px;background:linear-gradient(90deg,#282630a6,#28263018)}
 .is-transient .program-title-meta{font-size:12px;gap:12px}.is-transient .program-title-index{font-size:13px}.is-transient h2{font-size:clamp(26px,2vw,40px);margin:8px 0}.is-transient .program-title-performers{font-size:clamp(18px,1.1vw,24px)}
 .is-static{animation:none}
 .program-stage-title[data-long-title="true"] h2{font-size:clamp(28px,2.2vw,44px);letter-spacing:.045em}
@@ -68,7 +68,7 @@ onBeforeUnmount(() => clearInterval(timer))
 .program-stage-title:not(.is-transient)[data-long-credits="true"] .program-title-performers{font-size:clamp(25px,2.1vw,42px);line-height:1.5;letter-spacing:.025em}
 .program-stage-title.is-transient h2{font-size:clamp(38px,4.6vw,94px);font-weight:700;line-height:1.2}
 .program-stage-title.is-transient[data-long-title="true"] h2{font-size:clamp(36px,4.6vw,90px);letter-spacing:.025em}
-.program-stage-title[data-long-title="true"]{top:34%;left:13%;width:74%}.program-title-page{font:600 20px var(--font-family-ui);opacity:.7;margin:14px 0 0}
+.program-stage-title[data-long-title="true"]:not(.is-transient){top:34%;left:13%;width:74%}.program-title-page{font:600 20px var(--font-family-ui);opacity:.7;margin:14px 0 0}
 </style>
 
 <style scoped>

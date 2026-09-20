@@ -6,7 +6,7 @@ import { createIdempotencyKey } from '../../services/api'
 import { catalogChanges, editableCatalog, eventProgramPreset, programKindLabels, validateCatalog } from './program-catalog'
 
 const props = defineProps({ snapshot: { type: Object, required: true }, canWrite: Boolean, savedSignal: Number })
-const emit = defineEmits(['select', 'apply', 'prepare'])
+const emit = defineEmits(['select', 'advance', 'apply', 'prepare'])
 const selected = ref('')
 const page = ref(0)
 const pages = computed(() => Math.max(1,Math.ceil(programs.value.length/4)))
@@ -104,7 +104,7 @@ function apply() {
         <option v-for="program in programs" :key="program.id" :value="program.id">{{ program.kind === 'PERFORMANCE' ? `${program.displayCode} · ${program.title}` : program.title }}</option>
       </select>
       <BaseButton variant="secondary" :disabled="!canSelect || !selected || selected === current?.id" @click="emit('select', selected)">设为当前节目</BaseButton>
-      <BaseButton :disabled="!canSelect || !nextProgram" @click="emit('select', nextProgram.id)">{{ current ? '切换到下一项' : '开始首个节目' }}</BaseButton>
+      <BaseButton :disabled="!canSelect || !nextProgram" @click="emit('advance')">{{ current ? '切换到下一项' : '开始首个节目' }}</BaseButton>
     </div>
     <p v-if="current && !current.giftsEnabled" class="interlude-notice" role="status">{{ current.title }} · 礼物已关闭</p>
     <details class="catalog-overview" open><summary>查看完整目录 · {{ programs.length }} 项</summary>

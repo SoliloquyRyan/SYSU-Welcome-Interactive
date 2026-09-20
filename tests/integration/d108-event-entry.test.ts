@@ -57,13 +57,6 @@ describe('D-108 protected entry, staff and independent candidates', () => {
     control('UPDATE_PROGRAM_CATALOG', { catalog: eventProgramPreset() })
     if (live) control('SET_MODE', { targetMode: 'LIVE' })
     control('START')
-    if (live) {
-      const current = state()
-      executeV2RuntimeCommand(database, { roles: ['STAGE_CONTROLLER'], sessionShortId: 'd108-admin', requestId: key() }, {
-        protocolVersion: '2', resetEpoch: 1, idempotencyKey: key(), command: 'ADVANCE', confirmed: true,
-        expectedRunRevision: current.runtime.runRevision, expectedPresentationRevision: current.presentationRevision, overrideReadinessWarnings: true,
-      }, NOW)
-    } else control('SET_SCENE', { targetScene: 'PROGRAM_SUPPORT' })
     control('SET_PROGRAM', { programId: 'event2026-01' })
   }
   function admit(index: number) { const result = login(roster[index]!); participant(result.session.identityId, 'LOCK_COLOR', { colorTemperatureKelvin: 6500 }); return result.session.identityId }
@@ -146,7 +139,7 @@ describe('D-108 protected entry, staff and independent candidates', () => {
     expect(verifyV2Foundation(database,{...options,throughSchemaVersion:21}).ready).toBe(true)
     expect(facts()).toEqual(before)
     const result=await upgradeV2EventEntryFrom21To22(database,{...options,backupPath:path.join(directory,'before21-retry.sqlite')})
-    expect(result).toMatchObject({previousSchemaVersion:21,schemaVersion:23,participantCount:2})
+    expect(result).toMatchObject({previousSchemaVersion:21,schemaVersion:24,participantCount:2})
     expect(facts()).toEqual(before)
     expect(database.pragma('foreign_key_check')).toEqual([])
     expect(database.prepare('SELECT score_eligible FROM v2_gift_transactions').pluck().all()).toEqual([1,1])

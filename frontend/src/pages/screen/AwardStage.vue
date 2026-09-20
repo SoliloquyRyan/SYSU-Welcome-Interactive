@@ -5,7 +5,9 @@ import StageCollegeBrand from '../../components/StageCollegeBrand.vue'
 const props = defineProps({ stage: { type: Object, required: true }, stars: { type: Array, default: () => [] }, title: String, reduced: Boolean, paused: Boolean, audio: Boolean })
 defineEmits(['audio-status'])
 const programRows = computed(() => props.stage.award?.group === 'PROGRAM'
-  && props.stage.award.entries.some(entry => entry.name.length > 24 || entry.detail.length > 100))
+  && props.stage.award.entries.some(entry => entry.name.length > 24))
+const awardPanels = computed(() => props.stage.awardPanels?.length ? props.stage.awardPanels : props.stage.award ? [{ ...props.stage.award, group: 'CAMPUS' }] : [])
+const combinedAward = computed(() => awardPanels.value.length > 1)
 </script>
 
 <template>
@@ -16,16 +18,20 @@ const programRows = computed(() => props.stage.award?.group === 'PROGRAM'
       <div v-if="stage.mode === 'AWARD' || title" :key="`${stage.mode}-${stage.award?.id ?? title}-${stage.revealed}-${stage.page}`" class="ceremony-content" :class="{ 'has-program-rows': stage.revealed && programRows }">
         <template v-if="stage.mode === 'AWARD' && stage.award">
           <p class="ceremony-kicker">{{ stage.award.group === 'CAMPUS' ? '校园图鉴 · 荣誉时刻' : '节目颁奖 · 荣誉时刻' }}</p>
-          <h1 :class="{ 'with-winners': stage.revealed }">{{ stage.award.title }}</h1>
+          <h1 :class="{ 'with-winners': stage.revealed }">{{ combinedAward ? '校园图鉴颁奖' : stage.award.title }}</h1>
           <p v-if="stage.award.description && stage.award.group === 'CAMPUS'" class="ceremony-description">{{ stage.award.description }}</p>
-          <ol v-if="stage.revealed" class="award-winners" :class="{ 'is-few': stage.award.entries.length <= 2, 'is-podium': stage.award.group === 'PROGRAM' && stage.award.entries.length === 3 && !programRows, 'is-program-rows': programRows }" aria-label="本页获奖名单">
-            <li v-for="(entry, i) in stage.award.entries" :key="`${stage.page}-${i}`" :class="{ 'long-entry': entry.name.length > 24 || entry.detail.length > 70 }">
-              <span class="award-rank">{{ entry.rank ? String(entry.rank).padStart(2, '0') : '✦' }}</span>
-              <div><strong>{{ entry.name }}</strong><p v-if="entry.detail">{{ entry.detail }}</p></div>
-            </li>
+          <div v-if="stage.revealed && combinedAward" class="award-panels" aria-label="校园图鉴组合奖项">
+            <section v-for="panel in awardPanels" :key="panel.id" class="award-panel"><h2>{{ panel.title }}</h2><ol class="award-winners"><li v-for="(entry, i) in panel.entries" :key="`${panel.id}-${i}`"><span class="award-rank">{{ entry.rank ? String(entry.rank).padStart(2, '0') : '✦' }}</span><div><strong>{{ entry.name }}</strong></div></li></ol></section>
+          </div>
+          <ol v-else-if="stage.revealed" class="award-winners" :class="{ 'is-few': stage.award.entries.length <= 2, 'is-podium': stage.award.group === 'PROGRAM' && stage.award.entries.length === 3 && !programRows, 'is-program-rows': programRows }" aria-label="本页获奖名单">
+            <li v-for="(entry, i) in stage.award.entries" :key="`${stage.page}-${i}`" :class="{ 'long-entry': entry.name.length > 24 }"><span class="award-rank">{{ entry.rank ? String(entry.rank).padStart(2, '0') : '✦' }}</span><div><strong>{{ entry.name }}</strong></div></li>
           </ol>
           <div v-else class="award-emblem" aria-hidden="true"><span>✦</span><i></i></div>
           <p v-if="stage.revealed && stage.totalPages > 1" class="award-page">{{ String(stage.page + 1).padStart(2, '0') }}<span> / {{ String(stage.totalPages).padStart(2, '0') }}</span></p>
+        </template>
+        <template v-else-if="title === '负责人讲话'">
+          <p class="ceremony-kicker">中山大学 · 迎新晚会</p>
+          <h1 class="host-title">负责人讲话</h1>
         </template>
         <template v-else>
           <p class="ceremony-kicker">中山大学 · 迎新晚会</p>
@@ -82,4 +88,6 @@ h1.with-winners{font-size:3.3vw;letter-spacing:.1em}.ceremony-description{margin
 .award-winners p,.award-winners.is-program-rows p,.award-winners .long-entry p{font-size:clamp(20px,1.6vw,32px);line-height:1.45;overflow-wrap:anywhere}
 .host-subtitle{font:500 36px/1.8 var(--font-family-ui);letter-spacing:.16em}
 .award-winners strong{font-family:var(--font-family-ui)}.award-winners.is-program-rows strong{font-family:var(--font-family-display)}
+.award-panels{width:min(86vw,1500px);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4vw;margin:auto 0}.award-panel{min-width:0}.award-panel h2{margin:0 0 1.5vh;font-size:clamp(28px,2.2vw,46px);font-weight:600;color:#e7d9ee}.award-panel .award-winners{margin:0;display:grid;grid-template-columns:1fr;gap:0}.award-panel .award-winners li{padding:1.1vh .5vw}.award-panel .award-winners strong{font-size:clamp(26px,1.85vw,40px)}
+@media(max-width:800px){.award-panels{width:90vw;gap:12px}.award-panel h2{font-size:20px}.award-panel .award-winners strong{font-size:20px}}
 </style>
